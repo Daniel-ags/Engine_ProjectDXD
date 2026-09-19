@@ -22,7 +22,7 @@ from app.engine.state import MapState
 from app.engine.game_state import game
 from app.engine import menus, base_surf, background, text_funcs, \
     image_mods, gui, icons, prep, record_book, unit_sprite, action, \
-    engine, equations, evaluate
+    engine, equations, evaluate, skill_system
 from app.engine.fluid_scroll import FluidScroll
 from app.engine.graphics.text.text_renderer import render_text
 from app.engine.persistent_records import RECORDS
@@ -68,6 +68,10 @@ class BaseMainState(State):
         # Make sure there's at least one unit before turning on Manage
         if game.get_units_in_party():
             ignore[0] = False
+
+        options.insert(1, 'Skills')
+        ignore.insert(1, not bool(game.get_units_in_party()))
+
         if game.base_convos:
             ignore[1] = False
         if game.game_vars.get('_supports') and DB.support_constants.value('base_convos'):
@@ -163,6 +167,11 @@ class BaseMainState(State):
             elif selection == 'Manage':
                 game.memory['next_state'] = 'base_manage'
                 game.state.change('transition_to')
+
+            elif selection == 'Skills':
+                game.memory['next_state'] = 'base_skills_select'
+                game.state.change('transition_to')
+
             elif selection == 'Market':
                 game.memory['next_state'] = 'base_market_select'
                 game.state.change('transition_to')
@@ -267,6 +276,555 @@ class BaseMarketSelectState(prep.PrepManageState):
             game.memory['next_state'] = 'info_menu'
             game.state.change('transition_to')
 
+class BaseSkillsManageState(State):
+    name = 'base_skills_manage'
+
+    def start(self):
+        self.fluid = FluidScroll()
+        self.unit = game.memory['current_unit']
+        self.bg = game.memory.get('base_bg') or base_background()
+
+        self.clean_all_orphaned_auras()
+        self.current_pane = 'equipped'  # 'equipped' ou 'available'
+        self.show_info = False          # Janela de ajuda modal (INFO)
+
+        self.refresh_skill_lists()
+        self.build_menus()
+
+        game.state.change('transition_in')
+        return 'repeat'
+
+    def begin(self):
+        self.fluid.reset_on_change_state()
+
+    def is_aura_skill(self, prefab) -> bool:
+        """Verifica se a habilidade possui componentes relacionados a auras."""
+        if not prefab:
+            return False
+        for comp in getattr(prefab, 'components', None) or []:
+            if comp and hasattr(comp, 'nid') and 'aura' in comp.nid.lower():
+                return True
+        return False
+
+    def get_aura_subskill_nids(self, skill_or_nid) -> set:
+        """Extrai todos os NIDs de subskills/buffs gerados por uma aura."""
+        skill_nid = skill_or_nid if isinstance(skill_or_nid, str) else skill_or_nid.nid
+        prefab = DB.skills.get(skill_nid)
+        subskills = set()
+        if not prefab:
+            return subskills
+
+        # 'or []' impede iteração sobre None caso prefab.subskills seja None
+        for sub in getattr(prefab, 'subskills', None) or []:
+            if isinstance(sub, str):
+                subskills.add(sub)
+
+        for comp in getattr(prefab, 'components', None) or []:
+            val = getattr(comp, 'value', None)
+            if isinstance(val, str) and val in DB.skills:
+                subskills.add(val)
+            elif isinstance(val, (list, tuple, set)):
+                for item in val:
+                    if isinstance(item, str) and item in DB.skills:
+                        subskills.add(item)
+            elif isinstance(val, dict):
+                for k, v in val.items():
+                    if isinstance(k, str) and k in DB.skills:
+                        subskills.add(k)
+                    if isinstance(v, str) and v in DB.skills:
+                        subskills.add(v)
+
+            for attr in ('skill', 'subskill', 'target_skill', 'aura_skill', 'buff', 'status'):
+                attr_val = getattr(comp, attr, None)
+                if isinstance(attr_val, str) and attr_val in DB.skills:
+                    subskills.add(attr_val)
+
+        parent_low = skill_nid.lower()
+        for other in DB.skills:
+            if other.nid != skill_nid:
+                o_low = other.nid.lower()
+                if o_low.startswith(f"{parent_low}_") or o_low.startswith(f"{parent_low}-"):
+                    subskills.add(other.nid)
+
+        return subskills
+
+    def clean_aura_ghosts(self, source_unit, unequipped_skill):
+        """Limpa as subskills dos aliados e esvazia o rastreamento interno do componente."""
+        skill_obj = next((s for s in source_unit.skills if s.nid == unequipped_skill.nid), unequipped_skill)
+        for comp in getattr(skill_obj, 'components', None) or []:
+            for attr in ('applied', 'targets', 'applied_units', 'target_units'):
+                if hasattr(comp, attr):
+                    val = getattr(comp, attr)
+                    if isinstance(val, dict):
+                        val.clear()
+                    elif isinstance(val, (list, set)):
+                        if isinstance(val, list):
+                            val.clear()
+                        else:
+                            val.difference_update(set(val))
+
+        buff_nids = self.get_aura_subskill_nids(unequipped_skill)
+        if not buff_nids:
+            return
+
+        other_active = any(
+            any(s.nid == unequipped_skill.nid for s in u.get_equipped_skills())
+            for u in game.get_units_in_party()
+            if u is not source_unit
+        )
+        if other_active:
+            return
+
+        all_units = {u for u in game.get_units_in_party()} | {u for u in game.units}
+        for target in all_units:
+            ghosts = [s for s in list(target.skills) if s.nid in buff_nids]
+            for ghost in ghosts:
+                if ghost in target.skills:
+                    target.skills.remove(ghost)
+                if hasattr(target, 'reset_skills'):
+                    target.reset_skills()
+
+        if hasattr(skill_system, 'update_aura'):
+            try:
+                skill_system.update_aura(source_unit)
+            except Exception:
+                pass
+
+    def clean_all_orphaned_auras(self):
+        """Expurga quaisquer subskills órfãs acumuladas na sessão."""
+        all_units = {u for u in game.get_units_in_party()} | {u for u in game.units}
+
+        active_equipped_nids = set()
+        for u in all_units:
+            eq = u.get_equipped_skills() if hasattr(u, 'get_equipped_skills') else u.skills
+            for s in eq:
+                active_equipped_nids.add(s.nid)
+
+        orphaned_buff_nids = set()
+        for prefab in DB.skills:
+            if self.is_aura_skill(prefab) and prefab.nid not in active_equipped_nids:
+                orphaned_buff_nids.update(self.get_aura_subskill_nids(prefab))
+
+        if not orphaned_buff_nids:
+            return
+
+        for target in all_units:
+            ghosts = [s for s in list(target.skills) if s.nid in orphaned_buff_nids]
+            for ghost in ghosts:
+                if ghost in target.skills:
+                    target.skills.remove(ghost)
+                if hasattr(target, 'reset_skills'):
+                    target.reset_skills()
+
+    def refresh_skill_lists(self):
+        self.equipped_skills = self.unit.get_equipped_skills()
+        equipped_nids = {s.nid for s in self.equipped_skills}
+        self.available_skills = [
+            DB.skills.get(nid) for nid in self.unit.learned_skills
+            if nid not in equipped_nids and DB.skills.get(nid)
+        ]
+
+    def build_menus(self):
+        equipped_names = [s.name for s in self.equipped_skills] or ['---']
+        available_names = [s.name for s in self.available_skills] or ['---']
+
+        self.equipped_menu = menus.Choice(None, equipped_names, topleft=(12, 63), background=None)
+        self.equipped_menu.set_limit(5)
+        self.equipped_menu.width = 98
+
+        self.available_menu = menus.Choice(None, available_names, topleft=(132, 63), background=None)
+        self.available_menu.set_limit(5)
+        self.available_menu.width = 98
+
+        self._update_cursors()
+
+    def _update_cursors(self):
+        self.equipped_menu.draw_cursor = (self.current_pane == 'equipped')
+        self.available_menu.draw_cursor = (self.current_pane == 'available')
+
+    def _get_hovered_skill(self):
+        if self.current_pane == 'equipped' and self.equipped_skills:
+            idx = self.equipped_menu.get_current_index()
+            if idx < len(self.equipped_skills):
+                return self.equipped_skills[idx]
+        elif self.current_pane == 'available' and self.available_skills:
+            idx = self.available_menu.get_current_index()
+            if idx < len(self.available_skills):
+                return self.available_skills[idx]
+        return None
+
+    def _wrap_text(self, font, text: str, max_width: int) -> List[str]:
+        words = text.split(' ')
+        lines, cur_line = [], []
+        for word in words:
+            test_line = ' '.join(cur_line + [word])
+            if font.width(test_line) <= max_width:
+                cur_line.append(word)
+            else:
+                if cur_line:
+                    lines.append(' '.join(cur_line))
+                cur_line = [word]
+        if cur_line:
+            lines.append(' '.join(cur_line))
+        return lines
+
+    def take_input(self, event):
+        if self.show_info:
+            if event in ('INFO', 'BACK', 'SELECT'):
+                self.show_info = False
+                get_sound_thread().play_sfx('Info Out')
+                return
+            first_push = self.fluid.update()
+            directions = self.fluid.get_directions()
+            active_menu = self.equipped_menu if self.current_pane == 'equipped' else self.available_menu
+            if 'DOWN' in directions:
+                active_menu.move_down(first_push)
+            elif 'UP' in directions:
+                active_menu.move_up(first_push)
+            return
+
+        first_push = self.fluid.update()
+        directions = self.fluid.get_directions()
+        active_menu = self.equipped_menu if self.current_pane == 'equipped' else self.available_menu
+
+        active_menu.handle_mouse()
+
+        if 'DOWN' in directions:
+            if active_menu.move_down(first_push):
+                get_sound_thread().play_sfx('Select 5')
+        elif 'UP' in directions:
+            if active_menu.move_up(first_push):
+                get_sound_thread().play_sfx('Select 5')
+
+        elif 'RIGHT' in directions and self.current_pane == 'equipped':
+            self.current_pane = 'available'
+            self._update_cursors()
+            get_sound_thread().play_sfx('Select 6')
+        elif 'LEFT' in directions and self.current_pane == 'available':
+            self.current_pane = 'equipped'
+            self._update_cursors()
+            get_sound_thread().play_sfx('Select 6')
+
+        elif event == 'INFO':
+            if self._get_hovered_skill():
+                self.show_info = True
+                get_sound_thread().play_sfx('Info In')
+
+        elif event == 'BACK':
+            get_sound_thread().play_sfx('Select 4')
+            game.state.change('transition_pop')
+
+        elif event == 'SELECT':
+            cur_idx = active_menu.get_current_index()
+            if self.current_pane == 'equipped' and self.equipped_skills:
+                skill = self.equipped_skills[cur_idx]
+                if self.unit.unequip_skill(skill.nid):
+                    parent_skill_obj = next((s for s in self.unit.skills if s.nid == skill.nid), None)
+                    if parent_skill_obj:
+                        try:
+                            action.RemoveSkill(self.unit, parent_skill_obj).do()
+                        except Exception:
+                            if parent_skill_obj in self.unit.skills:
+                                self.unit.skills.remove(parent_skill_obj)
+
+                    self.clean_aura_ghosts(self.unit, skill)
+                    get_sound_thread().play_sfx('Select 1')
+                    self.refresh_skill_lists()
+                    self.build_menus()
+                    self.equipped_menu.move_to(min(cur_idx, max(0, len(self.equipped_skills) - 1)))
+                else:
+                    get_sound_thread().play_sfx('Error')
+
+            elif self.current_pane == 'available' and self.available_skills:
+                skill = self.available_skills[cur_idx]
+                if self.unit.equip_skill(skill.nid):
+                    get_sound_thread().play_sfx('Select 1')
+                    self.refresh_skill_lists()
+                    self.build_menus()
+                    self.available_menu.move_to(min(cur_idx, max(0, len(self.available_skills) - 1)))
+                else:
+                    get_sound_thread().play_sfx('Error')
+
+    def update(self):
+        super().update()
+        if self.equipped_menu:
+            self.equipped_menu.update()
+        if self.available_menu:
+            self.available_menu.update()
+
+    def draw(self, surf):
+        if self.bg:
+            self.bg.draw(surf)
+
+        base = base_surf.create_base_surf(232, 40, 'menu_bg_base')
+        top_surf = engine.create_surface((232, 42), transparent=True)
+        top_surf.blit(engine.subsurface(base, (0, 0, 232, 34)), (0, 0))
+        top_surf.blit(engine.subsurface(base, (0, 32, 232, 8)), (0, 34))
+        top_surf = image_mods.make_translucent(top_surf, 0.1)
+        surf.blit(top_surf, (4, 3))
+
+        drawn_visual = False
+        if hasattr(icons, 'draw_chibi') and getattr(self.unit, 'portrait_nid', None):
+            try:
+                icons.draw_chibi(surf, self.unit.portrait_nid, (8, 8))
+                drawn_visual = True
+            except Exception:
+                drawn_visual = False
+        if not drawn_visual and hasattr(self.unit, 'sprite'):
+            try:
+                char_surf = self.unit.sprite.create_image('active')
+                surf.blit(char_surf, (8, 10))
+            except Exception:
+                pass
+
+        render_text(surf, ['text'], [self.unit.name], ['white'], (46, 8))
+        klass = DB.classes.get(self.unit.klass)
+        klass_name = klass.name if klass else ''
+        render_text(surf, ['text'], [klass_name], ['blue'], (46, 22))
+
+        slots_color = 'yellow' if len(self.equipped_skills) < self.unit.max_skills else 'green'
+        render_text(surf, ['text'], ["Slots:"], ['white'], (146, 15))
+        render_text(surf, ['text'], [f"{len(self.equipped_skills)}/{self.unit.max_skills}"], [slots_color], (188, 15))
+
+        left_surf = base_surf.create_base_surf(112, 112, 'menu_bg_base')
+        left_surf = image_mods.make_translucent(left_surf, 0.1)
+        surf.blit(left_surf, (4, 46))
+
+        title_color_eq = 'yellow' if self.current_pane == 'equipped' else 'grey'
+        render_text(surf, ['text'], [f"Equipped ({len(self.equipped_skills)})"], [title_color_eq], (12, 49))
+
+        if self.equipped_menu:
+            self.equipped_menu.draw(surf)
+
+        right_surf = base_surf.create_base_surf(112, 112, 'menu_bg_base')
+        right_surf = image_mods.make_translucent(right_surf, 0.1)
+        surf.blit(right_surf, (124, 46))
+
+        title_color_av = 'yellow' if self.current_pane == 'available' else 'grey'
+        render_text(surf, ['text'], [f"Reserve ({len(self.available_skills)})"], [title_color_av], (132, 49))
+
+        if self.available_menu:
+            self.available_menu.draw(surf)
+
+        if self.show_info:
+            hovered = self._get_hovered_skill()
+            if hovered:
+                modal_w, modal_h = 192, 96
+                modal_x = (WINWIDTH - modal_w) // 2
+                modal_y = (WINHEIGHT - modal_h) // 2
+                modal_surf = base_surf.create_base_surf(modal_w, modal_h, 'menu_bg_base')
+                modal_surf = image_mods.make_translucent(modal_surf, 0.05)
+
+                render_text(modal_surf, ['text'], [hovered.name], ['yellow'], (8, 6))
+                is_eq = hovered in self.equipped_skills
+                status_text = "Equipped" if is_eq else "Reserve"
+                status_color = "green" if is_eq else "blue"
+                render_text(modal_surf, ['text'], [status_text], [status_color], (modal_w - 60, 6))
+
+                desc_lines = self._wrap_text(FONT['text'], hovered.desc or "No description available.", modal_w - 16)
+                for l_idx, line in enumerate(desc_lines[:4]):
+                    render_text(modal_surf, ['text'], [line], ['white'], (8, 24 + l_idx * 14))
+
+                render_text(modal_surf, ['text'], ["INFO / B: Close"], ['grey'], (modal_w // 2 - 40, modal_h - 18))
+                surf.blit(modal_surf, (modal_x, modal_y))
+
+        return surf
+
+
+class BaseSkillsSelectState(prep.PrepManageState):
+    name = 'base_skills_select'
+
+    def start(self):
+        super().start()
+        self.quick_disp = self.create_quick_disp()
+
+    def create_quick_disp(self):
+        sprite = SPRITES.get('buttons')
+        button = sprite.subsurface(0, 66, 14, 13)
+        font = FONT['text']
+        command = 'Manage'
+        total_w = button.get_width() + 4 + font.width(command)
+        bg_surf = base_surf.create_base_surf(72, 24, 'menu_bg_base')
+        bg_surf = image_mods.make_translucent(bg_surf, 0.1)
+        start_x = (72 - total_w) // 2
+        bg_surf.blit(button, (start_x, 12 - button.get_height() // 2))
+        font.blit(command, bg_surf, (start_x + button.get_width() + 4, 4))
+        return bg_surf
+
+    def draw_unit_skills_card(self, surf, topleft, unit):
+
+        card_w, card_h = 114, 88
+        card_surf = base_surf.create_base_surf(card_w, card_h, 'menu_bg_base')
+        card_surf = image_mods.make_translucent(card_surf, 0.1)
+        actual_w = card_surf.get_width()
+
+        # Nome da unidade
+        render_text(card_surf, ['text'], [unit.name], ['white'], (6, 4))
+
+        # "Slots: X/18" com margem dinâmica de segurança
+        eq_skills = unit.get_equipped_skills()
+        slots_color = 'yellow' if len(eq_skills) < unit.max_skills else 'green'
+        slots_label = "Slots:"
+        slots_num = f"{len(eq_skills)}/{unit.max_skills}"
+
+        label_w = FONT['text'].width(slots_label)
+        num_w = FONT['text'].width(slots_num)
+        total_slots_w = label_w + 3 + num_w
+
+        start_x = actual_w - total_slots_w - 6
+        render_text(card_surf, ['text'], [slots_label], ['white'], (start_x, 4))
+        render_text(card_surf, ['text'], [slots_num], [slots_color], (start_x + label_w + 3, 4))
+
+        # Lista de habilidades
+        if len(eq_skills) <= 3:
+            for idx, skill in enumerate(eq_skills):
+                y_offset = 20 + idx * 15
+                render_text(card_surf, ['text'], [skill.name], ['white'], (6, y_offset))
+        else:
+            for idx, skill in enumerate(eq_skills[:3]):
+                y_offset = 20 + idx * 15
+                render_text(card_surf, ['text'], [skill.name], ['white'], (6, y_offset))
+            render_text(card_surf, ['text'], [f"+{len(eq_skills) - 3} more..."], ['grey'], (6, 65))
+
+        surf.blit(card_surf, topleft)
+
+    def clean_aura_ghosts(self, source_unit, unequipped_skill):
+        """Remove subskills/buffs espalhados pelo grupo originados desta skill desequipada"""
+        # 1. Identifica os NIDs de subskills atrelados aos componentes de aura da habilidade
+        
+        aura_subskill_nids = set()
+        for comp in getattr(unequipped_skill, 'components', []):
+            if 'aura' in comp.nid.lower():
+                val = getattr(comp, 'value', None)
+                if isinstance(val, str):
+                    aura_subskill_nids.add(val)
+                elif hasattr(comp, 'skill') and isinstance(comp.skill, str):
+                    aura_subskill_nids.add(comp.skill)
+
+        all_units = {u for u in game.get_units_in_party()} | {u for u in game.units}
+
+        # 2. Varre todas as unidades em busca de subskills geradas por essa habilidade
+        for target in all_units:
+            ghosts = []
+            for s in list(target.skills):
+                parent_skill = getattr(s, 'parent_skill', None)
+                parent_unit = getattr(s, 'parent_unit', None) or getattr(s, 'initiator_nid', None)
+
+                # É filha direta pelo identificador único (UID) ou NID da skill pai
+                is_direct_child = (
+                    parent_skill == getattr(unequipped_skill, 'uid', None) or
+                    parent_skill == unequipped_skill.nid or
+                    parent_skill == unequipped_skill
+                )
+                # Ou é uma subskill registrada da aura desta unidade
+                is_aura_buff = (
+                    s.nid in aura_subskill_nids and 
+                    (parent_unit == source_unit.nid or parent_unit == source_unit or getattr(s, 'subskill', False))
+                )
+
+                if is_direct_child or is_aura_buff:
+                    ghosts.append(s)
+
+            # Remove os fantasmas usando a ação oficial do motor para recalcular atributos
+            for ghost in ghosts:
+                try:
+                    action.RemoveSkill(target, ghost).do()
+                except Exception:
+                    if ghost in target.skills:
+                        target.skills.remove(ghost)
+                if hasattr(target, 'reset_skills'):
+                    target.reset_skills()
+
+    def clean_all_orphaned_auras(self):
+        """Cura o save: expurga quaisquer subskills órfãs cujo pai não esteja mais equipado por ninguém."""
+        all_units = {u for u in game.get_units_in_party()} | {u for u in game.units}
+
+        # Coleta os UIDs e NIDs de todas as habilidades ativas e equipadas no momento
+        active_skill_uids = set()
+        active_skill_nids = set()
+        for u in all_units:
+            eq = u.get_equipped_skills() if hasattr(u, 'get_equipped_skills') else u.skills
+            for s in eq:
+                active_skill_uids.add(getattr(s, 'uid', None))
+                active_skill_nids.add(s.nid)
+
+        for target in all_units:
+            ghosts = []
+            for s in list(target.skills):
+                if getattr(s, 'subskill', False):
+                    p_skill = getattr(s, 'parent_skill', None)
+                    # Se a subskill aponta para uma habilidade pai que não existe mais em ninguém
+                    if p_skill and (p_skill not in active_skill_uids and p_skill not in active_skill_nids):
+                        ghosts.append(s)
+
+            for ghost in ghosts:
+                try:
+                    action.RemoveSkill(target, ghost).do()
+                except Exception:
+                    if ghost in target.skills:
+                        target.skills.remove(ghost)
+
+    def draw(self, surf):
+        if self.bg:
+            self.bg.draw(surf)
+        self.menu.draw(surf)
+        unit = self.menu.get_current()
+        if unit:
+            self.draw_unit_skills_card(surf, (6, 71), unit)
+
+        # A: Skills button (alinhado em x=162)
+        if hasattr(self, 'quick_disp') and self.quick_disp:
+            surf.blit(self.quick_disp, (162, 74))
+
+        # C: Info helper sem container de fundo
+        helper = engine.get_key_name(cf.SETTINGS['key_INFO']).upper()
+        total_info_w = FONT['text-yellow'].width(helper) + FONT['text'].width(': Info')
+        info_x = 162 + (72 - total_info_w) // 2
+        FONT['text-yellow'].blit(helper, surf, (info_x, 108))
+        FONT['text'].blit(': Info', surf, (info_x + FONT['text-yellow'].width(helper), 108))
+
+        # Funds display
+        funds_surf = SPRITES.get('funds_display')
+        if funds_surf:
+            surf.blit(funds_surf, (168, 134))
+            money = str(game.get_money())
+            FONT['text-blue'].blit_right(money, surf, (219, 138))
+
+        return surf
+
+    def take_input(self, event):
+        first_push = self.fluid.update()
+        directions = self.fluid.get_directions()
+
+        self.menu.handle_mouse()
+        if 'DOWN' in directions:
+            if self.menu.move_down(first_push):
+                get_sound_thread().play_sfx('Select 5')
+        elif 'UP' in directions:
+            if self.menu.move_up(first_push):
+                get_sound_thread().play_sfx('Select 5')
+        elif 'LEFT' in directions:
+            if self.menu.move_left(first_push):
+                get_sound_thread().play_sfx('Select 5')
+        elif 'RIGHT' in directions:
+            if self.menu.move_right(first_push):
+                get_sound_thread().play_sfx('Select 5')
+
+        if event == 'SELECT':
+            unit = self.menu.get_current()
+            game.memory['current_unit'] = unit
+            game.memory['next_state'] = 'base_skills_manage'
+            game.state.change('transition_to')
+            get_sound_thread().play_sfx('Select 1')
+        elif event == 'BACK':
+            game.state.change('transition_pop')
+            get_sound_thread().play_sfx('Select 4')
+        elif event == 'INFO':
+            get_sound_thread().play_sfx('Select 1')
+            game.memory['scroll_units'] = game.get_units_in_party()
+            game.memory['current_unit'] = self.menu.get_current()
+            game.memory['next_state'] = 'info_menu'
+            game.state.change('transition_to')
 
 class BaseConvosChildState(State):
     name = 'base_convos_child'

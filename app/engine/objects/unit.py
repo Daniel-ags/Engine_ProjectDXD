@@ -106,6 +106,11 @@ class UnitObject(Prefab):
     equipped_accessory: ItemObject = None
 
     _skills: List[UnitSkill] = field(default_factory=list)
+
+    learned_skills: List[NID] = field(default_factory=list)  #: Todas as skills que a unidade já aprendeu
+    class_skills: List[NID] = field(default_factory=list)    #: Skills que pertencem à classe atual
+    max_skills: int = 18
+
     _visible_skills_cache: List[SkillObject] = field(default_factory=list)
 
     has_rescued: bool = False  #: Has the unit *rescued* someone this phase?
@@ -253,23 +258,41 @@ class UnitObject(Prefab):
 
             # Handle skills
             all_skills = []
+
             global_skills = unit_funcs.get_global_skills(self)
             for s in global_skills:
                 all_skills.append(UnitSkill(s, 'game', SourceType.GLOBAL))
+
+
             personal_skills = unit_funcs.get_personal_skills(self, prefab)
             for s in personal_skills:
                 all_skills.append(UnitSkill(s, self.nid, SourceType.PERSONAL))
+
+
             class_skills = unit_funcs.get_starting_skills(self)
             for s in class_skills:
                 all_skills.append(UnitSkill(s, self.klass, SourceType.KLASS))
+
+
             if self.generic:
                 generic_skills = item_funcs.create_skills(self, prefab.starting_skills)
                 for s in generic_skills:
                     all_skills.append(UnitSkill(s, self.nid, SourceType.PERSONAL))
+
+
             for s in all_skills:
                 skill_system.before_add(self, s.get())
                 self._skills.append(s)
             self._visible_skills_cache.clear()
+
+            # Identifica as skills da classe atual que possuem o componente 'class_skill'
+            self.class_skills = [s.nid for s in class_skills if 'class_skill' in s.components]
+
+            # Inicializa as skills aprendidas com qualquer skill inicial que tenha 'class_skill'
+            for s in all_skills:
+                skill_obj = s.get()
+                if 'class_skill' in skill_obj.components and skill_obj.nid not in self.learned_skills:
+                    self.learned_skills.append(skill_obj.nid)
 
         klass = DB.classes.get(self.klass)
         if klass.tier == 0:
@@ -327,6 +350,9 @@ class UnitObject(Prefab):
         # Reset these so max hp can be changed by skills and items
         self.current_hp = self.get_max_hp()
         self.current_mana = self.get_max_mana()
+
+        # Teste temporário de verificação
+        # print(f"[{self.name}] Class Skills: {self.class_skills} | Learned Skills: {self.learned_skills}")
 
         return self
 
@@ -422,6 +448,82 @@ class UnitObject(Prefab):
     def set_exp(self, val: int) -> int:
         self.exp = int(utils.clamp(val, 0, 100))
 
+    def get_equipped_skills(self) -> List[SkillObject]:
+            """
+            Retorna apenas as skills ativas que possuem o componente 'class_skill'
+            (habilidades equipadas que ocupam slot, ignorando status e buffs).
+            """
+            return [s.get() for s in self._skills if 'class_skill' in s.get().components]
+
+    def can_equip_skill(self, skill_nid: NID) -> bool:
+        """
+        Verifica se a skill pode ser equipada pela unidade.
+        """
+        # 1. Deve ter sido aprendida previamente
+        if skill_nid not in self.learned_skills:
+            return False
+
+        # 2. Não pode já estar equipada
+        if any(s.get().nid == skill_nid for s in self._skills):
+            return False
+
+        # 3. Limite de slots (aqui entra a verificação!)
+        if len(self.get_equipped_skills()) >= self.max_skills:
+            return False
+
+        return True
+
+    def equip_skill(self, skill_nid: NID) -> bool:
+        """
+        Equipa uma habilidade aprendida na unidade respeitando o ciclo do skill_system.
+        """
+        if not self.can_equip_skill(skill_nid):
+            return False
+
+        # Cria a instância da skill vinculada à unidade
+        new_skill = item_funcs.create_skill(self, skill_nid)
+        if not new_skill:
+            return False
+
+        unit_skill = UnitSkill(new_skill, self.nid, SourceType.PERSONAL)
+
+        # Ciclo de ativação de efeitos da engine
+        skill_system.before_add(self, new_skill)
+        self._skills.append(unit_skill)
+        skill_system.after_add(self, new_skill)
+
+        self._visible_skills_cache.clear()
+        return True
+
+    def can_unequip_skill(self, skill_nid: NID) -> bool:
+        """
+        Verifica se a skill está equipada e se pode ser removida pelo jogador
+        (ou seja, se possui o componente 'class_skill').
+        """
+        target = next((s for s in self._skills if s.get().nid == skill_nid), None)
+        if not target:
+            return False
+        skill_obj = target.get()
+        return hasattr(skill_obj, 'components') and 'class_skill' in skill_obj.components
+
+    def unequip_skill(self, skill_nid: NID) -> bool:
+        """
+        Desequipa uma habilidade ativa da unidade respeitando o ciclo do skill_system.
+        """
+        if not self.can_unequip_skill(skill_nid):
+            return False
+
+        target = next((s for s in self._skills if s.get().nid == skill_nid), None)
+        skill_obj = target.get()
+
+        # Ciclo de remoção de efeitos da engine
+        skill_system.before_remove(self, skill_obj)
+        self._skills.remove(target)
+        skill_system.after_remove(self, skill_obj)
+
+        self._visible_skills_cache.clear()
+        return True
+
     def add_skill(self, skill, source=None, source_type=SourceType.DEFAULT, test=False):
         """
         # Adds skill to the UnitSkill list while checking if the skill already exists/stack is full
@@ -441,6 +543,18 @@ class UnitObject(Prefab):
             if len(displaceable_skills) > 0:
                 popped_skill = displaceable_skills[0]
         if not test:
+            # Se for uma skill válida (com 'class_skill'), adiciona à reserva permanente
+            if hasattr(skill, 'components') and 'class_skill' in skill.components:
+                if skill.nid not in self.learned_skills:
+                    self.learned_skills.append(skill.nid)
+
+                    # Teste se skill aprendida entrou na lista
+                    # print(f"--> [TESTE LEVEL UP] {self.name} aprendeu e salvou: {skill.nid} | Learned: {self.learned_skills}")
+
+                # Se veio especificamente de uma classe, registra também em class_skills
+                if source_type == SourceType.KLASS and skill.nid not in self.class_skills:
+                    self.class_skills.append(skill.nid)
+
             self._skills.append(UnitSkill(skill, source, source_type))
             self._visible_skills_cache.clear()
         return popped_skill
@@ -463,6 +577,8 @@ class UnitObject(Prefab):
             self._skills.remove(to_remove)
             self._visible_skills_cache.clear()
         return removed_skill_info
+
+    
 
     @property
     def all_skills(self) -> List[SkillObject]:
@@ -923,6 +1039,8 @@ class UnitObject(Prefab):
                   # current parent skill instance (see GameState load + restore).
                   'skills': [(skill_info.skill_obj.uid, skill_info.source, skill_info.source_type)
                              for skill_info in self._skills if skill_info.source_type != SourceType.AURA],
+                  'learned_skills': list(self.learned_skills),
+                  'class_skills': list(self.class_skills),
                   'notes': self.notes,
                   'current_hp': self.current_hp,
                   'current_mana': self.current_mana,
@@ -989,6 +1107,14 @@ class UnitObject(Prefab):
                         for skill_uid, source, source_type in s_dict['skills']
                         if source_type != SourceType.AURA]
         self._skills = [s for s in self._skills if s.get()]
+
+        # Restaura as listas de skills aprendidas e de classe
+        self.class_skills = s_dict.get('class_skills', [])
+        if 'learned_skills' in s_dict:
+            self.learned_skills = s_dict.get('learned_skills', [])
+        else:
+            # Fallback para saves antigos: coleta as skills equipadas com 'class_skill'
+            self.learned_skills = [s.get().nid for s in self._skills if 'class_skill' in s.get().components]
 
         self.current_hp = s_dict['current_hp']
         self.current_mana = s_dict['current_mana']

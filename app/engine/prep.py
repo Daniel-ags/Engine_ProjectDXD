@@ -37,7 +37,7 @@ class PrepMainState(MapState):
         """return (options, ignore, events), which should all be the same size
         """
         # basic options
-        options = ['Manage', 'Formation', 'Options', 'Save', 'Fight']
+        options = ['Manage', 'Skills','Formation', 'Options', 'Save', 'Fight']
         if game.level_vars.get('_prep_pick'):
             options.insert(0, 'Pick Units')
         if cf.SETTINGS['debug']:
@@ -46,6 +46,8 @@ class PrepMainState(MapState):
         # Don't manage units if there's nobody in the party!
         if not game.get_units_in_party():
             ignore[0] = True
+        if 'Skills' in options:
+            ignore[options.index('Skills')] = True
 
         # initialize custom options and events
         events = [None for option in options]
@@ -126,6 +128,9 @@ class PrepMainState(MapState):
                 game.state.change('transition_to')
             elif selection == 'Manage':
                 game.memory['next_state'] = 'prep_manage'
+                game.state.change('transition_to')
+            elif selection == 'Skills':
+                game.memory['next_state'] = 'base_skills_select'
                 game.state.change('transition_to')
             elif selection == 'Formation':
                 self.bg.fade_out()

@@ -144,6 +144,8 @@ class StateMachine():
              'prep_gba_map': prep_gba.PrepGBAMapState,
              'base_main': base.BaseMainState,
              'base_market_select': base.BaseMarketSelectState,
+             'base_skills_select': base.BaseSkillsSelectState,
+             'base_skills_manage': base.BaseSkillsManageState,
              'base_bexp_select': base.BaseBEXPSelectState,
              'base_bexp_allocate': base.BaseBEXPAllocateState,
              'base_convos_child': base.BaseConvosChildState,
