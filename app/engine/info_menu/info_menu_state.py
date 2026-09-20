@@ -575,7 +575,7 @@ class InfoMenuState(State):
 
         elif self.state == 'skills':
             main_surf.blit(SPRITES.get('class_skills'), (WINWIDTH - 98, WINHEIGHT - 70))
-            main_surf.blit(SPRITES.get('status_logo'), (WINWIDTH - 89, WINHEIGHT - 139))
+            main_surf.blit(SPRITES.get('status_logo'), (WINWIDTH - 89, WINHEIGHT - 136))
             if not self.class_skill_surf:
                 self.class_skill_surf = self.create_class_skill_surf()
             self.draw_class_skill_surf(main_surf)
@@ -965,18 +965,18 @@ class InfoMenuState(State):
 
         # Calcula a quantidade de linhas necessárias para as normal skills (máximo de 3)
         num_skills = len(unique_skills)
-        num_lines = min(3, max(1, (num_skills + 5) // 6))
+        num_lines = min(2, max(1, (num_skills + 5) // 6))
         total_height = num_lines * 24
 
         surf = engine.create_surface((WINWIDTH - 96, total_height), transparent=True)
 
-        # Laço limitado a 18 skills (3 linhas cheias de 6)
-        for idx, skill in enumerate(unique_skills[:18]):
+        # Laço limitado a 12 skills (2 linhas cheias de 6)
+        for idx, skill in enumerate(unique_skills[:12]):
             col = idx % 6   # Coluna de 0 a 5
             row = idx // 6  # Linha de 0 a 2
             
             left_pos = col * 24
-            row_offset = row * 18
+            row_offset = row * 24
 
             icons.draw_skill(surf, skill, (left_pos + 8, 4 + row_offset), compact=False, grey=skill_system.is_grey(skill, self.unit))
             
@@ -991,14 +991,14 @@ class InfoMenuState(State):
             help_dlg = build_dialog_list(skill, PageType.SKILL, unit=self.unit)
             
             # Registra no info_graph somando o row_offset da linha atual
-            self.info_graph.register((92 + left_pos + 8, WINHEIGHT - 126 + row_offset, 16, 16), help_dlg, 'skills')
+            self.info_graph.register((92 + left_pos + 8, WINHEIGHT - 118 + row_offset, 16, 16), help_dlg, 'skills')
 
         return surf
 
     # Surf Y - help_dlg Y == (WINHEIGHT - X ) - (WINHEIGHT - X) == 4px
 
     def draw_skill_surf(self, surf):
-        surf.blit(self.skill_surf, (92, WINHEIGHT - 130))
+        surf.blit(self.skill_surf, (92, WINHEIGHT - 122))
 
     def create_class_skill_surf(self):
         class_skills = [skill for skill in self.unit.skills if skill.class_skill and not skill_system.hidden(skill, self.unit)]
@@ -1013,17 +1013,17 @@ class InfoMenuState(State):
                 skill_counter[skill.nid] += 1
 
         num_skills = len(unique_skills)
-        num_lines = min(3, max(1, (num_skills + 5) // 6))
+        num_lines = min(2, max(1, (num_skills + 5) // 6))
         total_height = num_lines * 24
 
         surf = engine.create_surface((WINWIDTH - 96, total_height), transparent=True)
 
-        for idx, skill in enumerate(unique_skills[:18]):
+        for idx, skill in enumerate(unique_skills[:12]):
             col = idx % 6
             row = idx // 6
             
             left_pos = col * 24
-            row_offset = row * 18
+            row_offset = row * 24
 
             # Desenha o ícone (Y inicial 8 + row_offset)
             icons.draw_skill(surf, skill, (left_pos + 8, 8 + row_offset), compact=False, grey=skill_system.is_grey(skill, self.unit))
@@ -1039,14 +1039,14 @@ class InfoMenuState(State):
                 self=skill)
             help_dlg = build_dialog_list(skill, PageType.SKILL, unit=self.unit)
             
-            self.info_graph.register((92 + left_pos + 8, WINHEIGHT - 54 + row_offset, 16, 16), help_dlg, 'skills')
+            self.info_graph.register((92 + left_pos + 8, WINHEIGHT - 50 + row_offset, 16, 16), help_dlg, 'skills')
 
         return surf
 
     # Surf Y - help_dlg Y == (WINHEIGHT - X ) - (WINHEIGHT - X) == 8px
 
     def draw_class_skill_surf(self, surf):
-            surf.blit(self.class_skill_surf, (92, WINHEIGHT - 62))
+            surf.blit(self.class_skill_surf, (92, WINHEIGHT - 58))
 
 
     def create_support_surf(self):

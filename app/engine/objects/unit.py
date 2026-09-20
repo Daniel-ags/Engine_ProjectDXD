@@ -109,7 +109,7 @@ class UnitObject(Prefab):
 
     learned_skills: List[NID] = field(default_factory=list)  #: Todas as skills que a unidade já aprendeu
     class_skills: List[NID] = field(default_factory=list)    #: Skills que pertencem à classe atual
-    max_skills: int = 18
+    max_skills: int = 12                                     #: Max de class_skill ativas
 
     _visible_skills_cache: List[SkillObject] = field(default_factory=list)
 
@@ -285,7 +285,7 @@ class UnitObject(Prefab):
                 self._skills.append(s)
             self._visible_skills_cache.clear()
 
-            # Identifica as skills da classe atual que possuem o componente 'class_skill'
+            # Identifica as skills que possuem o componente 'class_skill'
             self.class_skills = [s.nid for s in class_skills if 'class_skill' in s.components]
 
             # Inicializa as skills aprendidas com qualquer skill inicial que tenha 'class_skill'
@@ -543,15 +543,11 @@ class UnitObject(Prefab):
             if len(displaceable_skills) > 0:
                 popped_skill = displaceable_skills[0]
         if not test:
-            # Se for uma skill válida (com 'class_skill'), adiciona à reserva permanente
-            if hasattr(skill, 'components') and 'class_skill' in skill.components:
+            # Registra na reserva se tiver a tag 'class_skill' OU se veio de Classe/Pessoal
+            is_class_skill = hasattr(skill, 'components') and 'class_skill' in skill.components
+            if is_class_skill or source_type in (SourceType.KLASS, SourceType.PERSONAL):
                 if skill.nid not in self.learned_skills:
                     self.learned_skills.append(skill.nid)
-
-                    # Teste se skill aprendida entrou na lista
-                    # print(f"--> [TESTE LEVEL UP] {self.name} aprendeu e salvou: {skill.nid} | Learned: {self.learned_skills}")
-
-                # Se veio especificamente de uma classe, registra também em class_skills
                 if source_type == SourceType.KLASS and skill.nid not in self.class_skills:
                     self.class_skills.append(skill.nid)
 
