@@ -163,11 +163,11 @@ class GainWexp(Banner):
             icons.draw_weapon(surf, self.item, (self.size[0] - 20, 7))
 
 class GiveSkill(Banner):
-    def __init__(self, unit: UnitObject, skill: SkillObject):
+    def __init__(self, unit: UnitObject, skill: SkillObject, draw_icon: bool = True):
         super().__init__()
         self.unit = unit
-        self.item = skill
-        self.text = '<blue>{name}</> got <blue>{skill_name}</>.'.format(name=unit.name, skill_name=skill.name)
+        self.item = skill if draw_icon else None
+        self.text = '<blue>{name}</> got <blue>{skill_name}</>'.format(name=unit.name, skill_name=skill.name)
         self.figure_out_size()
         self.sound = 'Item'
 

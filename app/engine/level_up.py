@@ -1,6 +1,5 @@
 import math
-
-from typing import Callable, List, Tuple, TYPE_CHECKING
+from typing import Callable, List, Tuple
 from app.utilities.typing import NID
 
 from app.constants import TILEWIDTH, TILEHEIGHT, WINWIDTH, WINHEIGHT
@@ -9,20 +8,22 @@ from app.data.database.database import DB
 
 from app.utilities import utils
 from app.engine import engine, image_mods, icons, unit_funcs, \
-    action, banner, skill_system, exp_funcs
+    action, banner, skill_system, exp_funcs, item_funcs, base_surf, menus, help_menu
 from app.engine.sprites import SPRITES
 from app.engine.sound import get_sound_thread
 from app.engine.fonts import FONT
+from app.engine.fluid_scroll import FluidScroll
 from app.events import triggers
 from app.engine.state import State
 from app.engine.state_machine import SimpleStateMachine
 from app.engine.animations import Animation
 from app.engine.game_state import game
-from app.engine.graphics.text.text_renderer import render_text
+from app.engine.graphics.text.text_renderer import render_text, text_width
 from app.utilities.enums import HAlignment
 
 from app.engine.objects.unit import UnitObject
 from app.engine.source_type import SourceType
+
 
 class ExpState(State):
     name = 'exp'
@@ -38,11 +39,10 @@ class ExpState(State):
         else:
             game.state.back()
             return 'repeat'
-        # Check if we need to use a custom method
+
         self.method = None
         if game.memory.get('exp_method'):
-            self.method = game.memory['exp_method']
-            game.memory['exp_method'] = None
+            self.method = game.memory.pop('exp_method')
 
         self.old_exp = self.unit.exp
         self.old_level = self.unit.level
@@ -73,21 +73,16 @@ class ExpState(State):
             max_exp = 100 * (self.unit_klass.max_level - self.old_level) - self.old_exp
             self.exp_gain = min(self.exp_gain, max_exp)
 
-        self.total_time_for_exp = max(1, utils.frames2ms(abs(self.exp_gain)))  # 1 frame per exp
+        self.total_time_for_exp = max(1, utils.frames2ms(abs(self.exp_gain)))
 
         self.stat_changes = None
         self.new_wexp = None
 
-        if exp_funcs.can_give_exp(self.unit, self.exp_gain) or self.mana_to_gain or \
-                self.starting_state in ('promote', 'class_change', 'stat_booster'):
-            pass
-        else:
-            # We're done here, since the unit is at max level and has no stats to gain, mana to gain, or exp to lose
+        if not (exp_funcs.can_give_exp(self.unit, self.exp_gain) or self.mana_to_gain or
+                self.starting_state in ('promote', 'class_change', 'stat_booster')):
             game.state.back()
             return 'repeat'
 
-        # determine source for trigger later
-        # purposefully explicit here
         self.source = 'exp_gain'
         if self.starting_state == 'stat_booster':
             self.source = 'stat_change'
@@ -102,7 +97,6 @@ class ExpState(State):
         game.cursor.hide()
 
     def end(self):
-        # Just in case, make sure this doesn't last forever
         get_sound_thread().stop_sfx('Experience Gain')
 
     def create_level_up_logo(self):
@@ -119,7 +113,7 @@ class ExpState(State):
                 top = (y - game.camera.get_y() - 1) * TILEHEIGHT
                 pos = (left, top)
             else:
-                pos = (WINWIDTH//2, WINHEIGHT//2)
+                pos = (WINWIDTH // 2, WINHEIGHT // 2)
             anim = RESOURCES.animations.get('LevelUpMap')
             if anim:
                 anim = Animation(anim, pos)
@@ -128,7 +122,6 @@ class ExpState(State):
     def update(self):
         current_time = engine.get_time()
 
-        # Initiating State
         if self.state.get_state() == 'init':
             self.exp_bar = ExpBar(self.old_exp, center=not self.combat_object)
             self.start_time = current_time
@@ -139,7 +132,6 @@ class ExpState(State):
 
             self.state.change('exp_wait')
 
-        # Wait before starting to increment exp
         elif self.state.get_state() == 'exp_wait':
             self.exp_bar.update(self.old_exp)
             if self.mana_bar:
@@ -149,25 +141,20 @@ class ExpState(State):
                 self.start_time = current_time
                 get_sound_thread().play_sfx('Experience Gain', True)
 
-        # Increment exp until done or 100 exp is reached
         elif self.state.get_state() == 'exp0':
-            progress = (current_time - self.start_time)/float(self.total_time_for_exp)
-            progress = utils.clamp(progress, 0, 1)
-            exp_set = self.old_exp + progress * self.exp_gain
+            progress = utils.clamp((current_time - self.start_time) / float(self.total_time_for_exp), 0, 1)
+            exp_set = int(self.old_exp + progress * self.exp_gain)
             self.exp_bar.update(exp_set)
-            exp_set = int(exp_set)
 
             if self.mana_bar:
-                mana_set = self.old_mana + progress * self.mana_to_gain
+                mana_set = int(self.old_mana + progress * self.mana_to_gain)
                 self.mana_bar.update(mana_set)
-                mana_set = int(mana_set)
 
             if exp_set >= self.old_exp + self.exp_gain:
                 get_sound_thread().stop_sfx('Experience Gain')
 
             if exp_set >= 100:
-                max_level = self.unit_klass.max_level
-                if self.unit.level >= max_level:  # Do I promote?
+                if self.unit.level >= self.unit_klass.max_level:
                     get_sound_thread().stop_sfx('Experience Gain')
                     if self.auto_promote:
                         self.exp_bar.update(100)
@@ -189,37 +176,31 @@ class ExpState(State):
                     get_sound_thread().stop_sfx('Experience Gain')
 
             if current_time - self.start_time >= self.total_time_for_exp + 500:
-                get_sound_thread().stop_sfx('Experience Gain')  # Just in case
+                get_sound_thread().stop_sfx('Experience Gain')
                 self.state.clear()
                 self.state.change('exp_leave')
                 self.exp_bar.fade_out()
                 self.start_time = current_time
 
         elif self.state.get_state() == 'exp_leave':
-            done = self.exp_bar.update()
-            if done:
+            if self.exp_bar.update():
                 action.do(action.GainExp(self.unit, self.exp_gain))
                 if self.mana_to_gain:
                     action.do(action.ChangeMana(self.unit, self.mana_to_gain))
                 action.do(action.UpdateRecords('exp_gain', (self.unit.nid, self.exp_gain, self.unit.klass)))
                 self.state.back()
                 self.start_time = current_time
-                # If we're ready to leave
                 if len(self.state.state) <= 0:
                     game.state.back()
-                # Otherwise, we're probably about to level up!
 
         elif self.state.get_state() == 'exp100':
-            progress = (current_time - self.start_time)/float(self.total_time_for_exp)
-            exp_set = self.old_exp + (self.exp_gain * progress) - 100
-            exp_set = min(self.old_exp + self.exp_gain - 100, exp_set)
+            progress = (current_time - self.start_time) / float(self.total_time_for_exp)
+            exp_set = int(min(self.old_exp + (self.exp_gain * progress) - 100, self.old_exp + self.exp_gain - 100))
             self.exp_bar.update(exp_set)
-            exp_set = int(exp_set)
 
             if exp_set >= self.old_exp + self.exp_gain - 100:
                 get_sound_thread().stop_sfx('Experience Gain')
 
-            # Extra time to account for pause at end
             if current_time - self.start_time >= self.total_time_for_exp + 333:
                 old_growth_points = self.unit.growth_points.copy()
                 self.stat_changes = unit_funcs.get_next_level_up(self.unit, self.unit.get_internal_level(), self.method)
@@ -235,20 +216,17 @@ class ExpState(State):
                 self.start_time = current_time
 
         elif self.state.get_state() == 'exp-100':
-            progress = (current_time - self.start_time)/float(self.total_time_for_exp)
-            exp_set = 100 + self.old_exp + (self.exp_gain * progress)
-            exp_set = max(100 + self.old_exp + self.exp_gain, exp_set)
+            progress = (current_time - self.start_time) / float(self.total_time_for_exp)
+            exp_set = int(max(100 + self.old_exp + (self.exp_gain * progress), 100 + self.old_exp + self.exp_gain))
             self.exp_bar.update(exp_set)
-            exp_set = int(exp_set)
 
             if exp_set <= 100 + self.old_exp + self.exp_gain:
                 get_sound_thread().stop_sfx('Experience Gain')
 
-            # Extra time to account for pause at end
             if current_time - self.start_time >= self.total_time_for_exp + 333:
                 old_growth_points = self.unit.growth_points.copy()
                 stat_changes = unit_funcs.get_next_level_up(self.unit, self.unit.get_internal_level() - 1, self.method)
-                self.stat_changes = {nid: -value for nid, value in stat_changes.items()}  # Make negative
+                self.stat_changes = {nid: -value for nid, value in stat_changes.items()}
                 action.do(action.GrowthPointChange(self.unit, old_growth_points, self.unit.growth_points))
                 action.do(action.SetLevel(self.unit, self.unit.level - 1))
                 action.do(action.ApplyStatChanges(self.unit, self.stat_changes, self.name == 'bonus_exp'))
@@ -275,30 +253,35 @@ class ExpState(State):
                 self.level_up_screen = LevelUpScreen(
                     self, self.unit, self.stat_changes, self.old_level, self.unit.level, self.unit_klass)
             if self.level_up_screen.update(current_time):
-                game.state.back()
                 game.events.trigger(triggers.UnitLevelUp(self.unit, self.stat_changes, self.source))
                 if self.combat_object:
                     self.combat_object.lighten_ui()
 
-                # check for weapon experience gain
                 if self.new_wexp:
                     for weapon_nid, value in self.new_wexp.items():
                         action.do(action.AddWexp(self.unit, weapon_nid, value))
 
-                # check for skill gain unless the unit is using a booster to
-                # get to this screen
                 if self.starting_state != "stat_booster":
                     ExpState.give_new_personal_skills(self.unit)
-                    if self.starting_state == 'class_change':
-                        if DB.constants.value('learn_skills_on_reclass'):
-                            ExpState.give_all_class_skills(self.unit)
-                    elif self.starting_state == 'promote':
-                        if DB.constants.value('learn_skills_on_promote'):
-                            ExpState.give_all_class_skills(self.unit)
-                    else:
+                    should_learn = (
+                        (self.starting_state == 'class_change' and DB.constants.value('learn_skills_on_reclass')) or
+                        (self.starting_state == 'promote' and DB.constants.value('learn_skills_on_promote')) or
+                        (self.starting_state not in ('class_change', 'promote'))
+                    )
+                    if should_learn:
                         ExpState.give_new_class_skills(self.unit)
 
-        # Wait 100 ms before transferring to the promotion state
+                if game.memory.get('skill_swap_queue'):
+                    self.state.change('wait_for_skill_swap')
+                else:
+                    if game.alerts:
+                        game.state.change('alert')
+                    game.state.back()
+
+        elif self.state.get_state() == 'wait_for_skill_swap':
+            if not game.memory.get('skill_swap_queue') and not game.alerts:
+                game.state.back()
+
         elif self.state.get_state() == 'prepare_promote':
             self.exp_bar.update()
             if current_time - self.start_time > 100:
@@ -309,7 +292,6 @@ class ExpState(State):
                         game.memory['current_unit'] = self.unit
                         game.state.change('promotion_choice')
                         game.state.change('transition_out')
-                        # We are leaving
                         self.state.clear()
                         self.state.change('wait')
                         self.start_time = current_time
@@ -317,7 +299,7 @@ class ExpState(State):
                         game.memory['current_unit'] = self.unit
                         game.memory['next_class'] = class_options[0]
                         game.state.change('promotion')
-                        game.state.change('transition_out')  # We are leaving
+                        game.state.change('transition_out')
                         self.state.clear()
                         self.state.change('wait')
                         self.start_time = current_time
@@ -352,7 +334,7 @@ class ExpState(State):
             self.start_time = current_time
 
         elif self.state.get_state() == 'wait':
-            if current_time - self.start_time > 1000:  # Wait a while
+            if current_time - self.start_time > 1000:
                 game.state.back()
 
     def draw(self, surf):
@@ -386,66 +368,71 @@ class ExpState(State):
                     game.memory['current_unit'] = unit
                     game.state.change('feat_choice')
                 else:
-                    if skill_nid not in [skill.nid for skill in unit.skills]:
-                        if source_type == SourceType.KLASS:
-                            act = action.AddSkill(unit, skill_nid, source=unit.klass, source_type=SourceType.KLASS)
-                        else:
-                            act = action.AddSkill(unit, skill_nid, source=unit.nid, source_type=SourceType.PERSONAL)
+                    if not hasattr(unit, 'learned_skills'):
+                        unit.learned_skills = []
+
+                    if skill_nid in unit.learned_skills:
+                        continue
+
+                    unit.learned_skills.append(skill_nid)
+
+                    if source_type == SourceType.KLASS:
+                        if not hasattr(unit, 'class_skills'):
+                            unit.class_skills = []
+                        if skill_nid not in unit.class_skills:
+                            unit.class_skills.append(skill_nid)
+
+                    temp_skill = item_funcs.create_skill(unit, skill_nid)
+                    is_slot_skill = temp_skill and hasattr(temp_skill, 'components') and 'class_skill' in temp_skill.components
+                    source = unit.klass if source_type == SourceType.KLASS else unit.nid
+
+                    if not is_slot_skill or len(unit.get_equipped_skills()) < unit.max_skills:
+                        act = action.AddSkill(unit, skill_nid, source=source, source_type=source_type)
                         action.do(act)
                         if act.skill_obj and not skill_system.hidden(act.skill_obj, unit):
                             game.alerts.append(banner.GiveSkill(unit, act.skill_obj))
-                            game.state.change('alert')
+                    else:
+                        if unit.team == 'player':
+                            if 'skill_swap_queue' not in game.memory or not game.memory['skill_swap_queue']:
+                                game.memory['skill_swap_queue'] = []
+                            game.memory['skill_swap_queue'].append((unit, skill_nid, source, source_type))
+
+        if game.memory.get('skill_swap_queue'):
+            game.state.change('skill_swap_levelup')
 
     @staticmethod
     def give_new_class_skills(unit: UnitObject):
-        def compare(unit, level_needed):
-            return unit.level == level_needed
-
         unit_klass = DB.classes.get(unit.klass)
-        ExpState._give_skills(unit, unit_klass.learned_skills, compare, source_type=SourceType.KLASS)
+        ExpState._give_skills(unit, unit_klass.learned_skills, lambda u, req: u.level >= req, source_type=SourceType.KLASS)
+
+    give_all_class_skills = give_new_class_skills
 
     @staticmethod
     def give_new_personal_skills(unit: UnitObject):
-        def compare(unit, level_needed):
-            return unit.get_internal_level() == level_needed
-
         unit_prefab = DB.units.get(unit.nid)
-        if not unit_prefab:
-            return
-        ExpState._give_skills(unit, unit_prefab.learned_skills, compare, source_type=SourceType.PERSONAL)
+        if unit_prefab:
+            compare = lambda u, req: u.level >= req or u.get_internal_level() >= req
+            ExpState._give_skills(unit, unit_prefab.learned_skills, compare, source_type=SourceType.PERSONAL)
 
-    @staticmethod
-    def give_all_class_skills(unit: UnitObject):
-        def compare(unit, level_needed):
-            return unit.level >= level_needed
-
-        unit_klass = DB.classes.get(unit.klass)
-        ExpState._give_skills(unit, unit_klass.learned_skills, compare, source_type=SourceType.KLASS)
 
 class LevelUpScreen():
-    bg_top = SPRITES.get('level_screen_top')
-    bg_top = bg_top.convert_alpha()
-    bg_bottom = SPRITES.get('level_screen_bottom')
-    bg_bottom = bg_bottom.convert_alpha()
+    bg_top = SPRITES.get('level_screen_top').convert_alpha()
+    bg_bottom = SPRITES.get('level_screen_bottom').convert_alpha()
     width = bg_bottom.get_width()
     height = bg_bottom.get_height()
-
     spark_time = 350
     level_up_wait = 1366
-
     underline = SPRITES.get('stat_underline')
 
     def __init__(self, parent, unit, stat_changes, old_level, new_level, old_class):
         self.parent = parent
         self.unit = unit
-        self.stat_list = [stat_changes.get(nid, 0) for nid in DB.stats.keys()]
-        self.stat_list = self.stat_list[:8]  # Can only show first 8 stats on level up
+        self.stat_list = [stat_changes.get(nid, 0) for nid in DB.stats.keys()][:8]
         self.old_level = old_level
         self.new_level = new_level
         self.old_class = old_class
 
         self.current_spark = -1
-
         self.unit_scroll_offset = 80
         self.screen_scroll_offset = self.width + 32
         self.underline_offset = 36
@@ -456,29 +443,22 @@ class LevelUpScreen():
 
         self.state = 'scroll_in'
         self.start_time = 0
-
         self.flipped = False
         self.flip_start_time = 0
         self.flip_timer = 0
 
     def make_spark(self, topleft):
         anim = RESOURCES.animations.get('StatUpSpark')
-        if anim:
-            return Animation(anim, topleft)
-        return None
+        return Animation(anim, topleft) if anim else None
 
     def topleft(self):
         return (6 - self.screen_scroll_offset, WINHEIGHT - 8 - self.height)
 
     def get_position(self, i, absolute=False):
-        tl_offset = (0, 0)
-        if absolute:
-            tl_offset = self.topleft()
+        tl = self.topleft() if absolute else (0, 0)
         if i >= 4:
-            position = (self.width//2 + 8 + tl_offset[0], (i - 4) * 16 + 35 + tl_offset[1])
-        else:
-            position = (10 + tl_offset[0], i * 16 + 35 + tl_offset[1])
-        return position
+            return (self.width // 2 + 8 + tl[0], (i - 4) * 16 + 35 + tl[1])
+        return (10 + tl[0], i * 16 + 35 + tl[1])
 
     def inc_spark(self):
         self.current_spark += 1
@@ -509,25 +489,23 @@ class LevelUpScreen():
                         get_sound_thread().play_sfx('Level_Up_Level')
                     if self.flip_start_time and current_time - self.flip_start_time > 167:
                         self.flipped = True
-                if current_time - self.start_time > 850: # No level up spark
-                        self.state = 'get_next_spark'
-                        self.start_time = current_time
+                if current_time - self.start_time > 850:
+                    self.state = 'get_next_spark'
+                    self.start_time = current_time
             elif current_time - self.start_time > 500:
                 if self.old_level != self.new_level:
                     self.state = 'first_spark'
-                    topleft = (87, 27)
-                    self.animations.append(self.make_spark(topleft))
+                    self.animations.append(self.make_spark((87, 27)))
                     get_sound_thread().play_sfx('Level_Up_Level')
-                    self.start_time = current_time
                 else:
                     self.state = 'get_next_spark'
-                    self.start_time = current_time
+                self.start_time = current_time
 
         elif self.state == 'scroll_out':
             self.unit_scroll_offset += 10
             self.screen_scroll_offset += 20
             if current_time - self.start_time > 500:
-                return True  # Done
+                return True
 
         elif self.state == 'first_spark':
             if current_time - self.start_time > self.spark_time:
@@ -535,47 +513,34 @@ class LevelUpScreen():
                 self.start_time = current_time
 
         elif self.state == 'get_next_spark':
-            done = self.inc_spark()
-            if done:
+            if self.inc_spark():
                 game.events.trigger(triggers.DuringUnitLevelUp(self.unit, self.parent.stat_changes, self.parent.source))
                 self.state = 'level_up_wait'
                 self.start_time = current_time
             else:
                 pos = self.get_position(self.current_spark)
-                # Animations
-                # Number
                 increase = self.stat_list[self.current_spark]
-                # Arrow
-                if increase > 0:
-                    anim = RESOURCES.animations.get('LevelUpArrow')
-                elif increase < 0:
-                    anim = RESOURCES.animations.get('LevelDownArrow')
+                arrow_nid = 'LevelUpArrow' if increase > 0 else 'LevelDownArrow'
+                anim = RESOURCES.animations.get(arrow_nid)
                 if anim:
-                    arrow_animation = Animation(anim, (pos[0] + 45, pos[1] - 11), hold=True)
-                    self.arrow_animations.append(arrow_animation)
+                    self.arrow_animations.append(Animation(anim, (pos[0] + 45, pos[1] - 11), hold=True))
 
                 offset_pos = self.get_position(self.current_spark, True)
-                # Spark
-                spark_pos = offset_pos[0] + 8, offset_pos[1] - 19
-                spark_anim = self.make_spark(spark_pos)
-                if spark_anim:
-                    self.animations.append(spark_anim)
+                spark = self.make_spark((offset_pos[0] + 8, offset_pos[1] - 19))
+                if spark:
+                    self.animations.append(spark)
 
-                if increase > 0:
-                    anim = RESOURCES.animations.get('LevelUpNumber' + str(increase))
-                elif increase < 0:
-                    anim = RESOURCES.animations.get('LevelDownNumber' + str(-increase))
+                num_nid = f'LevelUpNumber{increase}' if increase > 0 else f'LevelDownNumber{-increase}'
+                anim = RESOURCES.animations.get(num_nid)
                 if anim:
-                    number_animation = Animation(anim, (offset_pos[0] + 37, offset_pos[1] + 4), delay=80, hold=True)
-                    self.animations.append(number_animation)
+                    self.animations.append(Animation(anim, (offset_pos[0] + 37, offset_pos[1] + 4), delay=80, hold=True))
                 else:
-                    if increase > 0:
-                        self.simple_nums.append(('stat', 'white', '+' + str(increase), (offset_pos[0] + 57, offset_pos[1] - 2), current_time))
-                    elif increase < 0:
-                        self.simple_nums.append(('stat', 'purple', str(increase), (offset_pos[0] + 57, offset_pos[1] - 2), current_time))
+                    color = 'white' if increase > 0 else 'purple'
+                    text = f'+{increase}' if increase > 0 else str(increase)
+                    self.simple_nums.append(('stat', color, text, (offset_pos[0] + 57, offset_pos[1] - 2), current_time))
 
                 get_sound_thread().play_sfx('Stat Up')
-                self.underline_offset = 36 # for underline growing
+                self.underline_offset = 36
                 self.state = 'spark_wait'
                 self.start_time = current_time
 
@@ -593,28 +558,16 @@ class LevelUpScreen():
     def draw(self, surf):
         sprite_top = self.bg_top.copy()
         sprite_bottom = self.bg_bottom.copy()
-        # Changes through entire color wheel
-        # from t = 0 to t = 1 in
-        # 180 * 10 milliseconds
-        t = math.sin(math.radians((engine.get_time()//10) % 180))
+        t = math.sin(math.radians((engine.get_time() // 10) % 180))
         new_color = image_mods.blend_colors((88, 16, -40), (-80, -32, 40), t)
 
-        # Render top
-        if self.flipped == False:
-            klass = self.old_class.name
-        else:
-            klass = DB.classes.get(self.unit.klass).name
-        if FONT['text'].width(klass) > 60:
-            FONT['narrow'].blit(klass, sprite_top, (12, 3))
-        else:
-            FONT['text'].blit(klass, sprite_top, (12, 3))
-        FONT['text-yellow'].blit('Lv', sprite_top, (self.width//2 + 12, 3))
-        if self.state in ('scroll_in', 'init_wait') and self.flipped == False:
-            level = str(self.old_level)
-        else:
-            level = str(self.new_level)
-        width = FONT['text-blue'].width(level)
-        FONT['text-blue'].blit(level, sprite_top, (self.width//2 + 50 - width, 3))
+        klass = self.old_class.name if not self.flipped else DB.classes.get(self.unit.klass).name
+        font = FONT['narrow'] if FONT['text'].width(klass) > 60 else FONT['text']
+        font.blit(klass, sprite_top, (12, 3))
+        FONT['text-yellow'].blit('Lv', sprite_top, (self.width // 2 + 12, 3))
+
+        level = str(self.old_level) if self.state in ('scroll_in', 'init_wait') and not self.flipped else str(self.new_level)
+        FONT['text-blue'].blit(level, sprite_top, (self.width // 2 + 50 - FONT['text-blue'].width(level), 3))
 
         if engine.get_time() > self.flip_start_time:
             self.flip_timer = (engine.get_time() - self.flip_start_time) / 333
@@ -623,62 +576,46 @@ class LevelUpScreen():
         if self.flip_timer:
             sprite_top = image_mods.do_flip(sprite_top, self.flip_timer)
 
-        pos = (6 - self.screen_scroll_offset, WINHEIGHT - 8 - self.height)
-        surf.blit(sprite_top, pos)
+        surf.blit(sprite_top, self.topleft())
 
-        # Render underlines
         new_underline_surf = image_mods.change_color(self.underline, new_color)
         for idx, num in enumerate(self.stat_list[:self.current_spark + 1]):
-            if num != 0:  # Stat change
+            if num != 0:
                 if idx == self.current_spark:
-                    rect = (self.underline_offset, 0,
-                            new_underline_surf.get_width() - self.underline_offset, 3)
-                    new_underline_surf = engine.subsurface(new_underline_surf, rect)
-                    # Change underline offset
+                    rect = (self.underline_offset, 0, new_underline_surf.get_width() - self.underline_offset, 3)
+                    clipped = engine.subsurface(new_underline_surf, rect)
                     self.underline_offset = max(0, self.underline_offset - 6)
                     pos = self.get_position(idx)
-                    pos = (pos[0] + self.underline_offset//2 + 1, pos[1] + 10)
+                    sprite_bottom.blit(clipped, (pos[0] + self.underline_offset // 2 + 1, pos[1] + 10))
                 else:
                     pos = self.get_position(idx)
-                    pos = (pos[0] + 4, pos[1] + 11)
-                sprite_bottom.blit(new_underline_surf, pos)
+                    sprite_bottom.blit(new_underline_surf, (pos[0] + 4, pos[1] + 11))
 
-        # Update and draw arrow animations
         self.arrow_animations = [a for a in self.arrow_animations if not a.update()]
         for animation in self.arrow_animations:
             animation.draw(sprite_bottom, blend=new_color)
 
-        # Draw stats
         for idx, stat in enumerate(DB.stats.keys()):
-            # Can only show first 8 stats on levelup
             if idx >= len(self.stat_list):
                 continue
             pos = self.get_position(idx)
-            name = DB.stats.get(stat).name
-            render_text(sprite_bottom, ['text'], [name], ['yellow'], pos)
-            text = self.unit.stats[stat] - (self.stat_list[idx] if self.current_spark < idx else 0)
-            width = FONT['text-blue'].width(str(text))
-            FONT['text-blue'].blit(str(text), sprite_bottom, (pos[0] + 40 - width, pos[1]))
+            render_text(sprite_bottom, ['text'], [DB.stats.get(stat).name], ['yellow'], pos)
+            val = self.unit.stats[stat] - (self.stat_list[idx] if self.current_spark < idx else 0)
+            FONT['text-blue'].blit(str(val), sprite_bottom, (pos[0] + 40 - FONT['text-blue'].width(str(val)), pos[1]))
 
-        # Blit unit's pic
-        right = WINWIDTH - 4
-        bottom = WINHEIGHT + self.unit_scroll_offset
-        icons.draw_portrait(surf, self.unit, bottomright=(right, bottom))
+        icons.draw_portrait(surf, self.unit, bottomright=(WINWIDTH - 4, WINHEIGHT + self.unit_scroll_offset))
+        surf.blit(sprite_bottom, self.topleft())
 
-        pos = (6 - self.screen_scroll_offset, WINHEIGHT - 8 - self.height)
-        surf.blit(sprite_bottom, pos)
-
-        # Update and draw animations
         self.animations = [a for a in self.animations if not a.update()]
-        # offset = game.camera.get_x() * TILEWIDTH, game.camera.get_y() * TILEHEIGHT
         for animation in self.animations:
             animation.draw(surf)
 
-        for font, color, text, pos, time in self.simple_nums:
+        for font_k, color, text, pos, time in self.simple_nums:
             if engine.get_time() - time > 80:
-                render_text(surf, [font], [text], [color], pos, align=HAlignment.RIGHT)
+                render_text(surf, [font_k], [text], [color], pos, align=HAlignment.RIGHT)
 
         return surf
+
 
 class ExpBar():
     background = engine.subsurface(SPRITES.get('expbar'), (0, 0, 144, 24))
@@ -691,14 +628,9 @@ class ExpBar():
 
     def __init__(self, old_exp, center=True):
         self.bg_surf = self.create_bg_surf()
-        if center:
-            self.pos = WINWIDTH//2 - self.width//2, WINHEIGHT//2 - self.height//2
-        else:
-            self.pos = WINWIDTH//2 - self.width//2, WINHEIGHT - self.height
-
-        self.offset = self.height//2  # Start with fade in
+        self.pos = (WINWIDTH // 2 - self.width // 2, WINHEIGHT // 2 - self.height // 2) if center else (WINWIDTH // 2 - self.width // 2, WINHEIGHT - self.height)
+        self.offset = self.height // 2
         self.done = False
-
         self.num = old_exp
 
     def create_bg_surf(self):
@@ -712,8 +644,8 @@ class ExpBar():
 
     def update(self, exp: float = None):
         if self.done:
-            self.offset += 1  # So fade in and out
-            if self.offset >= self.height//2:
+            self.offset += 1
+            if self.offset >= self.height // 2:
                 return True
         elif self.offset > 0:
             self.offset -= 1
@@ -723,23 +655,15 @@ class ExpBar():
 
     def draw(self, surf):
         new_surf = engine.copy_surface(self.bg_surf)
-
-        # Blit correct number of sprites for middle of exp bar
         idx = int(100 * max(0, self.num) / self.bar_max)
         for x in range(idx):
             new_surf.blit(self.middle, (10 + x, 9))
-
-        # Blit end of exp bar
         new_surf.blit(self.end, (10 + idx, 9))
-
-        # Blit current amount of exp
         FONT['number_small3'].blit_right(str(int(self.num)), new_surf, (self.width - 8, 4))
-
-        # Transition
         new_surf = engine.subsurface(new_surf, (0, self.offset, self.width, self.height - self.offset * 2))
-
         surf.blit(new_surf, (self.pos[0], self.pos[1] + self.offset))
         return surf
+
 
 class ManaBar(ExpBar):
     background = engine.subsurface(SPRITES.get('manabar'), (0, 0, 136, 24))
@@ -750,3 +674,359 @@ class ManaBar(ExpBar):
     def __init__(self, old_exp, center=True):
         super().__init__(old_exp, center)
         self.pos = self.pos[0], self.pos[1] - self.height
+
+
+class SkillSwapLevelUpState(State):
+    name = 'skill_swap_levelup'
+    transparent = True
+
+    def __init__(self, name=None):
+        super().__init__(name)
+        self.unit = None
+        self.new_skill_nid = None
+        self.source = None
+        self.source_type = None
+        self.new_skill_obj = None
+
+        self.equipped_skills = []
+        self.fluid = FluidScroll()
+        self.menu = None
+        self.button_disp = None
+        self.help_dialog = None
+        self.help_pos = (0, 0)
+
+        self.window_bg = None
+        self.right_window_bg = None
+        self.confirm_bg = None
+        self.confirm_cursor = menus.Cursor()
+
+        self.confirming = False
+        self.pending_action = None
+        self.pending_skill_idx = None
+        self.confirm_idx = 0
+        self.confirm_prompt = ""
+        self.confirm_font = 'text'
+        self.confirm_box_w = 120
+        self.confirm_box_h = 52
+        self.confirm_box_x = 60
+        self.confirm_box_y = 54
+
+    def start(self):
+        queue = game.memory.get('skill_swap_queue', [])
+        if not queue:
+            game.state.back()
+            return 'repeat'
+
+        self.unit, self.new_skill_nid, self.source, self.source_type = queue.pop(0)
+        self.new_skill_obj = item_funcs.create_skill(self.unit, self.new_skill_nid)
+        self.equipped_skills = self.unit.get_equipped_skills()
+
+        self.box_x, self.box_y = 6, 8
+        self.window_bg = image_mods.make_translucent(base_surf.create_base_surf(114, 144, 'menu_bg_base'), 0.1)
+
+        self.menu = menus.Choice(None, [s.name for s in self.equipped_skills], topleft=(6, 28), background=None)
+        self.menu.set_limit(7)
+        self.menu.width = 98
+        self.menu.draw_cursor = True
+
+        self.right_box_x, self.right_box_y = 124, 8
+        self.right_window_bg = image_mods.make_translucent(base_surf.create_base_surf(110, 108, 'menu_bg_base'), 0.1)
+
+        desc_text = getattr(self.new_skill_obj, 'desc', '') or "No description."
+        self.new_skill_desc_lines = self._wrap_text(FONT['narrow'], desc_text, 98)
+        self.button_disp = self._create_button_disp()
+
+    def begin(self):
+        self.fluid.reset_on_change_state()
+
+    def _create_button_disp(self):
+        sprite = SPRITES.get('buttons')
+        if not sprite:
+            return None
+        bg_surf = image_mods.make_translucent(base_surf.create_base_surf(110, 24, 'menu_bg_base'), 0.1)
+        bg_surf.blit(sprite.subsurface(0, 66, 14, 13), (6, 5))
+        FONT['narrow'].blit('Confirm', bg_surf, (22, 5))
+        bg_surf.blit(sprite.subsurface(0, 82, 14, 13), (60, 5))
+        FONT['narrow'].blit('Cancel', bg_surf, (76, 5))
+        return bg_surf
+
+    def _wrap_text(self, font, text: str, max_width: int):
+        words = text.split(' ')
+        lines, cur_line = [], []
+        for word in words:
+            test_line = ' '.join(cur_line + [word])
+            if font.width(test_line) <= max_width:
+                cur_line.append(word)
+            else:
+                if cur_line:
+                    lines.append(' '.join(cur_line))
+                cur_line = [word]
+        if cur_line:
+            lines.append(' '.join(cur_line))
+        return lines
+
+    def _update_help_dialog(self):
+        if not self.menu:
+            return
+        idx = self.menu.get_current_index()
+        if idx >= len(self.equipped_skills):
+            return
+
+        hovered = self.equipped_skills[idx]
+        rel_idx = idx - getattr(self.menu, 'scroll', 0)
+        self.help_pos = (self.box_x + 56, self.menu.topleft[1] + (rel_idx * 16) + 8)
+
+        desc = getattr(hovered, 'desc', '') or "No description."
+        HelpDialogClass = getattr(help_menu, 'HelpDialog', getattr(help_menu, 'HelpBox', None))
+        self.help_dialog = HelpDialogClass(desc) if HelpDialogClass else None
+
+    def _open_confirmation(self, action_type, skill_idx=None):
+        self.confirming = True
+        self.pending_action = action_type
+        self.pending_skill_idx = skill_idx
+        self.confirm_idx = 0
+
+        self.confirm_prompt = f"Replace {self.equipped_skills[skill_idx].name}?" if action_type == 'swap' else "Send to reserve?"
+
+        standard_w = text_width('text', self.confirm_prompt)
+        if standard_w > 180:
+            self.confirm_font = 'narrow'
+            prompt_w = text_width('narrow', self.confirm_prompt)
+        else:
+            self.confirm_font = 'text'
+            prompt_w = standard_w
+
+        self.confirm_box_w = max(124, min(WINWIDTH - 12, prompt_w + 24))
+        self.confirm_box_x = (WINWIDTH - self.confirm_box_w) // 2
+        self.confirm_bg = image_mods.make_translucent(
+            base_surf.create_base_surf(self.confirm_box_w, self.confirm_box_h, 'menu_bg_base'), 0.08
+        )
+
+    def _get_live_unit(self):
+        return game.get_unit(self.unit.nid) or self.unit
+
+    def _finish_and_alert(self, unit, skill_obj):
+        if skill_obj and not skill_system.hidden(skill_obj, unit):
+            alert = banner.GiveSkill(unit, skill_obj)
+            alert.item = None
+            if hasattr(alert, 'figure_out_size'):
+                alert.figure_out_size()
+            game.alerts.append(alert)
+        self.finish()
+
+    def _execute_swap(self):
+        unit = self._get_live_unit()
+        old_skill = self.equipped_skills[self.pending_skill_idx]
+
+        if not hasattr(unit, 'learned_skills') or unit.learned_skills is None:
+            unit.learned_skills = []
+        if self.new_skill_nid not in unit.learned_skills:
+            unit.learned_skills.append(self.new_skill_nid)
+
+        if hasattr(unit, 'unequip_skill'):
+            unit.unequip_skill(old_skill.nid)
+
+        parent_skill_obj = next((s for s in unit.skills if s.nid == old_skill.nid), None)
+        if parent_skill_obj:
+            try:
+                action.RemoveSkill(unit, parent_skill_obj).do()
+            except Exception:
+                if parent_skill_obj in unit.skills:
+                    unit.skills.remove(parent_skill_obj)
+
+        self.clean_aura_ghosts(unit, old_skill)
+
+        act = action.AddSkill(unit, self.new_skill_nid, source=self.source, source_type=self.source_type)
+        action.do(act)
+
+        if hasattr(unit, 'equip_skill'):
+            unit.equip_skill(self.new_skill_nid)
+        if hasattr(unit, 'reset_skills'):
+            unit.reset_skills()
+
+        skill_obj_to_show = getattr(act, 'skill_obj', None) or getattr(act, 'skill', None) or self.new_skill_obj
+        self._finish_and_alert(unit, skill_obj_to_show)
+
+    def _execute_keep_learned(self):
+        unit = self._get_live_unit()
+        if not hasattr(unit, 'learned_skills') or unit.learned_skills is None:
+            unit.learned_skills = []
+        if self.new_skill_nid not in unit.learned_skills:
+            unit.learned_skills.append(self.new_skill_nid)
+
+        self._finish_and_alert(unit, self.new_skill_obj)
+
+    def get_aura_subskill_nids(self, skill_or_nid) -> set:
+        skill_nid = skill_or_nid if isinstance(skill_or_nid, str) else skill_or_nid.nid
+        prefab = DB.skills.get(skill_nid)
+        subskills = set()
+        if not prefab:
+            return subskills
+
+        for sub in getattr(prefab, 'subskills', None) or []:
+            if isinstance(sub, str):
+                subskills.add(sub)
+
+        for comp in getattr(prefab, 'components', None) or []:
+            val = getattr(comp, 'value', None)
+            if isinstance(val, str) and val in DB.skills:
+                subskills.add(val)
+            elif isinstance(val, (list, tuple, set)):
+                subskills.update(item for item in val if isinstance(item, str) and item in DB.skills)
+            for attr in ('skill', 'subskill', 'target_skill', 'aura_skill', 'buff', 'status'):
+                attr_val = getattr(comp, attr, None)
+                if isinstance(attr_val, str) and attr_val in DB.skills:
+                    subskills.add(attr_val)
+        return subskills
+
+    def clean_aura_ghosts(self, source_unit, unequipped_skill):
+        buff_nids = self.get_aura_subskill_nids(unequipped_skill)
+        if not buff_nids:
+            return
+        for target in set(game.units):
+            ghosts = [s for s in list(target.skills) if s.nid in buff_nids]
+            for ghost in ghosts:
+                if ghost in target.skills:
+                    target.skills.remove(ghost)
+                if hasattr(target, 'reset_skills'):
+                    target.reset_skills()
+
+    def take_input(self, event):
+        first_push = self.fluid.update()
+        directions = self.fluid.get_directions()
+
+        if self.confirming:
+            if event == 'LEFT' or 'LEFT' in directions:
+                if self.confirm_idx != 0:
+                    get_sound_thread().play_sfx('Select 5')
+                    self.confirm_idx = 0
+            elif event == 'RIGHT' or 'RIGHT' in directions:
+                if self.confirm_idx != 1:
+                    get_sound_thread().play_sfx('Select 5')
+                    self.confirm_idx = 1
+            elif event in ('UP', 'DOWN') or 'UP' in directions or 'DOWN' in directions:
+                get_sound_thread().play_sfx('Select 5')
+                self.confirm_idx = 1 - self.confirm_idx
+
+            if event == 'BACK':
+                get_sound_thread().play_sfx('Select 4')
+                self.confirming = False
+            elif event == 'SELECT':
+                if self.confirm_idx == 0:
+                    get_sound_thread().play_sfx('Select 1')
+                    if self.pending_action == 'swap':
+                        self._execute_swap()
+                    else:
+                        self._execute_keep_learned()
+                else:
+                    get_sound_thread().play_sfx('Select 4')
+                    self.confirming = False
+            return
+
+        if self.help_dialog:
+            if event in ('INFO', 'BACK', 'SELECT'):
+                self.help_dialog = None
+                get_sound_thread().play_sfx('Info Out')
+                return
+
+            if self.menu:
+                moved = False
+                if 'DOWN' in directions or event == 'DOWN':
+                    moved = self.menu.move_down(first_push)
+                elif 'UP' in directions or event == 'UP':
+                    moved = self.menu.move_up(first_push)
+
+                if moved:
+                    get_sound_thread().play_sfx('Select 5')
+                    self._update_help_dialog()
+            return
+
+        if self.menu:
+            self.menu.handle_mouse()
+
+        if 'DOWN' in directions or event == 'DOWN':
+            if self.menu.move_down(first_push):
+                get_sound_thread().play_sfx('Select 5')
+        elif 'UP' in directions or event == 'UP':
+            if self.menu.move_up(first_push):
+                get_sound_thread().play_sfx('Select 5')
+        elif event == 'INFO':
+            if self.menu and self.menu.get_current_index() < len(self.equipped_skills):
+                self._update_help_dialog()
+                get_sound_thread().play_sfx('Info In')
+        elif event == 'BACK':
+            get_sound_thread().play_sfx('Select 4')
+            self._open_confirmation('cancel')
+        elif event == 'SELECT':
+            cur_idx = self.menu.get_current_index()
+            if self.equipped_skills and cur_idx < len(self.equipped_skills):
+                get_sound_thread().play_sfx('Select 1')
+                self._open_confirmation('swap', cur_idx)
+
+    def update(self):
+        super().update()
+        if self.confirming and self.confirm_cursor:
+            self.confirm_cursor.update()
+        elif self.menu:
+            self.menu.update()
+
+        if self.help_dialog and hasattr(self.help_dialog, 'update'):
+            self.help_dialog.update()
+
+    def finish(self):
+        queue = game.memory.get('skill_swap_queue', [])
+        if queue:
+            self.start()
+        else:
+            if 'skill_swap_queue' in game.memory:
+                del game.memory['skill_swap_queue']
+            game.state.back()
+            if game.alerts:
+                game.state.change('alert')
+
+    def draw(self, surf):
+        if not getattr(self, 'window_bg', None):
+            return surf
+
+        surf.blit(self.window_bg, (self.box_x, self.box_y))
+        slots_count = f"{len(self.equipped_skills)}/{self.unit.max_skills}"
+        slots_color = 'yellow' if len(self.equipped_skills) < self.unit.max_skills else 'green'
+
+        render_text(surf, ['text'], ["Skills"], ['yellow'], (14, 13))
+        start_x = 110 - FONT['text'].width("Slots:") - FONT['text'].width(slots_count)
+        render_text(surf, ['text'], ["Slots:"], ['white'], (start_x, 13))
+        render_text(surf, ['text'], [slots_count], [slots_color], (start_x + FONT['text'].width("Slots:") + 3, 13))
+
+        if self.menu:
+            self.menu.draw(surf)
+
+        surf.blit(self.right_window_bg, (self.right_box_x, self.right_box_y))
+        render_text(surf, ['text'], ["New Skill:"], ['yellow'], (128, 13))
+
+        new_name = self.new_skill_obj.name
+        name_font = 'narrow' if text_width('text', new_name) > 98 else 'text'
+        render_text(surf, [name_font], [new_name], ['white'], (128, 28))
+
+        for idx, line in enumerate(self.new_skill_desc_lines[:6]):
+            render_text(surf, ['narrow'], [line], ['white'], (128, 44 + idx * 11))
+
+        if self.button_disp:
+            surf.blit(self.button_disp, (124, 128))
+
+        if self.help_dialog:
+            self.help_dialog.draw(surf, self.help_pos)
+
+        if self.confirming and self.confirm_bg:
+            surf.blit(self.confirm_bg, (self.confirm_box_x, self.confirm_box_y))
+            prompt_w = text_width(self.confirm_font, self.confirm_prompt)
+            prompt_x = self.confirm_box_x + (self.confirm_box_w - prompt_w) // 2
+            render_text(surf, [self.confirm_font], [self.confirm_prompt], ['yellow'], (prompt_x, self.confirm_box_y + 7))
+
+            center_x = self.confirm_box_x + self.confirm_box_w // 2
+            render_text(surf, ['text'], ["Yes"], ['yellow' if self.confirm_idx == 0 else 'white'], (center_x - 34, self.confirm_box_y + 28))
+            render_text(surf, ['text'], ["No"], ['yellow' if self.confirm_idx == 1 else 'white'], (center_x + 24, self.confirm_box_y + 28))
+
+            cursor_x = (center_x - 50) if self.confirm_idx == 0 else (center_x + 8)
+            self.confirm_cursor.draw(surf, cursor_x, self.confirm_box_y + 28)
+
+        return surf

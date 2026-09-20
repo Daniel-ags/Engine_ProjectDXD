@@ -22,7 +22,7 @@ from app.engine.state import MapState
 from app.engine.game_state import game
 from app.engine import menus, base_surf, background, text_funcs, \
     image_mods, gui, icons, prep, record_book, unit_sprite, action, \
-    engine, equations, evaluate, skill_system
+    engine, equations, evaluate, skill_system, help_menu
 from app.engine.fluid_scroll import FluidScroll
 from app.engine.graphics.text.text_renderer import render_text
 from app.engine.persistent_records import RECORDS
@@ -286,7 +286,8 @@ class BaseSkillsManageState(State):
 
         self.clean_all_orphaned_auras()
         self.current_pane = 'equipped'  # 'equipped' ou 'available'
-        self.show_info = False          # Janela de ajuda modal (INFO)
+        self.help_dialog = None
+        self.help_pos = (0, 0)          # Janela de ajuda modal (INFO)
 
         self.refresh_skill_lists()
         self.build_menus()
@@ -453,40 +454,59 @@ class BaseSkillsManageState(State):
                 return self.available_skills[idx]
         return None
 
-    def _wrap_text(self, font, text: str, max_width: int) -> List[str]:
-        words = text.split(' ')
-        lines, cur_line = [], []
-        for word in words:
-            test_line = ' '.join(cur_line + [word])
-            if font.width(test_line) <= max_width:
-                cur_line.append(word)
-            else:
-                if cur_line:
-                    lines.append(' '.join(cur_line))
-                cur_line = [word]
-        if cur_line:
-            lines.append(' '.join(cur_line))
-        return lines
-
-    def take_input(self, event):
-        if self.show_info:
-            if event in ('INFO', 'BACK', 'SELECT'):
-                self.show_info = False
-                get_sound_thread().play_sfx('Info Out')
-                return
-            first_push = self.fluid.update()
-            directions = self.fluid.get_directions()
-            active_menu = self.equipped_menu if self.current_pane == 'equipped' else self.available_menu
-            if 'DOWN' in directions:
-                active_menu.move_down(first_push)
-            elif 'UP' in directions:
-                active_menu.move_up(first_push)
+    def _update_help_dialog(self):
+        hovered = self._get_hovered_skill()
+        if not hovered:
+            self.help_dialog = None
             return
 
+        active_menu = self.equipped_menu if self.current_pane == 'equipped' else self.available_menu
+        rel_idx = active_menu.get_current_index() - getattr(active_menu, 'scroll', 0)
+
+        # Ancora o balão à direita do painel ativo
+        if self.current_pane == 'equipped':
+            anchor_x = 112
+        else:
+            anchor_x = 232
+        anchor_y = active_menu.topleft[1] + (rel_idx * 16) + 8
+        self.help_pos = (anchor_x, anchor_y)
+
+        desc = getattr(hovered, 'desc', '') or "No description available."
+        HelpDialogClass = getattr(help_menu, 'HelpDialog', getattr(help_menu, 'HelpBox', None))
+        self.help_dialog = HelpDialogClass(desc) if HelpDialogClass else None
+
+    def take_input(self, event):
         first_push = self.fluid.update()
         directions = self.fluid.get_directions()
         active_menu = self.equipped_menu if self.current_pane == 'equipped' else self.available_menu
 
+        # Modo com Ajuda Ativa (INFO / HelpDialog aberto)
+        if self.help_dialog:
+            if event in ('INFO', 'BACK', 'SELECT'):
+                self.help_dialog = None
+                get_sound_thread().play_sfx('Info Out')
+                return
+
+            moved = False
+            if 'DOWN' in directions:
+                moved = active_menu.move_down(first_push)
+            elif 'UP' in directions:
+                moved = active_menu.move_up(first_push)
+            elif 'RIGHT' in directions and self.current_pane == 'equipped':
+                self.current_pane = 'available'
+                self._update_cursors()
+                moved = True
+            elif 'LEFT' in directions and self.current_pane == 'available':
+                self.current_pane = 'equipped'
+                self._update_cursors()
+                moved = True
+
+            if moved:
+                get_sound_thread().play_sfx('Select 5')
+                self._update_help_dialog()
+            return
+
+        # Navegação normal
         active_menu.handle_mouse()
 
         if 'DOWN' in directions:
@@ -507,7 +527,7 @@ class BaseSkillsManageState(State):
 
         elif event == 'INFO':
             if self._get_hovered_skill():
-                self.show_info = True
+                self._update_help_dialog()
                 get_sound_thread().play_sfx('Info In')
 
         elif event == 'BACK':
@@ -551,6 +571,8 @@ class BaseSkillsManageState(State):
             self.equipped_menu.update()
         if self.available_menu:
             self.available_menu.update()
+        if self.help_dialog and hasattr(self.help_dialog, 'update'):
+            self.help_dialog.update()
 
     def draw(self, surf):
         if self.bg:
@@ -606,27 +628,8 @@ class BaseSkillsManageState(State):
         if self.available_menu:
             self.available_menu.draw(surf)
 
-        if self.show_info:
-            hovered = self._get_hovered_skill()
-            if hovered:
-                modal_w, modal_h = 192, 96
-                modal_x = (WINWIDTH - modal_w) // 2
-                modal_y = (WINHEIGHT - modal_h) // 2
-                modal_surf = base_surf.create_base_surf(modal_w, modal_h, 'menu_bg_base')
-                modal_surf = image_mods.make_translucent(modal_surf, 0.05)
-
-                render_text(modal_surf, ['text'], [hovered.name], ['yellow'], (8, 6))
-                is_eq = hovered in self.equipped_skills
-                status_text = "Equipped" if is_eq else "Reserve"
-                status_color = "green" if is_eq else "blue"
-                render_text(modal_surf, ['text'], [status_text], [status_color], (modal_w - 60, 6))
-
-                desc_lines = self._wrap_text(FONT['text'], hovered.desc or "No description available.", modal_w - 16)
-                for l_idx, line in enumerate(desc_lines[:4]):
-                    render_text(modal_surf, ['text'], [line], ['white'], (8, 24 + l_idx * 14))
-
-                render_text(modal_surf, ['text'], ["INFO / B: Close"], ['grey'], (modal_w // 2 - 40, modal_h - 18))
-                surf.blit(modal_surf, (modal_x, modal_y))
+        if self.help_dialog:
+            self.help_dialog.draw(surf, self.help_pos)
 
         return surf
 
