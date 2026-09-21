@@ -25,6 +25,42 @@ from app.engine.objects.unit import UnitObject
 from app.engine.source_type import SourceType
 
 
+class CustomSkillBanner(banner.GiveSkill):
+    def __init__(self, unit, skill, text: str):
+        super().__init__(unit, skill)
+        self.item = None
+        self.font = FONT['text']
+        
+        self.lines = [line.strip() for line in text.split('\n') if line.strip()]
+
+        max_text_width = max(text_width('text', line) for line in self.lines)
+        width = max(96, min(WINWIDTH - 16, max_text_width + 24))
+        # 18px por linha + 16px de margem vertical para dar respiro embaixo
+        height = max(32, len(self.lines) * 18 + 16)
+        self.size = (width, height)
+
+        self.bg_surf = image_mods.make_translucent(
+            base_surf.create_base_surf(width, height, 'menu_bg_base'), 0.1
+        )
+
+    def draw(self, surf):
+        bg_surf = self.bg_surf.copy()
+        
+        # Centraliza o bloco de texto verticalmente no banner
+        total_text_h = len(self.lines) * 18
+        start_y = (self.size[1] - total_text_h) // 2
+
+        for idx, line in enumerate(self.lines):
+            line_w = text_width('text', line)
+            line_x = (self.size[0] - line_w) // 2
+            line_y = start_y + idx * 18
+            render_text(bg_surf, ['text'], [line], ['white'], topleft=(line_x, line_y))
+
+        # Centraliza o banner na tela
+        x = (WINWIDTH - self.size[0]) // 2
+        y = (WINHEIGHT - self.size[1]) // 2
+        surf.blit(bg_surf, (x, y))
+        return surf
 class ExpState(State):
     name = 'exp'
     transparent = True
@@ -273,14 +309,18 @@ class ExpState(State):
 
                 if game.memory.get('skill_swap_queue'):
                     self.state.change('wait_for_skill_swap')
+                elif game.alerts:
+                    self.state.change('wait_for_skill_swap')
+                    game.state.change('alert')
                 else:
-                    if game.alerts:
-                        game.state.change('alert')
+                    self.state.clear()
                     game.state.back()
 
         elif self.state.get_state() == 'wait_for_skill_swap':
             if not game.memory.get('skill_swap_queue') and not game.alerts:
-                game.state.back()
+                if game.state.state and game.state.state[-1] == self:
+                    self.state.clear()
+                    game.state.back()
 
         elif self.state.get_state() == 'prepare_promote':
             self.exp_bar.update()
@@ -389,8 +429,13 @@ class ExpState(State):
                     if not is_slot_skill or len(unit.get_equipped_skills()) < unit.max_skills:
                         act = action.AddSkill(unit, skill_nid, source=source, source_type=source_type)
                         action.do(act)
+                        if not is_slot_skill or len(unit.get_equipped_skills()) < unit.max_skills:
+                            act = action.AddSkill(unit, skill_nid, source=source, source_type=source_type)
+                            action.do(act)
                         if act.skill_obj and not skill_system.hidden(act.skill_obj, unit):
-                            game.alerts.append(banner.GiveSkill(unit, act.skill_obj))
+                            msg = f"{unit.name} learned {act.skill_obj.name}!"
+                            alert = CustomSkillBanner(unit, act.skill_obj, msg)
+                            game.alerts.append(alert)
                     else:
                         if unit.team == 'player':
                             if 'skill_swap_queue' not in game.memory or not game.memory['skill_swap_queue']:
@@ -721,15 +766,18 @@ class SkillSwapLevelUpState(State):
         self.new_skill_obj = item_funcs.create_skill(self.unit, self.new_skill_nid)
         self.equipped_skills = self.unit.get_equipped_skills()
 
-        self.box_x, self.box_y = 6, 8
+        # Painel de Habilidades Ativas (movido para a DIREITA: x=124)
+        self.box_x, self.box_y = 124, 8
         self.window_bg = image_mods.make_translucent(base_surf.create_base_surf(114, 144, 'menu_bg_base'), 0.1)
 
-        self.menu = menus.Choice(None, [s.name for s in self.equipped_skills], topleft=(6, 28), background=None)
+        # O menu agora se posiciona em topleft=(124, 28)
+        self.menu = menus.Choice(None, [s.name for s in self.equipped_skills], topleft=(124, 28), background=None)
         self.menu.set_limit(7)
         self.menu.width = 98
         self.menu.draw_cursor = True
 
-        self.right_box_x, self.right_box_y = 124, 8
+        # Painel da Nova Habilidade (movido para a ESQUERDA: x=6)
+        self.right_box_x, self.right_box_y = 6, 8
         self.right_window_bg = image_mods.make_translucent(base_surf.create_base_surf(110, 108, 'menu_bg_base'), 0.1)
 
         desc_text = getattr(self.new_skill_obj, 'desc', '') or "No description."
@@ -774,6 +822,7 @@ class SkillSwapLevelUpState(State):
 
         hovered = self.equipped_skills[idx]
         rel_idx = idx - getattr(self.menu, 'scroll', 0)
+        # Ancora o balão centralizado sobre o contêiner direito
         self.help_pos = (self.box_x + 56, self.menu.topleft[1] + (rel_idx * 16) + 8)
 
         desc = getattr(hovered, 'desc', '') or "No description."
@@ -805,12 +854,10 @@ class SkillSwapLevelUpState(State):
     def _get_live_unit(self):
         return game.get_unit(self.unit.nid) or self.unit
 
-    def _finish_and_alert(self, unit, skill_obj):
+    def _finish_and_alert(self, unit, skill_obj, custom_text=None):
         if skill_obj and not skill_system.hidden(skill_obj, unit):
-            alert = banner.GiveSkill(unit, skill_obj)
-            alert.item = None
-            if hasattr(alert, 'figure_out_size'):
-                alert.figure_out_size()
+            msg = custom_text or f"{unit.name} learned {skill_obj.name}!"
+            alert = CustomSkillBanner(unit, skill_obj, msg)
             game.alerts.append(alert)
         self.finish()
 
@@ -845,7 +892,8 @@ class SkillSwapLevelUpState(State):
             unit.reset_skills()
 
         skill_obj_to_show = getattr(act, 'skill_obj', None) or getattr(act, 'skill', None) or self.new_skill_obj
-        self._finish_and_alert(unit, skill_obj_to_show)
+        swap_text = f"{unit.name} learned {skill_obj_to_show.name}.\nReserved {old_skill.name} !"
+        self._finish_and_alert(unit, skill_obj_to_show, custom_text=swap_text)
 
     def _execute_keep_learned(self):
         unit = self._get_live_unit()
@@ -854,7 +902,8 @@ class SkillSwapLevelUpState(State):
         if self.new_skill_nid not in unit.learned_skills:
             unit.learned_skills.append(self.new_skill_nid)
 
-        self._finish_and_alert(unit, self.new_skill_obj)
+        reserve_text = f"{unit.name} reserved {self.new_skill_obj.name}!"
+        self._finish_and_alert(unit, self.new_skill_obj, custom_text=reserve_text)
 
     def get_aura_subskill_nids(self, skill_or_nid) -> set:
         skill_nid = skill_or_nid if isinstance(skill_or_nid, str) else skill_or_nid.nid
@@ -988,34 +1037,43 @@ class SkillSwapLevelUpState(State):
         if not getattr(self, 'window_bg', None):
             return surf
 
+        # 1. Contêiner de Skills Ativas (Direita)
         surf.blit(self.window_bg, (self.box_x, self.box_y))
         slots_count = f"{len(self.equipped_skills)}/{self.unit.max_skills}"
         slots_color = 'yellow' if len(self.equipped_skills) < self.unit.max_skills else 'green'
 
-        render_text(surf, ['text'], ["Skills"], ['yellow'], (14, 13))
-        start_x = 110 - FONT['text'].width("Slots:") - FONT['text'].width(slots_count)
+        render_text(surf, ['text'], ["Skills"], ['yellow'], (self.box_x + 8, 13))
+        start_x = (self.box_x + 104) - FONT['text'].width("Slots:") - FONT['text'].width(slots_count)
         render_text(surf, ['text'], ["Slots:"], ['white'], (start_x, 13))
         render_text(surf, ['text'], [slots_count], [slots_color], (start_x + FONT['text'].width("Slots:") + 3, 13))
 
         if self.menu:
             self.menu.draw(surf)
 
+        # 2. Contêiner da Nova Skill (Esquerda)
         surf.blit(self.right_window_bg, (self.right_box_x, self.right_box_y))
-        render_text(surf, ['text'], ["New Skill:"], ['yellow'], (128, 13))
+        
+        # Título "New Skill Learned" centralizado no contêiner de 110px em verde
+        title_text = "New Skill Learned"
+        title_w = text_width('text', title_text)
+        title_x = self.right_box_x + (110 - title_w) // 2
+        render_text(surf, ['text'], [title_text], ['green'], (title_x, 13))
 
         new_name = self.new_skill_obj.name
         name_font = 'narrow' if text_width('text', new_name) > 98 else 'text'
-        render_text(surf, [name_font], [new_name], ['white'], (128, 28))
+        render_text(surf, [name_font], [new_name], ['white'], (self.right_box_x + 6, 28))
 
         for idx, line in enumerate(self.new_skill_desc_lines[:6]):
-            render_text(surf, ['narrow'], [line], ['white'], (128, 44 + idx * 11))
+            render_text(surf, ['narrow'], [line], ['white'], (self.right_box_x + 6, 44 + idx * 11))
 
+        # Botões posicionados logo abaixo do contêiner da esquerda (x=6, y=128)
         if self.button_disp:
-            surf.blit(self.button_disp, (124, 128))
+            surf.blit(self.button_disp, (self.right_box_x, 128))
 
         if self.help_dialog:
             self.help_dialog.draw(surf, self.help_pos)
 
+        # Janela de confirmação
         if self.confirming and self.confirm_bg:
             surf.blit(self.confirm_bg, (self.confirm_box_x, self.confirm_box_y))
             prompt_w = text_width(self.confirm_font, self.confirm_prompt)

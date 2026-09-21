@@ -429,11 +429,11 @@ class BaseSkillsManageState(State):
         equipped_names = [s.name for s in self.equipped_skills] or ['---']
         available_names = [s.name for s in self.available_skills] or ['---']
 
-        self.equipped_menu = menus.Choice(None, equipped_names, topleft=(12, 63), background=None)
+        self.equipped_menu = menus.Choice(None, equipped_names, topleft=(4, 63), background=None)
         self.equipped_menu.set_limit(5)
         self.equipped_menu.width = 98
 
-        self.available_menu = menus.Choice(None, available_names, topleft=(132, 63), background=None)
+        self.available_menu = menus.Choice(None, available_names, topleft=(124, 63), background=None)
         self.available_menu.set_limit(5)
         self.available_menu.width = 98
 
