@@ -630,7 +630,7 @@ class InfoMenuState(State):
 
             # Name
             name = curr_stat.name
-            color = 'navy'
+            color = 'yellow'
             if DB.stats.get(stat_nid).growth_colors and self.unit.team == 'player':
                 color = self.growth_colors(unit_funcs.growth_rate(self.unit, stat_nid))
             render_text(surf, ['text'], [name], [color], (8, 16 * idx + 24))
@@ -651,7 +651,7 @@ class InfoMenuState(State):
 
             # Name
             name = curr_stat.name
-            color = 'navy'
+            color = 'yellow'
             if DB.stats.get(stat_nid).growth_colors and self.unit.team == 'player':
                 color = self.growth_colors(unit_funcs.growth_rate(self.unit, stat_nid))
             render_text(surf, ['text'], [name], [color], (72, 16 * idx + 24))
@@ -695,17 +695,17 @@ class InfoMenuState(State):
             if stat == 'TRV':
                 if self.unit.traveler:
                     trav = game.get_unit(self.unit.traveler)
-                    render_text(surf, ['text'], [trav.name], ['navy'], (96, 16 * true_idx + 24))
+                    render_text(surf, ['text'], [trav.name], ['yellow'], (96, 16 * true_idx + 24))
                 else:
                     render_text(surf, ['text'], ['--'], ['blue'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
-                render_text(surf, ['text'], [text_funcs.translate('Trv')], ['navy'], (72, 16 * true_idx + 24))
+                render_text(surf, ['text'], [text_funcs.translate('Trv')], ['yellow'], (72, 16 * true_idx + 24))
                 desc = text_funcs.translate_and_text_evaluate('Trv_desc', unit=self.unit)
                 self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
 
             elif stat == 'AID':
                 if growths:
                     icons.draw_growth(surf, 'HP', self.unit, (111, 16 * true_idx + 24))
-                    color = 'navy'
+                    color = 'yellow'
                     if DB.stats.get('HP').growth_colors and self.unit.team == 'player':
                         color = self.growth_colors(unit_funcs.growth_rate(self.unit, 'HP'))
                     render_text(surf, ['text'], [text_funcs.translate('HP')], [color], (72, 16 * true_idx + 24))
@@ -713,7 +713,7 @@ class InfoMenuState(State):
                     self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
                 else:
                     aid = equations.parser.rescue_aid(self.unit)
-                    render_text(surf, ['text'], [str(aid)], ['navy'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
+                    render_text(surf, ['text'], [str(aid)], ['yellow'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
 
                     # Mount Symbols
                     for tag in self.unit.tags:
@@ -752,7 +752,7 @@ class InfoMenuState(State):
                 if growths: #GAUGE replaces AID when pair up is in use.  HP growth will replace one of the two.
                     #Since AID and GAUGE are mutually exclusive, we shouldn't need to worry about ever displaying the growth twice.
                     icons.draw_growth(surf, 'HP', self.unit, (111, 16 * true_idx + 24))
-                    color = 'navy'
+                    color = 'yellow'
                     if DB.stats.get('HP').growth_colors and self.unit.team == 'player':
                         color = self.growth_colors(unit_funcs.growth_rate(self.unit, 'HP'))
                     render_text(surf, ['text'], [text_funcs.translate('HP')], [color], (72, 16 * true_idx + 24))
@@ -760,23 +760,23 @@ class InfoMenuState(State):
                     self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
                 else:
                     gge = str(self.unit.get_guard_gauge())
-                    render_text(surf, ['text'], [gge], ['navy'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
-                    render_text(surf, ['text'], [text_funcs.translate('GAUGE')], ['navy'], (72, 16 * true_idx + 24))
+                    render_text(surf, ['text'], [gge], ['yellow'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
+                    render_text(surf, ['text'], [text_funcs.translate('GAUGE')], ['yellow'], (72, 16 * true_idx + 24))
                     desc = text_funcs.translate_and_text_evaluate('GAUGE_desc', unit=self.unit)
                     self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
 
             elif stat == 'TALK':
                 if (len([talk for talk in game.talk_options if talk[0] == self.unit.nid and talk not in game.talk_hidden]) != 0):
                     talkee = [talk for talk in game.talk_options if talk[0] == self.unit.nid][0][1]
-                    render_text(surf, ['text'], [game.get_unit(talkee).name], ['navy'], (96, 16 * true_idx + 24))
+                    render_text(surf, ['text'], [game.get_unit(talkee).name], ['yellow'], (96, 16 * true_idx + 24))
                 else:
                     render_text(surf, ['text'], ['--'], ['blue'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
-                render_text(surf, ['text'], [text_funcs.translate('Talk')], ['navy'], (72, 16 * true_idx + 24))
+                render_text(surf, ['text'], [text_funcs.translate('Talk')], ['yellow'], (72, 16 * true_idx + 24))
                 desc = text_funcs.translate_and_text_evaluate('Talk_desc', unit=self.unit)
                 self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
 
             elif stat == 'LEAD':
-                render_text(surf, ['text'], [text_funcs.translate('Lead')], ['navy'], (72, 16 * true_idx + 24))
+                render_text(surf, ['text'], [text_funcs.translate('Lead')], ['yellow'], (72, 16 * true_idx + 24))
                 desc = text_funcs.translate_and_text_evaluate('Lead_desc', unit=self.unit)
                 self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
 

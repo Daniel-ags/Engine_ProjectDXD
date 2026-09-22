@@ -47,7 +47,7 @@ class PrepMainState(MapState):
         if not game.get_units_in_party():
             ignore[0] = True
         if 'Skills' in options:
-            ignore[options.index('Skills')] = True
+            ignore[options.index('Skills')] = False
 
         # initialize custom options and events
         events = [None for option in options]
@@ -696,7 +696,7 @@ class PrepManageState(State):
         # Display
         self.quick_disp = self.create_quick_disp()
 
-        if self.name.startswith('base') and game.memory['base_bg']:
+        if self.name.startswith('base') and game.memory.get('base_bg'):
             self.bg = game.memory['base_bg']
         else:
             self.bg = background.create_background('rune_background')

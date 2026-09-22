@@ -640,6 +640,7 @@ class BaseSkillsSelectState(prep.PrepManageState):
     def start(self):
         super().start()
         self.quick_disp = self.create_quick_disp()
+        return 'repeat'
 
     def create_quick_disp(self):
         sprite = SPRITES.get('buttons')
