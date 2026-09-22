@@ -31,6 +31,18 @@ import threading
 
 import logging
 
+def get_multi_item_choices(unit: UnitObject, parent_item: ItemObject, weapons: bool, spells: bool) -> List[ItemObject]:
+    """
+    The children of a multi item that its menu offers: those of the requested kinds (weapons, spells)
+    with valid targets, leaving out the unusable ones when the parent hides them
+    """
+    return [subitem for subitem in parent_item.subitems
+            if ((weapons and item_funcs.is_weapon_recursive(unit, subitem)) or
+                (spells and item_funcs.is_spell_recursive(unit, subitem))) and
+            (not parent_item.multi_item_hides_unavailable or item_funcs.available(unit, subitem)) and
+            game.target_system.get_valid_targets_recursive_with_availability_check(unit, subitem)]
+
+
 class LoadingState(State):
     name = 'start_level_asset_loading'
     transparent = False
@@ -707,12 +719,14 @@ class MoveState(MapState):
         if cur_unit.traveler:
             cur_unit.lead_unit = True
 
+        self.move_selection = game.path_system.get_move_selection(cur_unit)
+        # The cursor clamps to the same selection this state judges a SELECT against
+        game.cursor.move_selection = self.move_selection
         if cur_unit.has_traded:
-            self.valid_moves = game.path_system.get_valid_moves(cur_unit)
-            self.valid_xcom_moves = set()
-            game.highlight.display_moves(self.valid_moves, light=False)
+            # A traded unit has already acted, so only show where it can still walk
+            game.highlight.display_moves(self.move_selection.normal, light=False)
         else:
-            self.valid_moves, self.valid_xcom_moves = game.highlight.display_highlights(cur_unit)
+            game.highlight.display_highlights(cur_unit, self.move_selection)
 
         # Fade in phase music if the unit has canto
         if cur_unit.has_attacked or cur_unit.has_traded:
@@ -758,20 +772,19 @@ class MoveState(MapState):
                     action.execute(cur_unit.current_move)
                     game.state.change('menu')
 
-            elif game.cursor.position in self.valid_moves:
+            elif game.cursor.position in self.move_selection.normal:
                 if game.board.in_vision(game.cursor.position) and game.board.get_unit(game.cursor.position):
                     get_sound_thread().play_sfx('Error')
                 else:
-                    normal_moves = game.path_system.get_valid_moves(cur_unit, witch_warp=False)
-                    witch_warp = set(skill_system.witch_warp(cur_unit))
+                    is_warp = self.move_selection.is_warp(game.cursor.position)
                     if cur_unit.has_attacked or cur_unit.has_traded:
-                        if game.cursor.position in witch_warp and game.cursor.position not in normal_moves:
+                        if is_warp:
                             cur_unit.current_move = action.Warp(cur_unit, game.cursor.position)
                         else:
                             game.cursor.clamp_path_to_movement()
                             cur_unit.current_move = action.CantoMove(cur_unit, game.cursor.position)
                         game.state.change('canto_wait')
-                    elif game.cursor.position in witch_warp and game.cursor.position not in normal_moves:
+                    elif is_warp:
                         action.do(action.MarkActionGroupStart(cur_unit, 'free'))
                         cur_unit.current_move = action.Warp(cur_unit, game.cursor.position)
                         game.state.change('menu')
@@ -783,7 +796,7 @@ class MoveState(MapState):
                     game.state.change('movement')
                     action.do(cur_unit.current_move)
 
-            elif game.cursor.position in self.valid_xcom_moves:
+            elif game.cursor.position in self.move_selection.xcom:
                 if game.board.in_vision(game.cursor.position) and game.board.get_unit(game.cursor.position):
                     get_sound_thread().play_sfx('Error')
                 else:
@@ -1033,7 +1046,7 @@ class MenuState(MapState):
             else:
                 for ability_name, ability in self.combat_arts['_uncategorized'].items():
                     options.insert(start_index, ability_name)
-                    info_descs.insert(start_index, text_funcs.translate_and_text_evaluate(ability[0].desc, self=self.cur_unit, unit=self.cur_unit))
+                    info_descs.insert(start_index, text_funcs.translate_and_text_evaluate(ability[0].desc, self=ability[0], unit=self.cur_unit, local_args={'skill': ability[0]}))
                 for category_name in self.combat_arts:
                     if category_name != '_uncategorized':
                         options.insert(start_index, category_name)
@@ -1180,10 +1193,7 @@ class MenuState(MapState):
             game.memory['item'] = item
             # Handle abilities that are multi-items, you sick fuck (rain's words not mine)
             if item.multi_item:
-                all_options = [subitem for subitem in item.subitems \
-                                if (item_funcs.is_spell_recursive(cur_unit, subitem) or 
-                                    item_funcs.is_weapon_recursive(cur_unit, subitem)) and
-                                game.target_system.get_valid_targets_recursive_with_availability_check(cur_unit, subitem)]
+                all_options = get_multi_item_choices(cur_unit, item, weapons=True, spells=True)
                 if all_options:
                     game.memory['valid_options'] = all_options
                     game.state.change('ability_multi_item_choice')
@@ -1206,7 +1216,7 @@ class MenuState(MapState):
                             if game.target_system.get_valid_targets_recursive_with_availability_check(self.cur_unit, ability)}
             abilities: List[ItemObject] = list(ability_dict.values())
             options = abilities
-            info_desc = [text_funcs.translate_and_text_evaluate(option.desc, self=self.cur_unit, unit=self.cur_unit) 
+            info_desc = [text_funcs.translate_and_text_evaluate(option.desc, self=option, unit=self.cur_unit) 
                          for option in options]
             game.memory['ability_submenu_choice'] = (abilities,
                                                      options, info_desc,
@@ -1232,7 +1242,7 @@ class MenuState(MapState):
             # since combat arts category is checked, self.combat_arts is uncategorized
             combat_arts: List[Tuple[SkillObject, List[ItemObject]]] = list(self.combat_arts.values())
             options = [combat_art[0] for combat_art in combat_arts]
-            info_desc = [text_funcs.translate_and_text_evaluate(option.desc, self=self.cur_unit, unit=self.cur_unit) 
+            info_desc = [text_funcs.translate_and_text_evaluate(option.desc, self=option, unit=self.cur_unit, local_args={'skill': option}) 
                          for option in options]
             game.memory['ability_submenu_choice'] = (combat_arts,
                                                      options, info_desc,
@@ -1248,7 +1258,7 @@ class MenuState(MapState):
             combat_art_dict = self.combat_arts[selection]  # get combat arts in category
             combat_arts: List[Tuple[SkillObject, List[ItemObject]]] = list(combat_art_dict.values())
             options = [combat_art[0] for combat_art in combat_arts]
-            info_desc = [text_funcs.translate_and_text_evaluate(option.desc, self=self.cur_unit, unit=self.cur_unit) 
+            info_desc = [text_funcs.translate_and_text_evaluate(option.desc, self=option, unit=self.cur_unit, local_args={'skill': option}) 
                          for option in options]
             game.memory['ability_submenu_choice'] = (combat_arts,
                                                      options, info_desc,
@@ -1788,10 +1798,7 @@ class WeaponChoiceState(MapState):
         elif event == 'SELECT':
             selection = self.menu.get_current()
             if selection.multi_item:
-                game.memory['valid_weapons'] = \
-                    [subitem for subitem in selection.subitems if
-                     item_funcs.is_weapon_recursive(self.cur_unit, subitem) and
-                     game.target_system.get_valid_targets_recursive_with_availability_check(self.cur_unit, subitem)]
+                game.memory['valid_weapons'] = get_multi_item_choices(self.cur_unit, selection, weapons=True, spells=False)
                 get_sound_thread().play_sfx('Select 1')
                 game.state.change('weapon_choice')
                 return
@@ -1886,10 +1893,7 @@ class SpellChoiceState(WeaponChoiceState):
         elif event == 'SELECT':
             selection = self.menu.get_current()
             if selection.multi_item:
-                game.memory['valid_spells'] = \
-                    [subitem for subitem in selection.subitems if
-                     item_funcs.is_spell_recursive(self.cur_unit, subitem) and
-                     game.target_system.get_valid_targets_recursive_with_availability_check(self.cur_unit, subitem)]
+                game.memory['valid_spells'] = get_multi_item_choices(self.cur_unit, selection, weapons=False, spells=True)
                 get_sound_thread().play_sfx('Select 1')
                 game.state.change('spell_choice')
                 return
@@ -1964,11 +1968,7 @@ class AbilityMultiItemChoiceState(WeaponChoiceState):
         elif event == 'SELECT':
             selection = self.menu.get_current()
             if selection.multi_item:
-                game.memory['valid_options'] = \
-                    [subitem for subitem in selection.subitems if
-                     (item_funcs.is_spell_recursive(self.cur_unit, subitem) or
-                      item_funcs.is_weapon_recursive(self.cur_unit, subitem)) and
-                     game.target_system.get_valid_targets_recursive_with_availability_check(self.cur_unit, subitem)]
+                game.memory['valid_options'] = get_multi_item_choices(self.cur_unit, selection, weapons=True, spells=True)
                 get_sound_thread().play_sfx('Select 1')
                 game.state.change('ability_multi_item_choice')
                 return
