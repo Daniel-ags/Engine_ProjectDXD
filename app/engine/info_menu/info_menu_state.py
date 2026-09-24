@@ -489,10 +489,10 @@ class InfoMenuState(State):
         render_text(surf, ['text'], [class_obj.name], ['white'], (8, 104))
         class_desc = text_funcs.translate_and_text_evaluate(class_obj.desc, self=class_obj, unit=self.unit)
         self.info_graph.register((8, 104, 72, 16), class_desc, 'all')
-        render_text(surf, ['text'], [str(self.unit.level)], ['blue'], (39, 120), HAlignment.RIGHT)
+        render_text(surf, ['text'], [str(self.unit.level)], ['white'], (39, 120), HAlignment.RIGHT)
         desc = text_funcs.translate_and_text_evaluate('Level_desc', unit=self.unit)
         self.info_graph.register((8, 120, 30, 16), desc, 'all')
-        render_text(surf, ['text'], [str(self.unit.exp)], ['blue'], (63, 120), HAlignment.RIGHT)
+        render_text(surf, ['text'], [str(self.unit.exp)], ['white'], (63, 120), HAlignment.RIGHT)
         desc = text_funcs.translate_and_text_evaluate('Exp_desc', unit=self.unit)
         self.info_graph.register((38, 120, 30, 16), desc, 'all')
         
@@ -504,10 +504,10 @@ class InfoMenuState(State):
             hp_font = 'narrow'
         else:
             hp_font = 'text'
-        render_text(surf, [hp_font], [current_hp], ['blue'], (39, 136), HAlignment.RIGHT)
+        render_text(surf, [hp_font], [current_hp], ['white'], (39, 136), HAlignment.RIGHT)
         desc = text_funcs.translate_and_text_evaluate('HP_desc', unit=self.unit)
         self.info_graph.register((8, 136, 72, 16), desc, 'all')
-        render_text(surf, [hp_font], [str(max_hp)], ['blue'], (63, 136), HAlignment.RIGHT)
+        render_text(surf, [hp_font], [str(max_hp)], ['white'], (63, 136), HAlignment.RIGHT)
 
         # Blit the white status platform
         surf.blit(SPRITES.get('status_platform'), (66, 131))
@@ -630,7 +630,7 @@ class InfoMenuState(State):
 
             # Name
             name = curr_stat.name
-            color = 'yellow'
+            color = 'white'
             if DB.stats.get(stat_nid).growth_colors and self.unit.team == 'player':
                 color = self.growth_colors(unit_funcs.growth_rate(self.unit, stat_nid))
             render_text(surf, ['text'], [name], [color], (8, 16 * idx + 24))
@@ -651,7 +651,7 @@ class InfoMenuState(State):
 
             # Name
             name = curr_stat.name
-            color = 'yellow'
+            color = 'white'
             if DB.stats.get(stat_nid).growth_colors and self.unit.team == 'player':
                 color = self.growth_colors(unit_funcs.growth_rate(self.unit, stat_nid))
             render_text(surf, ['text'], [name], [color], (72, 16 * idx + 24))
@@ -695,17 +695,17 @@ class InfoMenuState(State):
             if stat == 'TRV':
                 if self.unit.traveler:
                     trav = game.get_unit(self.unit.traveler)
-                    render_text(surf, ['text'], [trav.name], ['yellow'], (96, 16 * true_idx + 24))
+                    render_text(surf, ['text'], [trav.name], ['white'], (96, 16 * true_idx + 24))
                 else:
-                    render_text(surf, ['text'], ['--'], ['blue'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
-                render_text(surf, ['text'], [text_funcs.translate('Trv')], ['yellow'], (72, 16 * true_idx + 24))
+                    render_text(surf, ['text'], ['--'], ['white'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
+                render_text(surf, ['text'], [text_funcs.translate('Trv')], ['white'], (72, 16 * true_idx + 24))
                 desc = text_funcs.translate_and_text_evaluate('Trv_desc', unit=self.unit)
                 self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
 
             elif stat == 'AID':
                 if growths:
                     icons.draw_growth(surf, 'HP', self.unit, (111, 16 * true_idx + 24))
-                    color = 'yellow'
+                    color = 'white'
                     if DB.stats.get('HP').growth_colors and self.unit.team == 'player':
                         color = self.growth_colors(unit_funcs.growth_rate(self.unit, 'HP'))
                     render_text(surf, ['text'], [text_funcs.translate('HP')], [color], (72, 16 * true_idx + 24))
@@ -713,7 +713,7 @@ class InfoMenuState(State):
                     self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
                 else:
                     aid = equations.parser.rescue_aid(self.unit)
-                    render_text(surf, ['text'], [str(aid)], ['yellow'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
+                    render_text(surf, ['text'], [str(aid)], ['white'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
 
                     # Mount Symbols
                     for tag in self.unit.tags:
@@ -730,21 +730,21 @@ class InfoMenuState(State):
                         else:
                             aid_surf = engine.subsurface(SPRITES.get('aid_icons'), (0, 0, 16, 16))
                     surf.blit(aid_surf, (112, 16 * true_idx + 24))
-                    render_text(surf, ['text'], [text_funcs.translate('Aid')], ['yellow'], (72, 16 * true_idx + 24))
+                    render_text(surf, ['text'], [text_funcs.translate('Aid')], ['white'], (72, 16 * true_idx + 24))
                     desc = text_funcs.translate_and_text_evaluate('Aid_desc', unit=self.unit)
                     self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
 
             elif stat == 'RAT':
                 rat = str(equations.parser.rating(self.unit))
-                render_text(surf, ['text'], [rat], ['blue'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
-                render_text(surf, ['text'], [text_funcs.translate('Rat')], ['yellow'], (72, 16 * true_idx + 24))
+                render_text(surf, ['text'], [rat], ['white'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
+                render_text(surf, ['text'], [text_funcs.translate('Rat')], ['white'], (72, 16 * true_idx + 24))
                 desc = text_funcs.translate_and_text_evaluate('Rating_desc', unit=self.unit)
                 self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
 
             elif stat == 'MANA':
                 mana = str(self.unit.current_mana)
-                render_text(surf, ['text'], [mana], ['blue'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
-                render_text(surf, ['text'], [text_funcs.translate('MANA')], ['yellow'], (72, 16 * true_idx + 24))
+                render_text(surf, ['text'], [mana], ['white'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
+                render_text(surf, ['text'], [text_funcs.translate('MANA')], ['white'], (72, 16 * true_idx + 24))
                 desc = text_funcs.translate_and_text_evaluate('MANA_desc', unit=self.unit)
                 self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
 
@@ -752,7 +752,7 @@ class InfoMenuState(State):
                 if growths: #GAUGE replaces AID when pair up is in use.  HP growth will replace one of the two.
                     #Since AID and GAUGE are mutually exclusive, we shouldn't need to worry about ever displaying the growth twice.
                     icons.draw_growth(surf, 'HP', self.unit, (111, 16 * true_idx + 24))
-                    color = 'yellow'
+                    color = 'white'
                     if DB.stats.get('HP').growth_colors and self.unit.team == 'player':
                         color = self.growth_colors(unit_funcs.growth_rate(self.unit, 'HP'))
                     render_text(surf, ['text'], [text_funcs.translate('HP')], [color], (72, 16 * true_idx + 24))
@@ -760,23 +760,23 @@ class InfoMenuState(State):
                     self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
                 else:
                     gge = str(self.unit.get_guard_gauge())
-                    render_text(surf, ['text'], [gge], ['yellow'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
-                    render_text(surf, ['text'], [text_funcs.translate('GAUGE')], ['yellow'], (72, 16 * true_idx + 24))
+                    render_text(surf, ['text'], [gge], ['white'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
+                    render_text(surf, ['text'], [text_funcs.translate('GAUGE')], ['white'], (72, 16 * true_idx + 24))
                     desc = text_funcs.translate_and_text_evaluate('GAUGE_desc', unit=self.unit)
                     self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
 
             elif stat == 'TALK':
                 if (len([talk for talk in game.talk_options if talk[0] == self.unit.nid and talk not in game.talk_hidden]) != 0):
                     talkee = [talk for talk in game.talk_options if talk[0] == self.unit.nid][0][1]
-                    render_text(surf, ['text'], [game.get_unit(talkee).name], ['yellow'], (96, 16 * true_idx + 24))
+                    render_text(surf, ['text'], [game.get_unit(talkee).name], ['white'], (96, 16 * true_idx + 24))
                 else:
-                    render_text(surf, ['text'], ['--'], ['blue'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
-                render_text(surf, ['text'], [text_funcs.translate('Talk')], ['yellow'], (72, 16 * true_idx + 24))
+                    render_text(surf, ['text'], ['--'], ['white'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
+                render_text(surf, ['text'], [text_funcs.translate('Talk')], ['white'], (72, 16 * true_idx + 24))
                 desc = text_funcs.translate_and_text_evaluate('Talk_desc', unit=self.unit)
                 self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
 
             elif stat == 'LEAD':
-                render_text(surf, ['text'], [text_funcs.translate('Lead')], ['yellow'], (72, 16 * true_idx + 24))
+                render_text(surf, ['text'], [text_funcs.translate('Lead')], ['white'], (72, 16 * true_idx + 24))
                 desc = text_funcs.translate_and_text_evaluate('Lead_desc', unit=self.unit)
                 self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
 
@@ -828,9 +828,9 @@ class InfoMenuState(State):
                 # Add text
                 pos = (offset + 7 + width//2, 4 + y)
                 if FONT.get('rank'):
-                    render_text(surf, ['rank'], [weapon_rank.nid], ['blue'], pos, HAlignment.CENTER)
+                    render_text(surf, ['rank'], [weapon_rank.nid], ['white'], pos, HAlignment.CENTER)
                 else:
-                    render_text(surf, ['text'], [weapon_rank.nid], ['blue'], pos, HAlignment.CENTER)
+                    render_text(surf, ['text'], [weapon_rank.nid], ['white'], pos, HAlignment.CENTER)
                 self.info_graph.register((96 + pos[0] - width//2 - 8, 24 + pos[1], width, 16), "%s mastery level: %d" % (DB.weapons.get(weapon).name, value), 'supports_wlvl', first=(counter==0))
                 counter += 1
                 if counter >= len(wexp_to_draw):
@@ -901,24 +901,24 @@ class InfoMenuState(State):
         # surf.blit(battle_surf, (left, top))
         # # Populate battle info
         # surf.blit(SPRITES.get('equipment_logo'), (14, top + 4))
-        # render_text(surf, ['text'], [text_funcs.translate('Rng')], ['yellow'], (78, top))
+        # render_text(surf, ['text'], [text_funcs.translate('Rng')], ['white'], (78, top))
         # rng_desc = text_funcs.translate_and_text_evaluate('Rng_desc', unit=self.unit)
         # self.info_graph.register((96 + 78, top, 56, 16), rng_desc, 'equipment')
-        # render_text(surf, ['text'], [text_funcs.translate('Atk')], ['yellow'], (22, top + 16))
+        # render_text(surf, ['text'], [text_funcs.translate('Atk')], ['white'], (22, top + 16))
         # atk_desc = text_funcs.translate_and_text_evaluate('Atk_desc', unit=self.unit)
         # self.info_graph.register((96 + 14, top + 16, 64, 16), atk_desc, 'equipment')
-        # render_text(surf, ['text'], [text_funcs.translate('Hit')], ['yellow'], (22, top + 32))
+        # render_text(surf, ['text'], [text_funcs.translate('Hit')], ['white'], (22, top + 32))
         # hit_desc = text_funcs.translate_and_text_evaluate('Hit_desc', unit=self.unit)
         # self.info_graph.register((96 + 14, top + 32, 64, 16), hit_desc, 'equipment')
         # if DB.constants.value('crit'):
-        #     render_text(surf, ['text'], [text_funcs.translate('Crit')], ['yellow'], (78, top + 16))
+        #     render_text(surf, ['text'], [text_funcs.translate('Crit')], ['white'], (78, top + 16))
         #     crit_desc = text_funcs.translate_and_text_evaluate('Crit_desc', unit=self.unit)
         #     self.info_graph.register((96 + 78, top + 16, 56, 16), crit_desc, 'equipment')
         # else:
-        #     render_text(surf, ['text'], [text_funcs.translate('AS')], ['yellow'], (78, top + 16))
+        #     render_text(surf, ['text'], [text_funcs.translate('AS')], ['white'], (78, top + 16))
         #     AS_desc = text_funcs.translate_and_text_evaluate('AS_desc', unit=self.unit)
         #     self.info_graph.register((96 + 78, top + 16, 56, 16), AS_desc, 'equipment')
-        # render_text(surf, ['text'], [text_funcs.translate('Avoid')], ['yellow'], (78, top + 32))
+        # render_text(surf, ['text'], [text_funcs.translate('Avoid')], ['white'], (78, top + 32))
         # avoid_desc = text_funcs.translate_and_text_evaluate('Avoid_desc', unit=self.unit)
         # self.info_graph.register((96 + 78, top + 32, 56, 16), avoid_desc, 'equipment')
 
@@ -936,14 +936,14 @@ class InfoMenuState(State):
 
         # avo = str(combat_calcs.avoid(self.unit, weapon))
         # attack_speed = str(combat_calcs.attack_speed(self.unit, weapon))
-        # render_text(surf, ['text'], [rng], ['blue'], (127, top), HAlignment.RIGHT)
-        # render_text(surf, ['text'], [dam], ['blue'], (71, top + 16), HAlignment.RIGHT)
-        # render_text(surf, ['text'], [acc], ['blue'], (71, top + 32), HAlignment.RIGHT)
+        # render_text(surf, ['text'], [rng], ['white'], (127, top), HAlignment.RIGHT)
+        # render_text(surf, ['text'], [dam], ['white'], (71, top + 16), HAlignment.RIGHT)
+        # render_text(surf, ['text'], [acc], ['white'], (71, top + 32), HAlignment.RIGHT)
         # if DB.constants.value('crit'):
-        #     render_text(surf, ['text'], [crt], ['blue'], (127, top + 16), HAlignment.RIGHT)
+        #     render_text(surf, ['text'], [crt], ['white'], (127, top + 16), HAlignment.RIGHT)
         # else:
-        #     render_text(surf, ['text'], [attack_speed], ['blue'], (127, top + 16), HAlignment.RIGHT)
-        # render_text(surf, ['text'], [avo], ['blue'], (127, top + 32), HAlignment.RIGHT)
+        #     render_text(surf, ['text'], [attack_speed], ['white'], (127, top + 16), HAlignment.RIGHT)
+        # render_text(surf, ['text'], [avo], ['white'], (127, top + 32), HAlignment.RIGHT)
 
         return surf
 
@@ -1078,7 +1078,7 @@ class InfoMenuState(State):
                 self.info_graph.register((96 + x * width + 8, y * 16 + top, WINWIDTH - 120, 16), affinity_desc, 'supports_wlvl')
             render_text(surf, ['narrow'], [other_unit.name], [], (x * width + 22, y * 16 + top))
             highest_rank = pair.unlocked_ranks[-1]
-            render_text(surf, ['text'], [highest_rank], ['yellow'], (x * width + surf.get_width()/2 - 2, y * 16 + top), HAlignment.RIGHT)
+            render_text(surf, ['text'], [highest_rank], ['white'], (x * width + surf.get_width()/2 - 2, y * 16 + top), HAlignment.RIGHT)
         return surf
 
     def draw_support_surf(self, surf):
@@ -1092,10 +1092,10 @@ class InfoMenuState(State):
         x_pos = 27 + 88 // 2
         text = str(fatigue) + '/' + str(max_fatigue)
         x_pos -= text_width('text', text)//2
-        render_text(surf, ['text'], [text], ['blue'], (x_pos, WINHEIGHT - 17))
+        render_text(surf, ['text'], [text], ['white'], (x_pos, WINHEIGHT - 17))
         if fatigue >= max_fatigue:
             render_text(surf, ['text'], [str(fatigue)], ['red'], (x_pos, WINHEIGHT - 17))
-        render_text(surf, ['text'], [text_funcs.translate('Ftg')], ['yellow'], (8, WINHEIGHT - 17))
+        render_text(surf, ['text'], [text_funcs.translate('Ftg')], ['white'], (8, WINHEIGHT - 17))
 
         return surf
 
@@ -1115,7 +1115,7 @@ class InfoMenuState(State):
             for idx, note in enumerate(my_notes):
                 category = note[0]
                 entries = note[1].split(',')
-                render_text(menu_surf, ['text'], [category], ['blue'], (10, total_height))
+                render_text(menu_surf, ['text'], [category], ['white'], (10, total_height))
                 for entry in entries:
                     category_length = text_width('text', category)
                     left_pos = 64 if category_length <= 64 else (category_length + 8)

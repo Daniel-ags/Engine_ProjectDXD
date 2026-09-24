@@ -654,3 +654,23 @@ class EvalAvailable(ItemComponent):
         except:
             logging.error("EvalAvailable: Couldn't evaluate %s conditional" % self.value)
         return False
+
+class BlankUses(ItemComponent):
+    
+    nid = 'blank_uses'
+    desc = "Display empty string in place of Uses on the item. Do not combine with other uses components."
+    tag = ItemTags.USES
+    
+    def _calc_uses(self, unit, item):
+        return ''
+
+    def _font_color(self, unit, item):
+        color = 'navy'
+        if not item_funcs.available(unit, item):
+            color = 'grey'
+        if 'text-' + color in FONT:
+            return color
+        return None
+    
+    def item_uses_display(self, unit, item) -> UsesDisplayConfig:
+        return UsesDisplayConfig(self._calc_uses, self._font_color, unit=unit, item=item)

@@ -602,7 +602,7 @@ class BaseSkillsManageState(State):
         render_text(surf, ['text'], [self.unit.name], ['white'], (46, 8))
         klass = DB.classes.get(self.unit.klass)
         klass_name = klass.name if klass else ''
-        render_text(surf, ['text'], [klass_name], ['blue'], (46, 22))
+        render_text(surf, ['text'], [klass_name], ['white'], (46, 22))
 
         slots_color = 'yellow' if len(self.equipped_skills) < self.unit.max_skills else 'green'
         render_text(surf, ['text'], ["Slots:"], ['white'], (146, 15))
@@ -792,7 +792,7 @@ class BaseSkillsSelectState(prep.PrepManageState):
         if funds_surf:
             surf.blit(funds_surf, (168, 134))
             money = str(game.get_money())
-            FONT['text-blue'].blit_right(money, surf, (219, 138))
+            FONT['text-white'].blit_right(money, surf, (219, 138))
 
         return surf
 
@@ -1534,7 +1534,7 @@ class LoreDisplay():
                 portrait = image_mods.make_translucent(portrait, 0.5)
                 image.blit(portrait, (utils.tuple_sub(image.get_size(), portrait.get_size(), bottomright_pad)))
 
-            render_text(image, ['text'], [self.lore.title], ['blue'], (self.width // 2, 4), HAlignment.CENTER)
+            render_text(image, ['text'], [self.lore.title], ['white'], (self.width // 2, 4), HAlignment.CENTER)
 
             if self.num_pages > 1:
                 text = '%d / %d' % (self.page_num + 1, self.num_pages)
