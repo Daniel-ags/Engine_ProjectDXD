@@ -431,11 +431,32 @@ class BaseSkillsManageState(State):
 
         self.equipped_menu = menus.Choice(None, equipped_names, topleft=(4, 63), background=None)
         self.equipped_menu.set_limit(5)
-        self.equipped_menu.width = 98
 
         self.available_menu = menus.Choice(None, available_names, topleft=(124, 63), background=None)
         self.available_menu.set_limit(5)
-        self.available_menu.width = 98
+
+        def lock_scrollbar(menu, target_x):
+
+            sb = getattr(menu, 'scroll_bar', None) or getattr(menu, 'scrollbar', None)
+            if not sb:
+                for attr in dir(menu):
+                    val = getattr(menu, attr, None)
+                    if val is not None and hasattr(val, 'draw') and 'scroll' in attr.lower():
+                        sb = val
+                        break
+
+            if sb and hasattr(sb, 'draw'):
+                orig_draw = sb.draw
+                def custom_draw(surf, topright=None, *args, **kwargs):
+                    if topright is not None:
+                        topright = (target_x, topright[1])
+                    elif 'topright' in kwargs:
+                        kwargs['topright'] = (target_x, kwargs['topright'][1])
+                    return orig_draw(surf, topright, *args, **kwargs)
+                sb.draw = custom_draw
+
+        lock_scrollbar(self.equipped_menu, 119)
+        lock_scrollbar(self.available_menu, 239)
 
         self._update_cursors()
 
@@ -644,20 +665,39 @@ class BaseSkillsSelectState(prep.PrepManageState):
 
     def create_quick_disp(self):
         sprite = SPRITES.get('buttons')
-        button = sprite.subsurface(0, 66, 14, 13)
+        button_a = sprite.subsurface(0, 66, 14, 13)
+        button_b = sprite.subsurface(0, 82, 14, 13)
+        button_r = sprite.subsurface(0, 146, 24, 13)
+        buttons = [button_a, button_b, button_r]
+
         font = FONT['text']
-        command = 'Manage'
-        total_w = button.get_width() + 4 + font.width(command)
-        bg_surf = base_surf.create_base_surf(72, 24, 'menu_bg_base')
+        commands = ['Manage', 'Back', 'Info']
+
+        max_btn_w = max(btn.get_width() for btn in buttons)
+
+        start_x = 8
+        text_x = start_x + max_btn_w + 2
+
+        box_w = 80
+        # Altura reduzida para 56px para acomodar o espaçamento mais compacto
+        box_h = 56
+
+        bg_surf = base_surf.create_base_surf(box_w, box_h, 'menu_bg_base')
         bg_surf = image_mods.make_translucent(bg_surf, 0.1)
-        start_x = (72 - total_w) // 2
-        bg_surf.blit(button, (start_x, 12 - button.get_height() // 2))
-        font.blit(command, bg_surf, (start_x + button.get_width() + 4, 4))
+
+        start_y = 6
+        for idx, (btn, cmd) in enumerate(zip(buttons, commands)):
+            # Passo de 15px (13px de altura do botão + 2px de vão)
+            y_text = start_y + idx * 15
+            y_btn = y_text + 1
+            btn_x = start_x + (max_btn_w - btn.get_width()) // 2
+            bg_surf.blit(btn, (btn_x, y_btn))
+            font.blit(cmd, bg_surf, (text_x, y_text))
+
         return bg_surf
 
     def draw_unit_skills_card(self, surf, topleft, unit):
-
-        card_w, card_h = 114, 88
+        card_w, card_h = 126, 88
         card_surf = base_surf.create_base_surf(card_w, card_h, 'menu_bg_base')
         card_surf = image_mods.make_translucent(card_surf, 0.1)
         actual_w = card_surf.get_width()
@@ -665,7 +705,7 @@ class BaseSkillsSelectState(prep.PrepManageState):
         # Nome da unidade
         render_text(card_surf, ['text'], [unit.name], ['white'], (6, 4))
 
-        # "Slots: X/18" com margem dinâmica de segurança
+        # "Slots: X/Y"
         eq_skills = unit.get_equipped_skills()
         slots_color = 'yellow' if len(eq_skills) < unit.max_skills else 'green'
         slots_label = "Slots:"
@@ -679,14 +719,13 @@ class BaseSkillsSelectState(prep.PrepManageState):
         render_text(card_surf, ['text'], [slots_label], ['white'], (start_x, 4))
         render_text(card_surf, ['text'], [slots_num], [slots_color], (start_x + label_w + 3, 4))
 
-        # Lista de habilidades
         if len(eq_skills) <= 3:
             for idx, skill in enumerate(eq_skills):
-                y_offset = 20 + idx * 15
+                y_offset = 18 + idx * 16
                 render_text(card_surf, ['text'], [skill.name], ['white'], (6, y_offset))
         else:
             for idx, skill in enumerate(eq_skills[:3]):
-                y_offset = 20 + idx * 15
+                y_offset = 18 + idx * 16
                 render_text(card_surf, ['text'], [skill.name], ['white'], (6, y_offset))
             render_text(card_surf, ['text'], [f"+{len(eq_skills) - 3} more..."], ['grey'], (6, 65))
 
@@ -694,8 +733,6 @@ class BaseSkillsSelectState(prep.PrepManageState):
 
     def clean_aura_ghosts(self, source_unit, unequipped_skill):
         """Remove subskills/buffs espalhados pelo grupo originados desta skill desequipada"""
-        # 1. Identifica os NIDs de subskills atrelados aos componentes de aura da habilidade
-        
         aura_subskill_nids = set()
         for comp in getattr(unequipped_skill, 'components', []):
             if 'aura' in comp.nid.lower():
@@ -707,20 +744,17 @@ class BaseSkillsSelectState(prep.PrepManageState):
 
         all_units = {u for u in game.get_units_in_party()} | {u for u in game.units}
 
-        # 2. Varre todas as unidades em busca de subskills geradas por essa habilidade
         for target in all_units:
             ghosts = []
             for s in list(target.skills):
                 parent_skill = getattr(s, 'parent_skill', None)
                 parent_unit = getattr(s, 'parent_unit', None) or getattr(s, 'initiator_nid', None)
 
-                # É filha direta pelo identificador único (UID) ou NID da skill pai
                 is_direct_child = (
                     parent_skill == getattr(unequipped_skill, 'uid', None) or
                     parent_skill == unequipped_skill.nid or
                     parent_skill == unequipped_skill
                 )
-                # Ou é uma subskill registrada da aura desta unidade
                 is_aura_buff = (
                     s.nid in aura_subskill_nids and 
                     (parent_unit == source_unit.nid or parent_unit == source_unit or getattr(s, 'subskill', False))
@@ -729,7 +763,6 @@ class BaseSkillsSelectState(prep.PrepManageState):
                 if is_direct_child or is_aura_buff:
                     ghosts.append(s)
 
-            # Remove os fantasmas usando a ação oficial do motor para recalcular atributos
             for ghost in ghosts:
                 try:
                     action.RemoveSkill(target, ghost).do()
@@ -743,7 +776,6 @@ class BaseSkillsSelectState(prep.PrepManageState):
         """Cura o save: expurga quaisquer subskills órfãs cujo pai não esteja mais equipado por ninguém."""
         all_units = {u for u in game.get_units_in_party()} | {u for u in game.units}
 
-        # Coleta os UIDs e NIDs de todas as habilidades ativas e equipadas no momento
         active_skill_uids = set()
         active_skill_nids = set()
         for u in all_units:
@@ -757,7 +789,6 @@ class BaseSkillsSelectState(prep.PrepManageState):
             for s in list(target.skills):
                 if getattr(s, 'subskill', False):
                     p_skill = getattr(s, 'parent_skill', None)
-                    # Se a subskill aponta para uma habilidade pai que não existe mais em ninguém
                     if p_skill and (p_skill not in active_skill_uids and p_skill not in active_skill_nids):
                         ghosts.append(s)
 
@@ -773,26 +804,25 @@ class BaseSkillsSelectState(prep.PrepManageState):
             self.bg.draw(surf)
         self.menu.draw(surf)
         unit = self.menu.get_current()
+
+        card_x = 6
+        card_y = 72
+        card_w = 126
+        card_h = 88
+
         if unit:
-            self.draw_unit_skills_card(surf, (6, 71), unit)
+            self.draw_unit_skills_card(surf, (card_x, card_y), unit)
 
-        # A: Skills button (alinhado em x=162)
         if hasattr(self, 'quick_disp') and self.quick_disp:
-            surf.blit(self.quick_disp, (162, 74))
+            disp_w = self.quick_disp.get_width()
+            disp_h = self.quick_disp.get_height()
 
-        # C: Info helper sem container de fundo
-        helper = engine.get_key_name(cf.SETTINGS['key_INFO']).upper()
-        total_info_w = FONT['text-yellow'].width(helper) + FONT['text'].width(': Info')
-        info_x = 162 + (72 - total_info_w) // 2
-        FONT['text-yellow'].blit(helper, surf, (info_x, 108))
-        FONT['text'].blit(': Info', surf, (info_x + FONT['text-yellow'].width(helper), 108))
+            disp_y = (card_y + card_h // 2) - disp_h // 2
 
-        # Funds display
-        funds_surf = SPRITES.get('funds_display')
-        if funds_surf:
-            surf.blit(funds_surf, (168, 134))
-            money = str(game.get_money())
-            FONT['text-white'].blit_right(money, surf, (219, 138))
+            card_right = card_x + card_w
+            disp_x = card_right + (WINWIDTH - card_right - disp_w) // 2
+
+            surf.blit(self.quick_disp, (disp_x, disp_y))
 
         return surf
 
