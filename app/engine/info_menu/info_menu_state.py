@@ -465,7 +465,7 @@ class InfoMenuState(State):
             surf.blit(active_sprite, (x_pos, y_pos + self.scroll_offset_y))
 
     def growth_colors(self, value):
-        color = 'yellow'
+        color = 'white'
         if value <= 0:
             color = 'purple'
         elif value > 0 and value <= 20:
@@ -541,8 +541,8 @@ class InfoMenuState(State):
             hp_font = 'narrow'
         else:
             hp_font = 'text'
-        render_text(surf, [hp_font], [current_hp], ['blue'], (31, 0), HAlignment.RIGHT)
-        render_text(surf, [hp_font], [max_hp], ['blue'], (55, 0), HAlignment.RIGHT)
+        render_text(surf, [hp_font], [current_hp], ['white'], (31, 0), HAlignment.RIGHT)
+        render_text(surf, [hp_font], [max_hp], ['white'], (55, 0), HAlignment.RIGHT)
         return surf
 
     def draw_top_arrows(self, surf):
@@ -730,7 +730,7 @@ class InfoMenuState(State):
 
             elif stat == 'AID':
                 aid = equations.parser.rescue_aid(self.unit)
-                render_text(surf, ['text'], [str(aid)], ['blue'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
+                render_text(surf, ['text'], [str(aid)], ['white'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
 
                 # Mount Symbols
                 for tag in self.unit.tags:
@@ -767,7 +767,7 @@ class InfoMenuState(State):
 
             elif stat == 'GAUGE':
                 gge = str(self.unit.get_guard_gauge())
-                render_text(surf, ['text'], [gge], ['blue'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
+                render_text(surf, ['text'], [gge], ['white'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
                 render_text(surf, ['text'], [text_funcs.translate('GAUGE')], ['yellow'], (72, 16 * true_idx + 24))
                 desc = text_funcs.translate_and_text_evaluate('GAUGE_desc', unit=self.unit)
                 self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
