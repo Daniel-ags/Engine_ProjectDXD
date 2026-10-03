@@ -293,22 +293,27 @@ class ExpState(State):
                 if self.combat_object:
                     self.combat_object.lighten_ui()
 
+                # Experiência de armas
                 if self.new_wexp:
                     for weapon_nid, value in self.new_wexp.items():
                         action.do(action.AddWexp(self.unit, weapon_nid, value))
 
+                # Concessão de habilidades
                 if self.starting_state != "stat_booster":
                     ExpState.give_new_personal_skills(self.unit)
-                    should_learn = (
-                        (self.starting_state == 'class_change' and DB.constants.value('learn_skills_on_reclass')) or
-                        (self.starting_state == 'promote' and DB.constants.value('learn_skills_on_promote')) or
-                        (self.starting_state not in ('class_change', 'promote'))
-                    )
-                    if should_learn:
+                    if self.starting_state == 'class_change':
+                        if DB.constants.value('learn_skills_on_reclass'):
+                            ExpState.give_all_class_skills(self.unit)
+                    elif self.starting_state == 'promote':
+                        if DB.constants.value('learn_skills_on_promote'):
+                            ExpState.give_all_class_skills(self.unit)
+                    else:
                         ExpState.give_new_class_skills(self.unit)
 
+                # Transições finais
                 if game.memory.get('skill_swap_queue'):
                     self.state.change('wait_for_skill_swap')
+                    game.state.change('skill_swap_levelup')
                 elif game.alerts:
                     self.state.change('wait_for_skill_swap')
                     game.state.change('alert')
@@ -317,6 +322,7 @@ class ExpState(State):
                     game.state.back()
 
         elif self.state.get_state() == 'wait_for_skill_swap':
+            # Aguarda a fila de trocas e todos os alertas fecharem naturalmente
             if not game.memory.get('skill_swap_queue') and not game.alerts:
                 if game.state.state and game.state.state[-1] == self:
                     self.state.clear()
@@ -429,9 +435,6 @@ class ExpState(State):
                     if not is_slot_skill or len(unit.get_equipped_skills()) < unit.max_skills:
                         act = action.AddSkill(unit, skill_nid, source=source, source_type=source_type)
                         action.do(act)
-                        if not is_slot_skill or len(unit.get_equipped_skills()) < unit.max_skills:
-                            act = action.AddSkill(unit, skill_nid, source=source, source_type=source_type)
-                            action.do(act)
                         if act.skill_obj and not skill_system.hidden(act.skill_obj, unit):
                             msg = f"{unit.name} learned {act.skill_obj.name}!"
                             alert = CustomSkillBanner(unit, act.skill_obj, msg)
@@ -612,7 +615,7 @@ class LevelUpScreen():
         FONT['text-yellow'].blit('Lv', sprite_top, (self.width // 2 + 12, 3))
 
         level = str(self.old_level) if self.state in ('scroll_in', 'init_wait') and not self.flipped else str(self.new_level)
-        FONT['text-blue'].blit(level, sprite_top, (self.width // 2 + 50 - FONT['text-blue'].width(level), 3))
+        FONT['text-new-white'].blit(level, sprite_top, (self.width // 2 + 50 - FONT['text-new-white'].width(level), 3))
 
         if engine.get_time() > self.flip_start_time:
             self.flip_timer = (engine.get_time() - self.flip_start_time) / 333
@@ -646,7 +649,7 @@ class LevelUpScreen():
             pos = self.get_position(idx)
             render_text(sprite_bottom, ['text'], [DB.stats.get(stat).name], ['yellow'], pos)
             val = self.unit.stats[stat] - (self.stat_list[idx] if self.current_spark < idx else 0)
-            FONT['text-blue'].blit(str(val), sprite_bottom, (pos[0] + 40 - FONT['text-blue'].width(str(val)), pos[1]))
+            FONT['text-new-white'].blit(str(val), sprite_bottom, (pos[0] + 40 - FONT['text-new-white'].width(str(val)), pos[1]))
 
         icons.draw_portrait(surf, self.unit, bottomright=(WINWIDTH - 4, WINHEIGHT + self.unit_scroll_offset))
         surf.blit(sprite_bottom, self.topleft())
@@ -1030,8 +1033,6 @@ class SkillSwapLevelUpState(State):
             if 'skill_swap_queue' in game.memory:
                 del game.memory['skill_swap_queue']
             game.state.back()
-            if game.alerts:
-                game.state.change('alert')
 
     def draw(self, surf):
         if not getattr(self, 'window_bg', None):

@@ -103,7 +103,7 @@ def draw_skill(surf: engine.Surface, skill: skill.SkillObject | skills.SkillPref
     else:
         text = skill_system.get_text(skill)
         if text is not None:
-            FONT['text-blue'].blit(text, surf, (topleft[0] + 16, topleft[1]))
+            FONT['text-new-white'].blit(text, surf, (topleft[0] + 16, topleft[1]))
 
     return surf
 
@@ -247,7 +247,7 @@ def draw_stat(surf: engine.Surface, stat_nid: str, unit: unit.UnitObject,
         elif bonus < 0:
             typeface = FONT['text-red']
         else:
-            typeface = FONT['text-blue']
+            typeface = FONT['text-new-white']
         typeface.blit_right(str(value + bonus), surf, topright)
     else:
         # Recalc these values for full display
@@ -256,7 +256,7 @@ def draw_stat(surf: engine.Surface, stat_nid: str, unit: unit.UnitObject,
         if value >= max_stat:
             draw_glow(surf, FONT['text-green'], str(value), topright, HAlignment.RIGHT)
         else:
-            FONT['text-blue'].blit_right(str(value), surf, topright)
+            FONT['text-new-white'].blit_right(str(value), surf, topright)
         if bonus > 0:
             draw_glow(surf, FONT['small-green'], "+%d" % bonus, topright)
         elif bonus < 0:
@@ -273,12 +273,12 @@ def draw_growth(surf: engine.Surface, stat_nid: str, unit: unit.UnitObject,
     if compact:
         pass
     else:
-        FONT['text-blue'].blit_right(str(value), surf, topright)
+        FONT['text-new-white'].blit_right(str(value), surf, topright)
         # The bonus follows the percent sign
         bonus_pos = topright
         if percent:
-            FONT['text-blue'].blit('%', surf, topright)
-            bonus_pos = (topright[0] + FONT['text-blue'].width('%'), topright[1])
+            FONT['text-new-white'].blit('%', surf, topright)
+            bonus_pos = (topright[0] + FONT['text-new-white'].width('%'), topright[1])
         if bonus > 0:
             FONT['small-green'].blit("+%d" % bonus, surf, bonus_pos)
         elif bonus < 0:

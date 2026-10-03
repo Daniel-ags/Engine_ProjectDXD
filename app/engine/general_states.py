@@ -2668,27 +2668,42 @@ class AlertState(State):
     def begin(self):
         if game.cursor:
             game.cursor.hide()
+        # Se a fila estiver vazia logo ao abrir, fecha imediatamente
+        if not game.alerts:
+            game.state.back()
 
     def back(self):
-        game.alerts.pop()
-        game.state.back()
-        return 'repeat'
+        if game.alerts:
+            game.alerts.pop()
+
+        if game.alerts:
+            next_alert = game.alerts[-1]
+            if hasattr(next_alert, 'time_to_start'):
+                next_alert.time_to_start = engine.get_time()
+            return 'repeat'
+        else:
+            game.state.back()
+            return 'repeat'
 
     def take_input(self, event):
-        alert = None
-        if game.alerts:
-            alert = game.alerts[-1]
+        if not game.alerts:
+            game.state.back()
+            return
 
+        alert = game.alerts[-1]
         if event and alert and alert.time_to_start and \
                 engine.get_time() - alert.time_to_start > alert.time_to_pause:
             self.back()
 
     def update(self):
-        if game.alerts:
-            alert = game.alerts[-1]
-            alert.update()
-            if alert.remove_flag:
-                self.back()
+        if not game.alerts:
+            game.state.back()
+            return
+
+        alert = game.alerts[-1]
+        alert.update()
+        if alert.remove_flag:
+            self.back()
 
     def draw(self, surf):
         if game.alerts and self.started:

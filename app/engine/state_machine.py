@@ -246,7 +246,29 @@ class StateMachine():
             logging.debug("State: %s", self.state_names())
         self.temp_state.clear()
 
+    def _debug_log_state(self):
+        curr_name = self.current() or "NONE"
+        prev_logged = getattr(self, '_last_logged_debug_state', None)
+        has_pending = bool(self.temp_state)
+
+        if curr_name != prev_logged or has_pending:
+            self._last_logged_debug_state = curr_name
+            stack_repr = " -> ".join([s.name for s in self.state]) if self.state else "EMPTY"
+
+            top_obj = self.state[-1] if self.state else None
+            sub_info = ""
+            if top_obj and hasattr(top_obj, 'state') and hasattr(top_obj.state, 'get_state'):
+                sub_info = f" | Sub: {top_obj.state.get_state()}"
+
+            pending_info = f" | Temp: {self.temp_state}" if has_pending else ""
+            print(f"[DEBUG STATE] Ativo: {curr_name}{sub_info} | Pilha: [{stack_repr}]{pending_info}")
+
     def update(self, event, surf):
+        
+        # --- DEBUG MONITOR (comente a linha abaixo para desligar) ---
+        self._debug_log_state()
+        # -------------------------------------------------------------
+
         if not self.state:
             return None, False
         state = self.state[-1]
