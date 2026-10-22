@@ -4,13 +4,10 @@ from PyQt5.QtGui import qRgb, QPixmap, QIcon, QBrush, QColor, QImage
 from app.utilities.typing import NID
 
 from app.utilities.data import Data
-from app.data.database.database import DB
 from app.data.resources.resources import RESOURCES
 from app.data.resources import combat_anims
 
 from app.editor.base_database_gui import ResourceCollectionModel
-
-from app.extensions.custom_gui import DeletionTab, DeletionDialog
 
 from app.utilities import str_utils
 from app.editor import utilities as editor_utilities
@@ -66,30 +63,6 @@ def get_combat_anim_icon(combat_anim_nid: str):
             pixmap = QPixmap.fromImage(im)
             return pixmap
     return None
-
-def check_delete(nid: NID, window):
-    # Check to see what is using me?
-    affected_classes = [klass for klass in DB.classes if klass.combat_anim_nid == nid]
-
-    if affected_classes:
-        from app.editor.class_editor.class_model import ClassModel
-        model = ClassModel
-        msg = "Deleting Combat Animation <b>%s</b> would affect these classes" % nid
-        deletion_tab = DeletionTab(affected_classes, model, msg, "Classes")
-        return DeletionDialog.inform([deletion_tab], window)
-    return True
-
-def on_delete(nid: NID):
-    # What uses map sprites
-    # Classes
-    for klass in DB.classes:
-        if klass.combat_anim_nid == nid:
-            klass.combat_anim_nid = None
-
-def on_nid_changed(old_nid, new_nid):
-    for klass in DB.classes:
-        if klass.combat_anim_nid == old_nid:
-            klass.combat_anim_nid = new_nid
 
 class CombatAnimModel(ResourceCollectionModel):
     def data(self, index, role):

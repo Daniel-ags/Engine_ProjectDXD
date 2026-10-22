@@ -10,6 +10,9 @@ from app.data.resources.tiles import TileSet, TileMapPrefab
 
 from app.utilities.data import Data
 from app.data.database.database import DB
+from app.data.database import references
+from app.data.resources.resource_types import ResourceType as RType
+from app.editor import reference_dialogs
 
 from app.editor.base_database_gui import ResourceCollectionModel
 from app.extensions.custom_gui import DeletionTab, DeletionDialog
@@ -265,28 +268,12 @@ class TileMapModel(ResourceCollectionModel):
         self.layoutChanged.emit()
 
     def delete(self, idx):
-        # Check to see what is using me?
         res = self._data[idx]
-        nid = res.nid
-        affected_levels = [level for level in DB.levels if level.tilemap == nid]
-        if affected_levels:
-            from app.editor.global_editor.level_menu import LevelModel
-            model = LevelModel
-            msg = "Deleting Tilemap <b>%s</b> would affect these levels." % nid
-            deletion_tab = DeletionTab(affected_levels, model, msg, "Levels")
-            ok = DeletionDialog.inform([deletion_tab], self.window)
-            if ok:
-                pass
-            else:
-                return
-        super().delete(idx)
+        if reference_dialogs.check_delete(DB, RType.TILEMAPS, res.nid, 'Tilemap', self.window):
+            super().delete(idx)
 
     def on_nid_changed(self, old_nid, new_nid):
-        # What uses tilemaps
-        # Levels use tilemaps
-        for level in DB.levels:
-            if level.tilemap == old_nid:
-                level.tilemap = new_nid
+        references.rewrite(DB, RType.TILEMAPS, old_nid, new_nid)
 
     def duplicate(self, tilemap):
         idx = self._data.index(tilemap.nid)

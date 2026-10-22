@@ -1,7 +1,9 @@
 from app.editor.lib.components.validated_line_edit import NidLineEdit
 from functools import partial
 
+from app.data.database import references
 from app.data.database.database import DB
+from app.data.database.database_types import DatabaseType as DType
 from app.editor import timer
 from app.editor.custom_widgets import PartyBox, UnitBox
 from app.editor.sound_editor import sound_tab
@@ -228,9 +230,7 @@ class PropertiesMenu(QWidget):
         self.state_manager.change_and_broadcast('ui_refresh_signal', None)
 
     def on_nid_changed(self, old_nid, new_nid):
-        for event in DB.events:
-            if event.level_nid == old_nid:
-                event.level_nid = new_nid
+        references.rewrite(DB, DType.LEVELS, old_nid, new_nid)
 
     def title_changed(self, text):
         self.current.name = text

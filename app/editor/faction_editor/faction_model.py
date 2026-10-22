@@ -5,8 +5,9 @@ from app.data.resources.resources import RESOURCES
 
 from app.utilities.data import Data
 from app.data.database.database import DB
-
-from app.extensions.custom_gui import DeletionTab, DeletionDialog
+from app.data.database import references
+from app.data.database.database_types import DatabaseType as DType
+from app.editor import reference_dialogs
 
 from app.editor.custom_widgets import FactionBox
 from app.editor.base_database_gui import DragDropCollectionModel
@@ -46,34 +47,10 @@ class FactionModel(DragDropCollectionModel):
         return new_faction
 
     def delete(self, idx):
-        faction = self._data[idx]
-        nid = faction.nid
-        affected_ais = [ai for ai in DB.ai if ai.has_unit_spec("Faction", nid)]
-        affected_levels = [level for level in DB.levels if any(unit.faction == nid for unit in level.units)]
-        deletion_tabs = []
-        if affected_ais:
-            from app.editor.ai_editor.ai_model import AIModel
-            model = AIModel
-            msg = "Deleting Faction <b>%s</b> would affect these AIs" % nid
-            deletion_tabs.append(DeletionTab(affected_ais, model, msg, "AIs"))
-        if affected_levels:
-            from app.editor.global_editor.level_menu import LevelModel
-            model = LevelModel
-            msg = "Deleting Faction <b>%s</b> would affect units in these levels" % nid
-            deletion_tabs.append(DeletionTab(affected_levels, model, msg, "Levels"))
-
-        if deletion_tabs:
-            swap, ok = DeletionDialog.get_swap(deletion_tabs, FactionBox(self.window, exclude=faction), self.window)
-            if ok:
-                self.on_nid_changed(nid, swap.nid)
-            else:
-                return
-        super().delete(idx)
+        obj = self._data[idx]
+        if reference_dialogs.check_delete(DB, DType.FACTIONS, obj.nid, 'Faction', self.window,
+                                          lambda: FactionBox(self.window, exclude=obj)):
+            super().delete(idx)
 
     def on_nid_changed(self, old_nid, new_nid):
-        for ai in DB.ai:
-            ai.change_unit_spec("Faction", old_nid, new_nid)
-        for level in DB.levels:
-            for unit in level.units:
-                if unit.faction == old_nid:
-                    unit.faction = new_nid
+        references.rewrite(DB, DType.FACTIONS, old_nid, new_nid)

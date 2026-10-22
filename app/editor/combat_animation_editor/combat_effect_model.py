@@ -1,21 +1,27 @@
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import qRgb, QIcon, QBrush, QColor, QImage
 
+from typing import List
+
 from app.utilities.typing import NID
 
+from app.data.database import references
 from app.data.database.database import DB
 from app.data.resources.resources import RESOURCES
+from app.data.resources.resource_types import ResourceType as RType
 from app.data.resources import combat_anims
 
 from app.editor.base_database_gui import ResourceCollectionModel
 from app.editor.item_editor import item_model
 
-from app.extensions.custom_gui import DeletionTab, DeletionDialog
+from app.editor import reference_dialogs
+from app.extensions.custom_gui import DeletionTab
 
 from app.utilities import str_utils
 
-def check_delete(nid: NID, window):
-    # Check to see what is using me?
+def resource_deletion_tabs(nid: NID) -> List[DeletionTab]:
+    """What a deletion would affect beyond the database's own references to the effect"""
+    # A spell plays the effect that shares its nid
     affected_items = [item for item in DB.items if item.nid == nid]
     affected_anims = []
     affected_effects = []
@@ -48,10 +54,14 @@ def check_delete(nid: NID, window):
         msg = "Deleting Combat Effect <b>%s</b> would affect these Combat Effects" % nid
         deletion_tabs.append(DeletionTab(affected_effects, model, msg, "Combat Effects"))
 
-    if deletion_tabs:
-        ok = DeletionDialog.inform(deletion_tabs, window)
-        return ok
-    return True
+    return deletion_tabs
+
+def check_delete(nid: NID, window) -> bool:
+    if reference_dialogs.check_delete(DB, RType.COMBAT_EFFECTS, nid, 'Combat Effect', window,
+                                      extra_tabs=resource_deletion_tabs(nid)):
+        on_delete(nid)
+        return True
+    return False
 
 def on_delete(nid: NID):
     # What uses combat effects
@@ -70,6 +80,7 @@ def on_delete(nid: NID):
                     command.value = (None,) + tuple(command.value[1:])
 
 def on_nid_changed(old_nid, new_nid):
+    references.rewrite(DB, RType.COMBAT_EFFECTS, old_nid, new_nid)
     for combat_anim in RESOURCES.combat_anims:
         for weapon_anim in combat_anim.weapon_anims:
             for pose in weapon_anim.poses:

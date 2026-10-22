@@ -9,13 +9,10 @@ from app.data.resources.portraits import PortraitPrefab, GBA_PORTRAIT_WIDTH, GBA
 from app.data.resources.resources import RESOURCES
 
 from app.utilities.data import Data
-from app.data.database.database import DB
 
-from app.extensions.custom_gui import DeletionTab, DeletionDialog
 from app.editor.base_database_gui import ResourceCollectionModel
 from app.editor.settings import MainSettingsController
 from app.utilities import str_utils, utils
-from app.utilities.typing import NID
 
 import app.editor.utilities as editor_utilities
 
@@ -166,31 +163,6 @@ def create_new(window):
         parent_dir = os.path.split(fns[-1])[0]
         settings.set_last_open_path(parent_dir)
     return new_portraits
-
-def check_delete(nid: NID, window) -> bool:
-    # Check to see what is using me?
-    affected_units = [unit for unit in DB.units if unit.portrait_nid == nid]
-    if affected_units:
-        from app.editor.unit_editor.unit_model import UnitModel
-        model = UnitModel
-        msg = "Deleting Portrait <b>%s</b> would affect these units." % nid
-        deletion_tab = DeletionTab(affected_units, model, msg, "Units")
-        return DeletionDialog.inform([deletion_tab], window)
-    return True
-
-def on_delete(nid: NID):
-    # What uses portraits
-    # Units
-    for unit in DB.units:
-        if unit.portrait_nid == nid:
-            unit.portrait_nid = None
-
-def on_nid_changed(old_nid, new_nid):
-    # What uses portraits
-    # Units (Later Dialogues)
-    for unit in DB.units:
-        if unit.portrait_nid == old_nid:
-            unit.portrait_nid = new_nid
 
 class PortraitModel(ResourceCollectionModel):
     def data(self, index, role):

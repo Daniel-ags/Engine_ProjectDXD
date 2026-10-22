@@ -4,10 +4,12 @@ from PyQt5.QtCore import Qt
 from app.utilities.data import Data
 from app.data.resources.resources import RESOURCES
 from app.data.database.database import DB
+from app.data.database import references
+from app.data.database.database_types import DatabaseType as DType
+from app.editor import reference_dialogs
 from app.data.database import supports
 
 from app.editor.custom_widgets import AffinityBox
-from app.extensions.custom_gui import DeletionTab, DeletionDialog
 from app.editor.base_database_gui import DragDropCollectionModel
 
 from app.utilities import str_utils
@@ -40,29 +42,13 @@ class AffinityModel(DragDropCollectionModel):
         return None
 
     def delete(self, idx):
-        # Check to make sure nothing else is using me!!!
-        affinity = self._data[idx]
-        nid = affinity.nid
-        affected_units = [unit for unit in DB.units if unit.affinity == nid]
-        if affected_units:
-            from app.editor.unit_editor.unit_model import UnitModel
-            model = UnitModel
-            msg = "Deleting Affinity <b>%s</b> would affect these units." % nid
-            deletion_tab = DeletionTab(affected_units, model, msg, "Units")
-            swap, ok = DeletionDialog.get_swap([deletion_tab], AffinityBox(self.window, exclude=affinity), self.window)
-            if ok:
-                self.on_nid_changed(nid, swap.nid)
-            else:
-                return  # User cancelled swap
-        # Delete watchers
-        # None needed
-        super().delete(idx)
+        obj = self._data[idx]
+        if reference_dialogs.check_delete(DB, DType.AFFINITIES, obj.nid, 'Affinity', self.window,
+                                          lambda: AffinityBox(self.window, exclude=obj)):
+            super().delete(idx)
 
-    def on_nid_changed(self, old_value, new_value):
-        old_nid, new_nid = old_value, new_value
-        for unit in DB.units:
-            if old_nid == unit.affinity:
-                unit.affinity = new_nid
+    def on_nid_changed(self, old_nid, new_nid):
+        references.rewrite(DB, DType.AFFINITIES, old_nid, new_nid)
 
     def create_new(self):
         nids = [d.nid for d in self._data]

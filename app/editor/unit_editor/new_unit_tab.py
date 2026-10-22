@@ -8,9 +8,12 @@ from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from app.data.resources.resources import RESOURCES
+from app.data.database import references
 from app.data.database.database import DB
+from app.data.database.database_types import DatabaseType as DType
 from app.data.database.units import UnitCatalog
-from app.editor.unit_editor import unit_import, unit_model, new_unit_properties
+from app.editor import reference_dialogs
+from app.editor.unit_editor import unit_import, new_unit_properties
 from app.editor.portrait_editor import portrait_model
 from app.editor.settings.main_settings_controller import MainSettingsController
 from app.editor.new_editor_tab import NewEditorTab
@@ -72,15 +75,12 @@ class NewUnitDatabase(NewEditorTab):
             self.reset()
 
     def _on_nid_changed(self, old_nid: NID, new_nid: NID):
-        unit_model.on_nid_changed(old_nid, new_nid)
+        references.rewrite(self._db, DType.UNITS, old_nid, new_nid)
 
     def _on_delete(self, nid: NID) -> bool:
-        ok = unit_model.check_delete(nid, self)
-        if ok:
-            unit_model.on_delete(nid)
-            return True
-        else:
-            return False
+        # Levels drop the unit rather than take another in its place
+        fallback = next(unit.nid for unit in self.data if unit.nid != nid)
+        return reference_dialogs.check_delete(self._db, DType.UNITS, nid, 'Unit', self, fallback=fallback)
 
     def on_tab_close(self):
         # Checking to see if any levels need to be changed

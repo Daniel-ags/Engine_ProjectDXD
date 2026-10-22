@@ -19,12 +19,12 @@ class IconRenameDeleteTests(unittest.TestCase):
     def setUp(self):
         from unittest.mock import patch
         from app.data.resources.resources import RESOURCES
-        from app.editor.icon_editor import icon_model
+        from app.editor import reference_dialogs
         from app.editor.icon_editor.icon_model import Icon32Model
         from app.editor.icon_editor.icon_tab import Icon32Database
         # When the loaded database has factions using the icon, deleting it asks for confirmation
         # in a modal dialog. Answer OK, as the reporter did
-        dialog_patch = patch.object(icon_model.DeletionDialog, 'inform', return_value=True)
+        dialog_patch = patch.object(reference_dialogs.DeletionDialog, 'inform', return_value=True)
         dialog_patch.start()
         self.addCleanup(dialog_patch.stop)
         RESOURCES.load('default.ltproj', CURRENT_SERIALIZATION_VERSION)

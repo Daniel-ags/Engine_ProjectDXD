@@ -9,6 +9,10 @@ from app.utilities import str_utils
 
 from app.data.resources.panoramas import Panorama
 from app.data.resources.resources import RESOURCES
+from app.data.database import references
+from app.data.database.database import DB
+from app.data.resources.resource_types import ResourceType as RType
+from app.editor import reference_dialogs
 
 from app.editor.settings import MainSettingsController
 from app.editor.base_database_gui import ResourceCollectionModel
@@ -110,13 +114,9 @@ class PanoramaModel(ResourceCollectionModel):
         self._append(new_item)
 
     def delete(self, idx):
-        # Check to see what is using me?
-        # TODO Nothing for now -- later Dialogue
         res = self._data[idx]
-        nid = res.nid
-        super().delete(idx)
+        if reference_dialogs.check_delete(DB, RType.PANORAMAS, res.nid, 'Panorama', self.window):
+            super().delete(idx)
 
     def on_nid_changed(self, old_nid, new_nid):
-        # What uses panoramas
-        # TODO Nothing for now -- later Dialogue
-        pass
+        references.rewrite(DB, RType.PANORAMAS, old_nid, new_nid)

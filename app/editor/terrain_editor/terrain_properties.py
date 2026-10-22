@@ -116,6 +116,7 @@ class TerrainProperties(QWidget):
         if self.current.nid in other_nids:
             QMessageBox.warning(self.window, 'Warning', 'Terrain ID %s already in use' % self.current.nid)
             self.current.nid = str_utils.get_next_int(self.current.nid, other_nids)
+        self.window.left_frame.model.on_nid_changed(DB.terrain.find_key(self.current), self.current.nid)
         DB.terrain.update_nid(self.current, self.current.nid)
         self.window.update_list()
 

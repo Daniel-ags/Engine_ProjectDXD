@@ -1,6 +1,8 @@
 from PyQt5.QtCore import Qt
 
 from app.data.database.database import DB
+from app.data.database.database_types import DatabaseType as DType
+from app.editor import reference_dialogs
 from app.editor.base_database_gui import DragDropCollectionModel
 
 class StatTypeModel(DragDropCollectionModel):
@@ -18,16 +20,6 @@ class StatTypeModel(DragDropCollectionModel):
         return new_stat
 
     def delete(self, idx):
-        # check to make sure nothing else is using me!!!
         stat = self._data[idx]
-        nid = stat.nid
-        for klass in DB.classes:
-            for stat_list in klass.get_stat_lists():
-                if nid in stat_list:
-                    stat_list.pop(nid)
-        for unit in DB.units:
-            for stat_list in unit.get_stat_lists():
-                if nid in stat_list:
-                    stat_list.pop(nid)
-        # Delete watchers
-        super().delete(idx)
+        if reference_dialogs.check_delete(DB, DType.STATS, stat.nid, 'Stat', self.window):
+            super().delete(idx)

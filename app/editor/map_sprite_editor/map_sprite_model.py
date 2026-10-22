@@ -11,7 +11,6 @@ from app.utilities.data import Data
 from app.data.database.database import DB
 from app.data.resources.default_palettes import default_palettes
 
-from app.extensions.custom_gui import DeletionTab, DeletionDialog
 from app.extensions.pixmap_replace_message_box import PixmapReplaceMessageBox
 from app.editor.settings import MainSettingsController
 from app.editor.base_database_gui import ResourceCollectionModel
@@ -86,31 +85,6 @@ def palette_swap(pixmap: QPixmap, palette_nid: NID, with_colorkey=True) -> QImag
     if with_colorkey:
         im = editor_utilities.convert_colorkey(im)
     return im
-
-def check_delete(nid: NID, window) -> bool:
-    # Check to see what is using me?
-    affected_classes = [klass for klass in DB.classes if nid == klass.map_sprite_nid]
-    if affected_classes:
-        from app.editor.class_editor.class_model import ClassModel
-        model = ClassModel
-        msg = "Deleting Map Sprite <b>%s</b> would affect these classes." % nid
-        deletion_tab = DeletionTab(affected_classes, model, msg, "Classes")
-        return DeletionDialog.inform([deletion_tab], window)
-    return True
-
-def on_delete(nid: NID):
-    # What uses map sprites
-    # Classes
-    for klass in DB.classes:
-        if klass.map_sprite_nid == nid:
-            klass.map_sprite_nid = None
-
-def on_nid_changed(old_nid, new_nid):
-    # What uses map sprites
-    # Classes
-    for klass in DB.classes:
-        if klass.map_sprite_nid == old_nid:
-            klass.map_sprite_nid = new_nid
 
 def create_new(window):
     settings = MainSettingsController()
@@ -342,14 +316,3 @@ class MapSpriteModel(ResourceCollectionModel):
             if pixmap:
                 return QIcon(pixmap)
         return None
-
-    def delete(self, idx):
-        # check to make sure nothing else is using me!!!
-        res = self._data[idx]
-        nid = res.nid
-        ok = check_delete(nid)
-        if ok:
-            on_delete(nid)
-        else:
-            return
-        super().delete(idx)

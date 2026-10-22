@@ -4,6 +4,9 @@ from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QDialog, QMessageBox
 
 from app.data.resources.resources import RESOURCES
+from app.data.database import references
+from app.data.resources.resource_types import ResourceType as RType
+from app.editor import reference_dialogs
 
 from app.data.resources.map_sprites import MapSpriteCatalog
 from app.editor.new_editor_tab import NewEditorTab
@@ -47,15 +50,10 @@ class NewMapSpriteDatabase(NewEditorTab):
         return False
 
     def _on_nid_changed(self, old_nid: NID, new_nid: NID):
-        map_sprite_model.on_nid_changed(old_nid, new_nid)
+        references.rewrite(self._db, RType.MAP_SPRITES, old_nid, new_nid)
 
     def _on_delete(self, nid: NID) -> bool:
-        ok = map_sprite_model.check_delete(nid, self)
-        if ok:
-            map_sprite_model.on_delete(nid)
-            return True
-        else:
-            return False
+        return reference_dialogs.check_delete(self._db, RType.MAP_SPRITES, nid, 'Map Sprite', self)
 
 def get():
     window = SingleResourceEditor(NewMapSpriteDatabase, ['map_sprites'])

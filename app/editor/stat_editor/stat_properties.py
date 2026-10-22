@@ -2,7 +2,9 @@ from PyQt5.QtWidgets import QWidget, QLineEdit, QMessageBox, QVBoxLayout, \
     QSpinBox, QCheckBox
 from PyQt5.QtCore import Qt
 
+from app.data.database import references
 from app.data.database.database import DB
+from app.data.database.database_types import DatabaseType as DType
 
 from app.data.database.stats import StatPrefab
 from app.utilities import str_utils
@@ -90,14 +92,7 @@ class StatTypeProperties(QWidget):
         self.window.update_list()
 
     def on_nid_changed(self, old_nid, new_nid):
-        for klass in DB.classes:
-            for row in klass.get_stat_lists():
-                if old_nid in row:
-                    row[new_nid] = row.get(old_nid, 0)
-        for unit in DB.units:
-            for row in unit.get_stat_lists():
-                if old_nid in row:
-                    row[new_nid] = row.get(old_nid, 0)
+        references.rewrite(DB, DType.STATS, old_nid, new_nid)
 
     def nid_done_editing(self):
         # Check validity of nid!

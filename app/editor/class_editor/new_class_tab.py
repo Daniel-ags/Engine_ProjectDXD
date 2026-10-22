@@ -5,16 +5,18 @@ from typing import Optional
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QApplication, QFileDialog, QMessageBox
 
+from app.data.database import references
 from app.data.database.database import DB
-from app.editor import timer
+from app.data.database.database_types import DatabaseType as DType
 from app.data.database.klass import ClassCatalog
+from app.editor import reference_dialogs, timer
+from app.editor.custom_widgets import ClassBox
 from app.editor.new_editor_tab import NewEditorTab
 from app.editor.data_editor import SingleDatabaseEditor
 
 from app.editor.settings import MainSettingsController
-from app.editor.class_editor import class_model, class_import, new_class_properties
+from app.editor.class_editor import class_import, new_class_properties
 from app.editor.map_sprite_editor import map_sprite_model
-from app.extensions.custom_gui import DeletionTab, DeletionDialog
 from app.utilities.typing import NID
 
 class NewClassDatabase(NewEditorTab):
@@ -75,16 +77,11 @@ class NewClassDatabase(NewEditorTab):
             self.reset()
 
     def _on_nid_changed(self, old_nid: NID, new_nid: NID):
-        class_model.on_nid_changed(old_nid, new_nid)
+        references.rewrite(self._db, DType.CLASSES, old_nid, new_nid)
 
     def _on_delete(self, nid: NID) -> bool:
-        swap, ok = class_model.check_delete(nid, self)
-        if ok:
-            if swap is not None:
-                class_model.on_nid_changed(nid, swap.nid)
-            return True
-        else:
-            return False
+        return reference_dialogs.check_delete(self._db, DType.CLASSES, nid, 'Class',
+                                              self, lambda: ClassBox(self, exclude=self.data.get(nid)))
 
 # Testing
 # Run "python -m app.editor.class_editor.class_tab" from main directory

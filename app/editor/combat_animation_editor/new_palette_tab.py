@@ -52,13 +52,7 @@ class NewPaletteDatabase(NewEditorTab):
         palette_model.on_nid_changed(old_nid, new_nid)
 
     def _on_delete(self, nid: NID) -> bool:
-        swap, ok = palette_model.check_delete(nid, self)
-        if ok:
-            if swap is not None:
-                palette_model.on_nid_changed(nid, swap.nid)
-            return True
-        else:
-            return False
+        return palette_model.check_delete(nid, self)
 
 def get():
     window = SingleResourceEditor(NewPaletteDatabase, ['combat_palettes'])

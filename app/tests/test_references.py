@@ -199,6 +199,13 @@ class RenameTests(ReferenceTestCase):
 
         self.assertEqual({('other', NEW)}, DB.teams.alliance_pairs)
 
+    def test_swapping_a_team_onto_its_ally_drops_the_alliance(self):
+        DB.teams.alliance_pairs = {('other', 'player')}
+
+        references.rewrite(DB, DType.TEAMS, 'other', 'player')
+
+        self.assertEqual(set(), DB.teams.alliance_pairs)
+
     def test_renaming_a_portrait_reaches_units(self):
         portrait = DB.units.get(UNIT).portrait_nid
 
@@ -230,12 +237,13 @@ class ClearTests(ReferenceTestCase):
         self.level.unit_groups.append(group)
         DB.parties.append(PartyPrefab('Party', 'Party', UNIT))
 
-        references.clear(DB, DType.UNITS, UNIT)
+        references.clear(DB, DType.UNITS, UNIT, fallback='Seth')
 
         self.assertNotIn(UNIT, self.level.units)
         self.assertEqual(['Seth'], group.units)
         self.assertEqual({}, group.positions)
-        self.assertIsNone(DB.parties.get('Party').leader)
+        # A party must have a leader, so it takes the fallback
+        self.assertEqual('Seth', DB.parties.get('Party').leader)
         self.assert_no_references(DType.UNITS, UNIT)
 
     def test_clearing_an_item_drops_whole_starting_item_entries(self):

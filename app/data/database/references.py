@@ -28,7 +28,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 import re
-from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Set, Tuple, Type, Union
+from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Set, Tuple, Union
 
 from app.data.database.ai import AIBehaviour, AIPrefab
 from app.data.database.ai_groups import AIGroup
@@ -80,6 +80,7 @@ Resolver = Callable[[Any], Optional[Target]]
 class ClearPolicy(Enum):
     AUTO = 0  # Drop the element of the last [*] in the path, or the dict key; otherwise set None
     REMOVE_RECORD = 1  # Remove the sub-record holding the field from its Data
+    REPLACE = 2  # The field must name something: point it at the caller's fallback
 
 
 @dataclass(frozen=True)
@@ -91,6 +92,10 @@ class Ref:
     # unit nid, which is a generic unit's own nid as often as a unit prefab's.
     local: Optional[str] = None
     on_clear: ClearPolicy = ClearPolicy.AUTO
+    # False for a dict holding an entry for every record of the target, like a
+    # class's wexp gain per weapon type: a deletion drops the entry without
+    # listing every class as affected
+    listed: bool = True
 
 
 @dataclass(frozen=True)
@@ -164,7 +169,7 @@ def _weapon_rank_target(bonus: CombatBonus) -> Optional[Target]:
     return None if bonus.weapon_rank == 'All' else DType.WEAPON_RANKS
 
 def _stat_dicts(*names: str) -> List[Ref]:
-    return [Ref('%s{key}' % name, DType.STATS) for name in names]
+    return [Ref('%s{key}' % name, DType.STATS, listed=False) for name in names]
 
 
 REFERENCES: Dict[type, List[Declaration]] = {
@@ -186,7 +191,7 @@ REFERENCES: Dict[type, List[Declaration]] = {
             Ref('tags[*]', DType.TAGS),
             *_stat_dicts('bases', 'growths', 'growth_bonus', 'promotion', 'max_stats'),
             Ref('learned_skills[*][1]', DType.SKILLS),
-            Ref('wexp_gain{key}', DType.WEAPONS),
+            Ref('wexp_gain{key}', DType.WEAPONS, listed=False),
             Ref('icon_nid', RType.ICONS80),
             Ref('map_sprite_nid', RType.MAP_SPRITES),
             Ref('combat_anim_nid', RType.COMBAT_ANIMS)],
@@ -198,14 +203,14 @@ REFERENCES: Dict[type, List[Declaration]] = {
                  *_stat_dicts('bases', 'growths', 'stat_cap_modifiers'),
                  Ref('starting_items[*][0]', DType.ITEMS),
                  Ref('learned_skills[*][1]', DType.SKILLS),
-                 Ref('wexp_gain{key}', DType.WEAPONS),
+                 Ref('wexp_gain{key}', DType.WEAPONS, listed=False),
                  Ref('alternate_classes[*]', DType.CLASSES),
                  Ref('portrait_nid', RType.PORTRAITS),
                  Ref('affinity', DType.AFFINITIES)],
     SupportPair: [Ref('unit1', DType.UNITS), Ref('unit2', DType.UNITS), Nested('requirements[*]')],
     AIPrefab: [Nested('behaviours[*]')],
     AIBehaviour: [Ref('target_spec[1]', _ai_unit_spec_target), Ref('target_spec', _ai_terrain_target)],
-    PartyPrefab: [Ref('leader', DType.UNITS)],
+    PartyPrefab: [Ref('leader', DType.UNITS, on_clear=ClearPolicy.REPLACE)],
     DifficultyModePrefab: _stat_dicts('player_bases', 'enemy_bases', 'boss_bases',
                                       'player_growths', 'enemy_growths', 'boss_growths'),
     CreditEntry: [Ref('sub_nid', _credit_target)],
@@ -234,7 +239,8 @@ REFERENCES: Dict[type, List[Declaration]] = {
     Region: [Ref('sub_nid', _region_target)],
     EventPrefab: [Ref('level_nid', DType.LEVELS)],
     OverworldPrefab: [Ref('tilemap', RType.TILEMAPS), Ref('music', RType.MUSIC), Nested('overworld_nodes[*]')],
-    OverworldNodePrefab: [Ref('icon', RType.MAP_ICONS), Ref('level', DType.LEVELS), Nested('menu_options[*]')],
+    OverworldNodePrefab: [Ref('icon', RType.MAP_ICONS, on_clear=ClearPolicy.REPLACE),
+                          Ref('level', DType.LEVELS), Nested('menu_options[*]')],
     NodeMenuEvent: [Ref('event', DType.EVENTS)],
 }
 
@@ -419,7 +425,9 @@ class _AlliancePairSlot(_Slot):
         new_pair[self.index] = value
         self.teams.alliance_pairs.discard(self.pair)
         self.pair = tuple(new_pair)
-        self.teams.alliance_pairs.add(self.pair)
+        # A team is always its own ally, so a pair swapped onto one team is dropped
+        if self.pair[0] != self.pair[1]:
+            self.teams.alliance_pairs.add(self.pair)
 
     def drop(self):
         self.teams.alliance_pairs.discard(self.pair)
@@ -528,15 +536,24 @@ class RefSite:
     def value(self) -> Any:
         return self._slot.get()
 
+    @property
+    def listed(self) -> bool:
+        """Whether a deletion warning should name this reference's owner"""
+        return self.owner is not None and (self.ref is None or self.ref.listed)
+
     def set(self, value: Any) -> None:
         self._slot.set(value)
         for container, element in self._slot.rekey:
             _rekey(container, element)
 
-    def clear(self) -> None:
+    def clear(self, fallback: Optional[NID] = None) -> None:
         """Removes the reference: the list element or dict key that holds it, or the
-        sub-record itself when the reference says so; otherwise sets it to None"""
-        if self.ref and self.ref.on_clear == ClearPolicy.REMOVE_RECORD:
+        sub-record itself when the reference says so; otherwise sets it to None.
+        A reference that must name something is pointed at fallback instead."""
+        policy = self.ref.on_clear if self.ref else ClearPolicy.AUTO
+        if policy == ClearPolicy.REPLACE:
+            self.set(fallback)
+        elif policy == ClearPolicy.REMOVE_RECORD:
             _remove(*self.record)
         elif self._slot.drop():
             pass
@@ -624,13 +641,14 @@ def rewrite(db, target: Target, old_nid: NID, new_nid: NID) -> List[RefSite]:
             site.set(new_nid)
     return sites
 
-def clear(db, target: Target, nid: NID) -> List[RefSite]:
-    """Removes every reference to nid. Returns the references removed."""
+def clear(db, target: Target, nid: NID, fallback: Optional[NID] = None) -> List[RefSite]:
+    """Removes every reference to nid, pointing those that must name something at
+    fallback. Returns the references removed."""
     if not nid:
         return []
     sites = find_referrers(db, target, nid)
     for site in sites:
-        site.clear()
+        site.clear(fallback)
     return sites
 
 def known_nids(db, resources, target: Target) -> Set[NID]:

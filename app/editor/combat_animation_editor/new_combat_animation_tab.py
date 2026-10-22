@@ -2,6 +2,9 @@ from PyQt5.QtGui import QIcon, QBrush, QColor
 from PyQt5.QtWidgets import QDialog, QWidget, QMessageBox
 
 from app.data.resources.resources import RESOURCES
+from app.data.database import references
+from app.data.resources.resource_types import ResourceType as RType
+from app.editor import reference_dialogs
 from app.data.resources.combat_anims import CombatCatalog, CombatEffectCatalog
 
 from app.editor.new_editor_tab import NewEditorTab
@@ -65,15 +68,10 @@ class NewCombatAnimDatabase(NewEditorTab):
         return None
 
     def _on_nid_changed(self, old_nid: NID, new_nid: NID):
-        combat_animation_model.on_nid_changed(old_nid, new_nid)
+        references.rewrite(self._db, RType.COMBAT_ANIMS, old_nid, new_nid)
 
     def _on_delete(self, nid: NID) -> bool:
-        ok = combat_animation_model.check_delete(nid, self)
-        if ok:
-            combat_animation_model.on_delete(nid)
-            return True
-        else:
-            return False
+        return reference_dialogs.check_delete(self._db, RType.COMBAT_ANIMS, nid, 'Combat Animation', self)
 
 class NewSimpleCombatAnimDatabase(NewCombatAnimDatabase):
     properties_type = NewSimpleCombatAnimProperties
@@ -124,12 +122,7 @@ class NewCombatEffectDatabase(NewEditorTab):
         combat_effect_model.on_nid_changed(old_nid, new_nid)
 
     def _on_delete(self, nid: NID) -> bool:
-        ok = combat_effect_model.check_delete(nid, self)
-        if ok:
-            combat_effect_model.on_delete(nid)
-            return True
-        else:
-            return False
+        return combat_effect_model.check_delete(nid, self)
 
 def get_full_editor(parent=None) -> NewMultiResourceEditor:
     editor = NewMultiResourceEditor((NewCombatAnimDatabase, NewCombatEffectDatabase, NewPaletteDatabase),
