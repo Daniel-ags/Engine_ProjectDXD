@@ -4,7 +4,7 @@ from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QDialog, QMessageBox
 
 from app.data.resources.resources import RESOURCES
-from app.data.database import references
+from app.editor.edit_history import HISTORY
 from app.data.resources.resource_types import ResourceType as RType
 from app.editor import reference_dialogs
 
@@ -56,10 +56,10 @@ class NewPortraitDatabase(NewEditorTab):
         return False
 
     def _on_nid_changed(self, old_nid: NID, new_nid: NID):
-        references.rewrite(self._db, RType.PORTRAITS, old_nid, new_nid)
+        HISTORY.rewrite(RType.PORTRAITS, old_nid, new_nid)
 
     def _on_delete(self, nid: NID) -> bool:
-        return reference_dialogs.check_delete(self._db, RType.PORTRAITS, nid, 'Portrait', self)
+        return reference_dialogs.check_delete(RType.PORTRAITS, nid, 'Portrait', self)
 
 def get():
     timer.get_timer().start_for_editor()

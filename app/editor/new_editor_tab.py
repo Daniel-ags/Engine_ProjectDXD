@@ -15,6 +15,7 @@ from app.data.resources.base_catalog import ManifestCatalog
 from app.data.category import Categories, CategorizedCatalog
 from app.editor import timer
 from app.editor.data_editor import SingleDatabaseEditor
+from app.editor.edit_history import HISTORY
 from app.editor.lib.components.nested_list import LTNestedList
 from app.utilities import str_utils
 from app.utilities.typing import NID
@@ -35,6 +36,8 @@ class NewEditorTab(QWidget, Generic[T]):
     allow_copy_and_paste = False
     # Size of the icon beside each entry in the list. Shrink for data that has no icons
     icon_size = 32
+    # Whether the tab can show its data again after an undo changes it
+    supports_undo = True
 
     def __init__(self, parent, database: Database, resources: Resources = None) -> None:
         QWidget.__init__(self, parent)
@@ -115,22 +118,33 @@ class NewEditorTab(QWidget, Generic[T]):
         if self.data.get(new_nid):
             QMessageBox.warning(self, 'Warning', 'ID %s already in use' % new_nid)
             return False
-        self._on_nid_changed(old_nid, new_nid)
-        if isinstance(self.data, ManifestCatalog):
-            self.data.update_nid(self.data.get(old_nid), new_nid)
-        else:
-            self.data.change_key(old_nid, new_nid)
+        with HISTORY.change_set('Rename %s' % old_nid), HISTORY.modifying([(self.data.get(old_nid), self.data)]):
+            self._on_nid_changed(old_nid, new_nid)
+            if isinstance(self.data, ManifestCatalog):
+                self.data.update_nid(self.data.get(old_nid), new_nid)
+            else:
+                self.data.change_key(old_nid, new_nid)
         self.tree_list.update_nid(old_nid, new_nid)
         self.tree_list.on_filter_changed(self.tree_list.search_box.text())
         return True
 
     def on_select(self, entry_nid: Optional[NID]):
         if not entry_nid:
+            HISTORY.bind(None, self.data, self)
             self.right_frame.set_current(None)
             return
         curr_entry = self.data.get(entry_nid)
         if curr_entry:
+            HISTORY.commit()
             self.right_frame.set_current(curr_entry)
+            HISTORY.bind(curr_entry, self.data, self)
+
+    def after_history_change(self):
+        """Shows the data again after an undo or redo changed it underneath this tab"""
+        current = self.right_frame.current
+        if current is not None and not any(entry is current for entry in self.data):
+            self.right_frame.set_current(None)
+        self.reset()
 
     def resort_db(self, entries: List[str], categories: Categories):
         self.data.categories = categories
@@ -143,9 +157,10 @@ class NewEditorTab(QWidget, Generic[T]):
     def delete_from_db(self, nid):
         if len(self.data) == 1:
             return False
-        if self._on_delete(nid):
-            self.data.remove_key(nid)
-            return True
+        with HISTORY.change_set('Delete %s' % nid):
+            if self._on_delete(nid):
+                self.data.remove_key(nid)
+                return True
         return False
 
     def create_new(self, nid):
@@ -177,11 +192,12 @@ class NewEditorTab(QWidget, Generic[T]):
         if not orig_obj:
             QMessageBox.warning(self, 'Warning', 'ID %s not found' % old_nid)
             return False
-        self._on_nid_changed(old_nid, new_nid)
-        if isinstance(self.data, ManifestCatalog):
-            self.data.update_nid(self.data.get(old_nid), new_nid)
-        else:
-            self.data.change_key(old_nid, new_nid)
+        with HISTORY.change_set('Rename %s' % old_nid), HISTORY.modifying([(orig_obj, self.data)]):
+            self._on_nid_changed(old_nid, new_nid)
+            if isinstance(self.data, ManifestCatalog):
+                self.data.update_nid(self.data.get(old_nid), new_nid)
+            else:
+                self.data.change_key(old_nid, new_nid)
         self.tree_list.on_filter_changed(self.tree_list.search_box.text())
         self.tree_list.select_item(new_nid)
         return True

@@ -9,9 +9,10 @@ from app.data.database.database import DB
 from app.extensions.list_dialogs import MultiAttrListDialog
 from app.extensions.list_models import MultiAttrListModel
 
-from app.data.database import equations, references
+from app.data.database import equations
 from app.data.database.database_types import DatabaseType as DType
 from app.editor import reference_dialogs
+from app.editor.edit_history import HISTORY
 from app.editor.custom_widgets import ObjBox
 from app.utilities.data import Data
 
@@ -97,9 +98,10 @@ class EquationMultiModel(MultiAttrListModel):
     def delete(self, idx):
         element = self._data[idx]
         others = Data([eq for eq in DB.equations if eq is not element])
-        if reference_dialogs.check_delete(DB, DType.EQUATIONS, element.nid, 'Equation', self.window,
-                                          lambda: ObjBox("Equation", reference_dialogs.NidListModel, others, self.window)):
-            super().delete(idx)
+        with HISTORY.change_set('Delete %s' % element.nid):
+            if reference_dialogs.check_delete(DType.EQUATIONS, element.nid, 'Equation', self.window,
+                                              lambda: ObjBox("Equation", reference_dialogs.NidListModel, others, self.window)):
+                super().delete(idx)
 
     def create_new(self):
         nids = [d.nid for d in self._data]
@@ -111,7 +113,7 @@ class EquationMultiModel(MultiAttrListModel):
     def on_attr_changed(self, data, attr, old_value, new_value):
         if attr == 'nid':
             self._data.update_nid(data, new_value)
-            references.rewrite(DB, DType.EQUATIONS, old_value, new_value)
+            HISTORY.rewrite(DType.EQUATIONS, old_value, new_value)
 
 class EquationDelegate(QStyledItemDelegate):
     def createEditor(self, parent, option, index):

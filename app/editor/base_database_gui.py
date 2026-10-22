@@ -14,6 +14,7 @@ from app.editor import timer
 from app.utilities.data import Prefab
 from app.extensions.custom_gui import RightClickListView
 from app.editor.data_editor import SingleDatabaseEditor
+from app.editor.edit_history import HISTORY
 
 from app.utilities import str_utils
 
@@ -129,8 +130,10 @@ class Collection(QWidget):
                 elif self.display:
                     self.display.setEnabled(False)
             if self.display:
+                HISTORY.commit()
                 self.display.set_current(new_data)
                 self.display.setEnabled(True)
+                HISTORY.bind(new_data, self._data, self.window)
 
     def set_display(self, disp):
         self.display = disp
@@ -150,6 +153,8 @@ class DatabaseTab(QWidget):
     allow_import_from_lt = False
     allow_import_from_csv = False
     allow_copy_and_paste = False
+    # Whether the tab can show its data again after an undo changes it
+    supports_undo = True
 
     def __init__(self, data, title, right_frame, deletion_criteria, collection_model, parent,
                  button_text="Create %s", view_type=RightClickListView, collection_type=Collection):
@@ -196,6 +201,18 @@ class DatabaseTab(QWidget):
             self.right_frame.set_current(self.right_frame.current)
         else:
             self.right_frame.setEnabled(False)
+
+    def after_history_change(self):
+        """Shows the data again after an undo or redo changed it underneath this tab"""
+        self.left_frame.model.layoutChanged.emit()
+        current = self.right_frame.current
+        if current is not None and not any(entry is current for entry in self._data):
+            # What was shown was taken away, so show whatever now has its place
+            row = max(min(self.left_frame.view.currentIndex().row(), len(self._data) - 1), 0)
+            index = self.left_frame.model.index(row)
+            self.left_frame.view.setCurrentIndex(index)
+            self.left_frame.on_item_changed(index, None)
+        self.reset()
 
     def on_tab_close(self):
         pass

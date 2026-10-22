@@ -13,6 +13,7 @@ from PyQt5.QtCore import QAbstractListModel, Qt
 
 from app.data.database import references
 from app.data.database.database_types import DatabaseType as DType
+from app.editor.edit_history import HISTORY
 from app.extensions.custom_gui import ComboBox, DeletionDialog, DeletionTab
 from app.utilities.typing import NID
 
@@ -64,7 +65,7 @@ def deletion_tabs(sites: List[references.RefSite], kind: str, nid: NID) -> List[
     return tabs
 
 
-def check_delete(db, target: references.Target, nid: NID, kind: str, parent,
+def check_delete(target: references.Target, nid: NID, kind: str, parent,
                  make_swap_box: Optional[Callable[[], ComboBox]] = None, fallback: Optional[NID] = None,
                  extra_tabs: List[DeletionTab] = (), on_swap: Optional[Callable[[NID], None]] = None) -> bool:
     """
@@ -75,23 +76,23 @@ def check_delete(db, target: references.Target, nid: NID, kind: str, parent,
     extra_tabs and on_swap cover references kept outside the database (in resources).
     Returns whether the deletion should go ahead.
     """
-    sites = references.find_referrers(db, target, nid)
+    sites = references.find_referrers(HISTORY.db, target, nid)
     tabs = deletion_tabs(sites, kind, nid) + list(extra_tabs)
     if not tabs:
-        references.clear(db, target, nid, fallback)
+        HISTORY.clear_references(target, nid, fallback)
         return True
     if make_swap_box:
         swap, ok = DeletionDialog.get_swap(tabs, make_swap_box(), parent)
         if not ok:
             return False
-        references.rewrite(db, target, nid, swap.nid)
+        HISTORY.rewrite(target, nid, swap.nid)
         if on_swap:
             on_swap(swap.nid)
         # Whatever the swap could not take over, such as an entry of a dict
         # that already has one for the swap, goes with the record
-        references.clear(db, target, nid, fallback)
+        HISTORY.clear_references(target, nid, fallback)
         return True
     if not DeletionDialog.inform(tabs, parent):
         return False
-    references.clear(db, target, nid, fallback)
+    HISTORY.clear_references(target, nid, fallback)
     return True

@@ -8,7 +8,7 @@ from app.extensions.custom_gui import ComboBox, DeletionTab
 from app.extensions.list_dialogs import MultiAttrListDialog
 from app.extensions.list_models import MultiAttrListModel, DefaultMultiAttrListModel
 
-from app.data.database import references
+from app.editor.edit_history import HISTORY
 from app.data.database.database_types import DatabaseType as DType
 from app.data.database.weapons import WeaponRank
 from app.editor import reference_dialogs
@@ -29,16 +29,18 @@ class WeaponRankMultiModel(MultiAttrListModel):
 
         def swap_caps(swap_nid):
             swap = DB.weapon_ranks.get(swap_nid)
-            for klass in affected_classes:
-                for wexp_gain in klass.wexp_gain.values():
-                    if wexp_gain.cap == element.requirement:
-                        wexp_gain.cap = swap.requirement
+            with HISTORY.modifying([(klass, DB.classes) for klass in affected_classes]):
+                for klass in affected_classes:
+                    for wexp_gain in klass.wexp_gain.values():
+                        if wexp_gain.cap == element.requirement:
+                            wexp_gain.cap = swap.requirement
 
         others = Data([rank for rank in DB.weapon_ranks if rank is not element])
-        if reference_dialogs.check_delete(DB, DType.WEAPON_RANKS, element.rank, 'Weapon Rank', self.window,
-                                          lambda: ObjBox("Rank", reference_dialogs.NidListModel, others, self.window),
-                                          extra_tabs=extra_tabs, on_swap=swap_caps):
-            super().delete(idx)
+        with HISTORY.change_set('Delete %s' % element.rank):
+            if reference_dialogs.check_delete(DType.WEAPON_RANKS, element.rank, 'Weapon Rank', self.window,
+                                              lambda: ObjBox("Rank", reference_dialogs.NidListModel, others, self.window),
+                                              extra_tabs=extra_tabs, on_swap=swap_caps):
+                super().delete(idx)
 
     def create_new(self):
         nids = DB.weapon_ranks.keys()
@@ -50,12 +52,13 @@ class WeaponRankMultiModel(MultiAttrListModel):
     def on_attr_changed(self, data, attr, old_value, new_value):
         if attr == 'rank':
             self._data.update_nid(data, new_value)
-            references.rewrite(DB, DType.WEAPON_RANKS, old_value, new_value)
+            HISTORY.rewrite(DType.WEAPON_RANKS, old_value, new_value)
         elif attr == 'requirement':
-            for klass in DB.classes.values():
-                for weapon_type, wexp_gain in klass.wexp_gain.items():
-                    if wexp_gain.cap == old_value:
-                        wexp_gain.cap = new_value
+            with HISTORY.modifying([(klass, DB.classes) for klass in DB.classes]):
+                for klass in DB.classes.values():
+                    for weapon_type, wexp_gain in klass.wexp_gain.items():
+                        if wexp_gain.cap == old_value:
+                            wexp_gain.cap = new_value
 
 class RankDialog(MultiAttrListDialog):
     @classmethod

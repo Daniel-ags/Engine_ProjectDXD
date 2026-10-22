@@ -10,6 +10,7 @@ from PyQt5.QtWidgets import (QDoubleSpinBox, QFormLayout, QFrame, QGridLayout,
 
 from app.data.database.constants import ConstantCatalog, ConstantType, ConstantTag
 from app.data.database.database import DB
+from app.editor.edit_history import HISTORY
 from app.editor.base_database_gui import DatabaseTab
 from app.editor.data_editor import SingleDatabaseEditor
 from app.editor.sound_editor import sound_tab
@@ -680,6 +681,9 @@ class ConstantDatabase(DatabaseTab):
         dialog = cls(data, title, parent)
         return dialog
 
+    # Its widgets are built once from the constants' values
+    supports_undo = False
+
     def update_list(self):
         pass
 
@@ -690,6 +694,8 @@ class ConstantDatabase(DatabaseTab):
     def __init__(self, data, title, parent=None):
         QWidget.__init__(self, parent)
         self.window = parent
+        # Every constant is on show at once
+        HISTORY.bind_all(data, data, self)
         self._data: ConstantCatalog = data
         self.title = title
 

@@ -5,7 +5,7 @@ from typing import Optional
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QMessageBox
 
-from app.data.database import references
+from app.editor.edit_history import HISTORY
 from app.data.database.database_types import DatabaseType as DType
 from app.data.database.lore import LoreCatalog
 from app.editor import reference_dialogs
@@ -40,10 +40,10 @@ class NewLoreDatabase(NewEditorTab):
         return True
 
     def _on_nid_changed(self, old_nid: NID, new_nid: NID):
-        references.rewrite(self._db, DType.LORE, old_nid, new_nid)
+        HISTORY.rewrite(DType.LORE, old_nid, new_nid)
 
     def _on_delete(self, nid: NID) -> bool:
-        return reference_dialogs.check_delete(self._db, DType.LORE, nid, 'Lore', self)
+        return reference_dialogs.check_delete(DType.LORE, nid, 'Lore', self)
 
 # Testing
 # Run "python -m app.editor.lore_editor.new_lore_tab" from main directory

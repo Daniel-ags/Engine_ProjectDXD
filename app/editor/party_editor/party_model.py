@@ -1,7 +1,7 @@
 from PyQt5.QtCore import Qt
 
 from app.data.database.database import DB
-from app.data.database import references
+from app.editor.edit_history import HISTORY
 from app.data.database.database_types import DatabaseType as DType
 from app.editor import reference_dialogs
 
@@ -24,9 +24,10 @@ class PartyModel(DragDropCollectionModel):
 
     def delete(self, idx):
         obj = self._data[idx]
-        if reference_dialogs.check_delete(DB, DType.PARTIES, obj.nid, 'Party', self.window,
-                                          lambda: PartyBox(self.window, exclude=obj)):
-            super().delete(idx)
+        with HISTORY.change_set('Delete %s' % obj.nid):
+            if reference_dialogs.check_delete(DType.PARTIES, obj.nid, 'Party', self.window,
+                                              lambda: PartyBox(self.window, exclude=obj)):
+                super().delete(idx)
 
     def on_nid_changed(self, old_nid, new_nid):
-        references.rewrite(DB, DType.PARTIES, old_nid, new_nid)
+        HISTORY.rewrite(DType.PARTIES, old_nid, new_nid)

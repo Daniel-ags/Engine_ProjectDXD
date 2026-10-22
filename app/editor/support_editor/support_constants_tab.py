@@ -4,6 +4,7 @@ from PyQt5.QtCore import Qt
 from app.data.database.constants import ConstantType
 
 from app.data.database.database import DB
+from app.editor.edit_history import HISTORY
 
 from app.extensions.custom_gui import PropertyBox, ComboBox, PropertyCheckBox
 
@@ -21,6 +22,9 @@ class SupportConstantDatabase(DatabaseTab):
         dialog = cls(data, title, parent)
         return dialog
 
+    # Its widgets are built once from the constants' values
+    supports_undo = False
+
     def update_list(self):
         pass
 
@@ -31,6 +35,8 @@ class SupportConstantDatabase(DatabaseTab):
     def __init__(self, data, title, parent=None):
         QWidget.__init__(self, parent)
         self.window = parent
+        # Every constant is on show at once
+        HISTORY.bind_all(data, data, self)
         self._data = data
         self.title = title
 

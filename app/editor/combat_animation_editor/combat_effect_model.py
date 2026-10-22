@@ -5,7 +5,7 @@ from typing import List
 
 from app.utilities.typing import NID
 
-from app.data.database import references
+from app.editor.edit_history import HISTORY
 from app.data.database.database import DB
 from app.data.resources.resources import RESOURCES
 from app.data.resources.resource_types import ResourceType as RType
@@ -57,7 +57,7 @@ def resource_deletion_tabs(nid: NID) -> List[DeletionTab]:
     return deletion_tabs
 
 def check_delete(nid: NID, window) -> bool:
-    if reference_dialogs.check_delete(DB, RType.COMBAT_EFFECTS, nid, 'Combat Effect', window,
+    if reference_dialogs.check_delete(RType.COMBAT_EFFECTS, nid, 'Combat Effect', window,
                                       extra_tabs=resource_deletion_tabs(nid)):
         on_delete(nid)
         return True
@@ -80,7 +80,7 @@ def on_delete(nid: NID):
                     command.value = (None,) + tuple(command.value[1:])
 
 def on_nid_changed(old_nid, new_nid):
-    references.rewrite(DB, RType.COMBAT_EFFECTS, old_nid, new_nid)
+    HISTORY.rewrite(RType.COMBAT_EFFECTS, old_nid, new_nid)
     for combat_anim in RESOURCES.combat_anims:
         for weapon_anim in combat_anim.weapon_anims:
             for pose in weapon_anim.poses:

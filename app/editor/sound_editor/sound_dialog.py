@@ -4,8 +4,7 @@ import os
 from PyQt5.QtWidgets import QLineEdit, QMessageBox, QVBoxLayout, \
     QFileDialog, QPushButton, QSpinBox
 
-from app.data.database import references
-from app.data.database.database import DB
+from app.editor.edit_history import HISTORY
 from app.data.resources.resource_types import ResourceType as RType
 from app.utilities import str_utils
 from app.extensions.custom_gui import ComboBox, PropertyBox, Dialog
@@ -55,7 +54,7 @@ class ModifySFXDialog(Dialog):
         if current.nid in other_nids:
             QMessageBox.warning(self.window, 'Warning', 'SFX ID %s already in use' % current.nid)
             current.nid = str_utils.get_next_name(current.nid, other_nids)
-        references.rewrite(DB, RType.SFX, self._data.find_key(current), current.nid)
+        HISTORY.rewrite(RType.SFX, self._data.find_key(current), current.nid)
         self._data.update_nid(current, current.nid)
 
     def tag_changed(self, text):
@@ -168,7 +167,7 @@ class ModifyMusicDialog(Dialog):
         if current.nid in other_nids:
             QMessageBox.warning(self.window, 'Warning', 'Music ID %s already in use' % current.nid)
             current.nid = str_utils.get_next_name(current.nid, other_nids)
-        references.rewrite(DB, RType.MUSIC, self._data.find_key(current), current.nid)
+        HISTORY.rewrite(RType.MUSIC, self._data.find_key(current), current.nid)
         self._data.update_nid(current, current.nid)
 
     def load_battle_variant(self):

@@ -4,10 +4,9 @@ from PyQt5.QtGui import QPixmap, QIcon, QPainter, QColor
 
 from typing import List
 
-from app.data.database import references
+from app.editor.edit_history import HISTORY
 from app.data.resources.resources import RESOURCES
 from app.data.resources.resource_types import ResourceType as RType
-from app.data.database.database import DB
 
 from app.utilities import utils
 from app.utilities.data import Data
@@ -58,13 +57,13 @@ def resource_deletion_tabs(nid: NID) -> List[DeletionTab]:
 
 def check_delete(nid: NID, window) -> bool:
     res = window.data.get(nid)
-    return reference_dialogs.check_delete(DB, RType.COMBAT_PALETTES, nid, 'Palette', window,
+    return reference_dialogs.check_delete(RType.COMBAT_PALETTES, nid, 'Palette', window,
                                           lambda: PaletteBox(window, exclude=res),
                                           extra_tabs=resource_deletion_tabs(nid),
                                           on_swap=lambda swap_nid: swap_in_resources(nid, swap_nid))
 
 def on_nid_changed(old_nid, new_nid):
-    references.rewrite(DB, RType.COMBAT_PALETTES, old_nid, new_nid)
+    HISTORY.rewrite(RType.COMBAT_PALETTES, old_nid, new_nid)
     swap_in_resources(old_nid, new_nid)
 
 def swap_in_resources(old_nid, new_nid):

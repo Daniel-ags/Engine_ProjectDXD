@@ -4,7 +4,7 @@ from PyQt5.QtCore import Qt
 from app.utilities.data import Data
 from app.data.resources.resources import RESOURCES
 from app.data.database.database import DB
-from app.data.database import references
+from app.editor.edit_history import HISTORY
 from app.data.database.database_types import DatabaseType as DType
 from app.editor import reference_dialogs
 
@@ -41,12 +41,13 @@ class WeaponModel(DragDropCollectionModel):
 
     def delete(self, idx):
         obj = self._data[idx]
-        if reference_dialogs.check_delete(DB, DType.WEAPONS, obj.nid, 'Weapon Type', self.window,
-                                          lambda: WeaponTypeBox(self.window, exclude=obj)):
-            super().delete(idx)
+        with HISTORY.change_set('Delete %s' % obj.nid):
+            if reference_dialogs.check_delete(DType.WEAPONS, obj.nid, 'Weapon Type', self.window,
+                                              lambda: WeaponTypeBox(self.window, exclude=obj)):
+                super().delete(idx)
 
     def on_nid_changed(self, old_nid, new_nid):
-        references.rewrite(DB, DType.WEAPONS, old_nid, new_nid)
+        HISTORY.rewrite(DType.WEAPONS, old_nid, new_nid)
 
     def create_new(self):
         new_weapon = DB.weapons.create_new(DB)

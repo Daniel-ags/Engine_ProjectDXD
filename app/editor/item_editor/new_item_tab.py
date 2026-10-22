@@ -7,7 +7,7 @@ from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QFileDialog
 
 import app.engine.item_component_access as ICA
-from app.data.database import references
+from app.editor.edit_history import HISTORY
 from app.data.database.database_types import DatabaseType as DType
 from app.data.database.items import ItemCatalog, ItemPrefab
 from app.editor import reference_dialogs, timer
@@ -56,11 +56,11 @@ class NewItemDatabase(NewEditorTab):
         """
         Returns whether the user wants to proceed with deletion
         """
-        return reference_dialogs.check_delete(self._db, DType.ITEMS, nid, 'Item',
+        return reference_dialogs.check_delete(DType.ITEMS, nid, 'Item',
                                               self, lambda: ItemBox(self, exclude=self.data.get(nid)))
 
     def _on_nid_changed(self, old_nid: NID, new_nid: NID) -> None:
-        references.rewrite(self._db, DType.ITEMS, old_nid, new_nid)
+        HISTORY.rewrite(DType.ITEMS, old_nid, new_nid)
 
     def import_xml(self):
         settings = MainSettingsController()

@@ -50,7 +50,7 @@ class CheckDeleteTests(DialogTestCase):
     def test_a_swap_points_references_at_the_chosen_record(self):
         get_swap = self.patch_dialog('get_swap', (DB.items.get(SWAP), True))
 
-        ok = reference_dialogs.check_delete(DB, DType.ITEMS, ITEM, 'Item', None, self.item_box)
+        ok = reference_dialogs.check_delete(DType.ITEMS, ITEM, 'Item', None, self.item_box)
 
         self.assertTrue(ok)
         tabs = get_swap.call_args[0][0]
@@ -60,7 +60,7 @@ class CheckDeleteTests(DialogTestCase):
     def test_cancelling_changes_nothing(self):
         self.patch_dialog('get_swap', (None, False))
 
-        ok = reference_dialogs.check_delete(DB, DType.ITEMS, ITEM, 'Item', None, self.item_box)
+        ok = reference_dialogs.check_delete(DType.ITEMS, ITEM, 'Item', None, self.item_box)
 
         self.assertFalse(ok)
         self.assertEqual([[ITEM, False]], DB.units.get(UNIT).starting_items)
@@ -69,7 +69,7 @@ class CheckDeleteTests(DialogTestCase):
         self.patch_dialog('inform', True)
         DB.parties.append(PartyPrefab('Party', 'Party', UNIT))
 
-        ok = reference_dialogs.check_delete(DB, DType.UNITS, UNIT, 'Unit', None, fallback='Seth')
+        ok = reference_dialogs.check_delete(DType.UNITS, UNIT, 'Unit', None, fallback='Seth')
 
         self.assertTrue(ok)
         self.assertNotIn(UNIT, DB.levels.get('0').units)
@@ -82,8 +82,8 @@ class CheckDeleteTests(DialogTestCase):
         for klass in DB.classes:
             klass.wexp_gain[weapon.nid] = WexpGain(True, 5)
 
-        ok = reference_dialogs.check_delete(DB, DType.WEAPONS, weapon.nid, 'Weapon Type', None,
-                                       lambda: WeaponTypeBox(None, exclude=weapon))
+        ok = reference_dialogs.check_delete(DType.WEAPONS, weapon.nid, 'Weapon Type', None,
+                                            lambda: WeaponTypeBox(None, exclude=weapon))
 
         self.assertTrue(ok)
         get_swap.assert_not_called()

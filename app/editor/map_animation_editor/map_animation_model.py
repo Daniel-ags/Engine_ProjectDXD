@@ -8,8 +8,7 @@ from app.data.resources.map_animations import MapAnimation
 from app.data.resources.resources import RESOURCES
 
 from app.utilities.data import Data
-from app.data.database.database import DB
-from app.data.database import references
+from app.editor.edit_history import HISTORY
 from app.data.resources.resource_types import ResourceType as RType
 from app.editor import reference_dialogs
 
@@ -62,8 +61,8 @@ class MapAnimationModel(ResourceCollectionModel):
 
     def delete(self, idx):
         res = self._data[idx]
-        if reference_dialogs.check_delete(DB, RType.ANIMATIONS, res.nid, 'Map Animation', self.window):
+        if reference_dialogs.check_delete(RType.ANIMATIONS, res.nid, 'Map Animation', self.window):
             super().delete(idx)
 
     def on_nid_changed(self, old_nid, new_nid):
-        references.rewrite(DB, RType.ANIMATIONS, old_nid, new_nid)
+        HISTORY.rewrite(RType.ANIMATIONS, old_nid, new_nid)

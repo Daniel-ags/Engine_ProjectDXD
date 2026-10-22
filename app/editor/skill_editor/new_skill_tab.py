@@ -9,7 +9,7 @@ from app.editor.settings.main_settings_controller import MainSettingsController
 
 import app.engine.skill_component_access as SCA
 from app.data.database.skills import SkillCatalog, SkillPrefab
-from app.data.database import references
+from app.editor.edit_history import HISTORY
 from app.data.database.database_types import DatabaseType as DType
 from app.editor import reference_dialogs, timer
 from app.editor.new_editor_tab import NewEditorTab
@@ -56,11 +56,11 @@ class NewSkillDatabase(NewEditorTab):
         """
         Returns whether the user wants to proceed with deletion
         """
-        return reference_dialogs.check_delete(self._db, DType.SKILLS, nid, 'Skill',
+        return reference_dialogs.check_delete(DType.SKILLS, nid, 'Skill',
                                               self, lambda: SkillBox(self, exclude=self.data.get(nid)))
 
     def _on_nid_changed(self, old_nid: NID, new_nid: NID) -> None:
-        references.rewrite(self._db, DType.SKILLS, old_nid, new_nid)
+        HISTORY.rewrite(DType.SKILLS, old_nid, new_nid)
 
     def import_xml(self):
         settings = MainSettingsController()

@@ -2,7 +2,7 @@ from PyQt5.QtCore import Qt
 
 from app.utilities.data import Data
 from app.data.database.database import DB
-from app.data.database import references
+from app.editor.edit_history import HISTORY
 from app.data.database.database_types import DatabaseType as DType
 from app.editor import reference_dialogs
 
@@ -25,9 +25,10 @@ class TeamModel(DragDropCollectionModel):
 
     def delete(self, idx):
         obj = self._data[idx]
-        if reference_dialogs.check_delete(DB, DType.TEAMS, obj.nid, 'Team', self.window,
-                                          lambda: TeamBox(self.window, exclude=obj)):
-            super().delete(idx)
+        with HISTORY.change_set('Delete %s' % obj.nid):
+            if reference_dialogs.check_delete(DType.TEAMS, obj.nid, 'Team', self.window,
+                                              lambda: TeamBox(self.window, exclude=obj)):
+                super().delete(idx)
 
     def on_nid_changed(self, old_nid, new_nid):
-        references.rewrite(DB, DType.TEAMS, old_nid, new_nid)
+        HISTORY.rewrite(DType.TEAMS, old_nid, new_nid)

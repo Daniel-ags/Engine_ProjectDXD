@@ -1,26 +1,25 @@
 from PyQt5 import QtGui
-from PyQt5.QtWidgets import QDialog, QGridLayout, QDialogButtonBox, QTabWidget, \
-    QSizePolicy
-from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QApplication, QDialog, QGridLayout, QDialogButtonBox, QLineEdit, \
+    QPlainTextEdit, QTabWidget, QTextEdit, QSizePolicy
+from PyQt5.QtCore import QEvent, Qt
+from PyQt5.QtGui import QKeySequence
 
 from app.data.resources.resources import RESOURCES
 from app.data.database.database import DB
 
 from app.data.serialization.versions import CURRENT_SERIALIZATION_VERSION
+from app.editor.edit_history import HISTORY
 from app.editor.settings import MainSettingsController
 from app.editor.settings.preference_definitions import Preference
 
-def restore_db_and_resync(saved_data, main_editor):
-    """Restore the DB from a snapshot, then re-broadcast the selected level.
+def resync_level_editor(main_editor):
+    """Re-broadcasts the selected level after an undo changed the database.
 
-    DB.restore() rebuilds DB.levels into brand-new objects. The level editor
-    (and its sub-widgets) cache the live level object and only refresh on a
-    'selected_level' broadcast, so without the re-broadcast they keep pointing
-    at the old, now-orphaned level object. Subsequent unit edits then go to the
-    orphan while the DB holds the stale copy, and the next refresh snaps the
-    editor back to the stale state -- the "unit positions revert" bug.
+    Undo restores a level's fields in place, which rebuilds the units and regions
+    inside it. The level editor (and its sub-widgets) cache those and only refresh
+    on a 'selected_level' broadcast, so without it unit edits would go to objects
+    the level no longer holds -- the "unit positions revert" bug.
     """
-    DB.restore(saved_data)
     state_manager = main_editor.app_state_manager if main_editor else None
     if state_manager:
         current_level_nid = state_manager.state.selected_level
@@ -30,7 +29,98 @@ def restore_db_and_resync(saved_data, main_editor):
             state_manager.change_and_broadcast(
                 'selected_level', current_level_nid)
 
-class SingleDatabaseEditor(QDialog):
+def handles_own_undo(widget, redo: bool) -> bool:
+    """Whether a focused text field has typing of its own to undo or redo"""
+    if isinstance(widget, QLineEdit):
+        return widget.isRedoAvailable() if redo else widget.isUndoAvailable()
+    if isinstance(widget, (QTextEdit, QPlainTextEdit)):
+        document = widget.document()
+        return document.isRedoAvailable() if redo else document.isUndoAvailable()
+    return False
+
+class EditHistoryDialog(QDialog):
+    """
+    A dialog whose edits go into the edit history. Cancel undoes back to where the
+    history stood when the dialog opened, or was last applied. With undo_enabled,
+    Ctrl+Z and Ctrl+Shift+Z step back and forth through the history, unless the
+    focused text field has typing of its own to undo.
+    """
+    undo_enabled = True
+
+    def start_history(self):
+        self.history_mark = HISTORY.mark()
+        self.history_running = True
+        app = QApplication.instance()
+        app.focusChanged.connect(self.on_focus_changed)
+        app.installEventFilter(self)
+        self.finished.connect(self.stop_history)
+
+    def stop_history(self):
+        if not self.history_running:
+            return
+        self.history_running = False
+        app = QApplication.instance()
+        app.focusChanged.disconnect(self.on_focus_changed)
+        app.removeEventFilter(self)
+        for tab in self.history_tabs():
+            HISTORY.unbind(tab)
+
+    def history_tabs(self) -> list:
+        raise NotImplementedError
+
+    def current_history_tab(self):
+        raise NotImplementedError
+
+    def apply_history(self):
+        self.history_mark = HISTORY.mark()
+
+    def cancel_history(self):
+        HISTORY.undo_to(self.history_mark)
+        resync_level_editor(self.main_editor)
+
+    def on_focus_changed(self, old, new):
+        if new is not None and self.isAncestorOf(new):
+            HISTORY.commit()
+
+    def changeEvent(self, event):
+        if event.type() == QEvent.ActivationChange and not self.isActiveWindow():
+            HISTORY.commit()
+        super().changeEvent(event)
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.KeyPress and self.undo_enabled and self.isActiveWindow():
+            if event.matches(QKeySequence.Undo):
+                redo = False
+            elif event.matches(QKeySequence.Redo):
+                redo = True
+            else:
+                return super().eventFilter(obj, event)
+            if not self.current_history_tab().supports_undo or \
+                    handles_own_undo(QApplication.focusWidget(), redo):
+                return super().eventFilter(obj, event)
+            if redo:
+                self.redo()
+            else:
+                self.undo()
+            return True
+        return super().eventFilter(obj, event)
+
+    def undo(self):
+        # Edits from before the dialog opened are not this dialog's to take back
+        if HISTORY.undo(floor=self.history_mark):
+            self.after_history_change()
+
+    def redo(self):
+        if HISTORY.redo():
+            self.after_history_change()
+
+    def after_history_change(self):
+        for tab in self.history_tabs():
+            if tab.supports_undo:
+                tab.after_history_change()
+        resync_level_editor(self.main_editor)
+
+class SingleDatabaseEditor(EditHistoryDialog):
     def __init__(self, tab, parent=None):
         super().__init__(parent)
         self.window = parent
@@ -63,7 +153,7 @@ class SingleDatabaseEditor(QDialog):
         self.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
         self.setWindowFlag(Qt.WindowMinMaxButtonsHint, True)
 
-        self.save()
+        self.start_history()
 
         self.grid = QGridLayout(self)
         self.setLayout(self.grid)
@@ -74,35 +164,29 @@ class SingleDatabaseEditor(QDialog):
         self.buttonbox.rejected.connect(self.reject)
         self.buttonbox.button(QDialogButtonBox.Apply).clicked.connect(self.apply)
 
+    def history_tabs(self) -> list:
+        return [self.tab]
+
+    def current_history_tab(self):
+        return self.tab
+
     def on_tab_close(self):
         self.tab.on_tab_close()
 
     def accept(self):
-        current_proj = self.settings.get_current_project()
         self.save_geometry()
         self.on_tab_close()
-        # if current_proj:
-        #     DB.serialize(current_proj)
+        HISTORY.commit()
         super().accept()
 
     def reject(self):
-        self.restore()
-        current_proj = self.settings.get_current_project()
+        self.cancel_history()
         self.save_geometry()
         self.on_tab_close()
-        # if current_proj:
-        #     DB.serialize(current_proj)
         super().reject()
 
-    def save(self):
-        self.saved_data = DB.save()
-        return self.saved_data
-
-    def restore(self):
-        restore_db_and_resync(self.saved_data, self.main_editor)
-
     def apply(self):
-        self.save()
+        self.apply_history()
 
     def closeEvent(self, event):
         self.save_geometry()
@@ -118,7 +202,7 @@ class SingleDatabaseEditor(QDialog):
 
 class MultiDatabaseEditor(SingleDatabaseEditor):
     def __init__(self, tabs, parent=None):
-        QDialog.__init__(self, parent)
+        EditHistoryDialog.__init__(self, parent)
         self.window = parent
         self.main_editor = self.window
 
@@ -150,6 +234,12 @@ class MultiDatabaseEditor(SingleDatabaseEditor):
             state = self.settings.component_controller.get_state(right_frame_type)
             if state:
                 tab.right_frame.restore_state(state)
+
+    def history_tabs(self) -> list:
+        return self.tabs
+
+    def current_history_tab(self):
+        return self.current_tab
 
     def on_tab_changed(self, idx):
         # Make each tab individually resizable
@@ -192,7 +282,11 @@ class MultiDatabaseEditor(SingleDatabaseEditor):
         self.on_tab_close(event)
         super().closeEvent(event)
 
-class SingleResourceEditor(QDialog):
+class SingleResourceEditor(EditHistoryDialog):
+    # Resources are not recorded yet, so an undo would take back only the
+    # database's half of an edit, like the units a portrait rename reached
+    undo_enabled = False
+
     def __init__(self, tab, resource_types=None, parent=None, *args, **kwargs):
         super().__init__(parent)
         self.window = parent
@@ -202,7 +296,7 @@ class SingleResourceEditor(QDialog):
         self.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
         self.setWindowFlag(Qt.WindowMinMaxButtonsHint, True)
 
-        self.save()
+        self.start_history()
 
         self.grid = QGridLayout(self)
         self.setLayout(self.grid)
@@ -227,6 +321,12 @@ class SingleResourceEditor(QDialog):
         if state:
             self.tab.splitter.restoreState(state)
 
+    def history_tabs(self) -> list:
+        return [self.tab]
+
+    def current_history_tab(self):
+        return self.tab
+
     def accept(self):
         current_proj = self.settings.get_current_project()
         # RESOURCES must be saved here because if we grabbed a file from somewhere else
@@ -236,6 +336,7 @@ class SingleResourceEditor(QDialog):
         if current_proj and current_proj != 'default.ltproj':
             RESOURCES.save(current_proj, self.resource_types)
         self.save_geometry()
+        HISTORY.commit()
         super().accept()
         self.close()
 
@@ -243,7 +344,7 @@ class SingleResourceEditor(QDialog):
         current_proj = self.settings.get_current_project()
         if current_proj:
             RESOURCES.load(current_proj, CURRENT_SERIALIZATION_VERSION)
-        restore_db_and_resync(self.saved_data, self.main_editor)
+        self.cancel_history()
         self.save_geometry()
         super().reject()
         self.close()
@@ -252,7 +353,7 @@ class SingleResourceEditor(QDialog):
         current_proj = self.settings.get_current_project()
         if current_proj and current_proj != 'default.ltproj':
             RESOURCES.save(current_proj, self.resource_types)
-        self.save()
+        self.apply_history()
         self.save_geometry()
 
     def closeEvent(self, event):
@@ -262,10 +363,6 @@ class SingleResourceEditor(QDialog):
     def _type(self):
         return self.tab.__class__.__name__
 
-    def save(self):
-        self.saved_data = DB.save()
-        return self.saved_data
-
     def save_geometry(self):
         self.settings.component_controller.set_geometry(self._type(), self.saveGeometry())
         if hasattr(self.tab, 'splitter'):
@@ -273,7 +370,7 @@ class SingleResourceEditor(QDialog):
 
 class MultiResourceEditor(SingleResourceEditor):
     def __init__(self, tabs, resource_types, parent=None):
-        QDialog.__init__(self, parent)
+        EditHistoryDialog.__init__(self, parent)
         self.window = parent
         self.main_editor = parent
         self.resource_types = resource_types
@@ -282,7 +379,7 @@ class MultiResourceEditor(SingleResourceEditor):
         self.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
         self.setWindowFlag(Qt.WindowMinMaxButtonsHint, True)
 
-        self.save()
+        self.start_history()
 
         self.grid = QGridLayout(self)
         self.setLayout(self.grid)
@@ -319,6 +416,12 @@ class MultiResourceEditor(SingleResourceEditor):
             state = self.settings.component_controller.get_state(right_frame_type)
             if state:
                 tab.right_frame.restore_state(state)
+
+    def history_tabs(self) -> list:
+        return self.tabs
+
+    def current_history_tab(self):
+        return self.current_tab
 
     def on_tab_changed(self, idx):
         # Make each tab individually resizable

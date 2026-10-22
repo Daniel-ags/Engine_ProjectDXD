@@ -8,7 +8,7 @@ from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from app.data.resources.resources import RESOURCES
-from app.data.database import references
+from app.editor.edit_history import HISTORY
 from app.data.database.database import DB
 from app.data.database.database_types import DatabaseType as DType
 from app.data.database.units import UnitCatalog
@@ -75,12 +75,12 @@ class NewUnitDatabase(NewEditorTab):
             self.reset()
 
     def _on_nid_changed(self, old_nid: NID, new_nid: NID):
-        references.rewrite(self._db, DType.UNITS, old_nid, new_nid)
+        HISTORY.rewrite(DType.UNITS, old_nid, new_nid)
 
     def _on_delete(self, nid: NID) -> bool:
         # Levels drop the unit rather than take another in its place
         fallback = next(unit.nid for unit in self.data if unit.nid != nid)
-        return reference_dialogs.check_delete(self._db, DType.UNITS, nid, 'Unit', self, fallback=fallback)
+        return reference_dialogs.check_delete(DType.UNITS, nid, 'Unit', self, fallback=fallback)
 
     def on_tab_close(self):
         # Checking to see if any levels need to be changed

@@ -46,6 +46,8 @@ Subsystem notes live next to the code — read the relevant one before changing 
 
 ## Conventions
 
+- **Every nid one database record holds for another is declared in `app/data/database/references.py`**, and every other field is listed there as not a reference (`test_references.py` fails on a field in neither). Editors rename and delete through `HISTORY.rewrite` / `reference_dialogs.check_delete`, never by walking the database by hand. A new prefab field means a new entry there.
+- **Editor edits go through the undo history in `app/editor/edit_history.py`**, not whole-database snapshots. A tab binds the record it shows (`HISTORY.bind`, after the form shows it); catalog membership is diffed on every commit. Code that changes records nobody has bound wraps the change in `HISTORY.modifying(...)`; run the editor with `LT_EDITOR_CHECK=1` to log any change that slipped past. Cancel undoes back to the mark the dialog took when it opened.
 - Objects are referenced by string ids: **NID** (named id, design-time, stable across a project) and **UID** (unique id, runtime instance). Types in `app/utilities/typing.py`.
 - Shared, framework-agnostic helpers live in `app/utilities/` (no Qt, no pygame deps) — prefer reusing `utils.py`, `str_utils.py`, `static_random.py` (deterministic RNG for turnwheel/replays) over rolling your own.
 - The engine must stay importable without PyQt5 (it ships as a standalone executable); keep editor-only imports out of `app/engine`.

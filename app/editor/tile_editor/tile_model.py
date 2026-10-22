@@ -9,8 +9,7 @@ from app.data.resources.resources import RESOURCES
 from app.data.resources.tiles import TileSet, TileMapPrefab
 
 from app.utilities.data import Data
-from app.data.database.database import DB
-from app.data.database import references
+from app.editor.edit_history import HISTORY
 from app.data.resources.resource_types import ResourceType as RType
 from app.editor import reference_dialogs
 
@@ -269,11 +268,11 @@ class TileMapModel(ResourceCollectionModel):
 
     def delete(self, idx):
         res = self._data[idx]
-        if reference_dialogs.check_delete(DB, RType.TILEMAPS, res.nid, 'Tilemap', self.window):
+        if reference_dialogs.check_delete(RType.TILEMAPS, res.nid, 'Tilemap', self.window):
             super().delete(idx)
 
     def on_nid_changed(self, old_nid, new_nid):
-        references.rewrite(DB, RType.TILEMAPS, old_nid, new_nid)
+        HISTORY.rewrite(RType.TILEMAPS, old_nid, new_nid)
 
     def duplicate(self, tilemap):
         idx = self._data.index(tilemap.nid)

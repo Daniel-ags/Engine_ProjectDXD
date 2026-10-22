@@ -4,7 +4,7 @@ from PyQt5.QtCore import Qt
 from app.data.database.database import DB
 from app.data.resources.resources import RESOURCES
 
-from app.data.database import references
+from app.editor.edit_history import HISTORY
 from app.data.database.database_types import DatabaseType as DType
 from app.editor import reference_dialogs
 from app.extensions.custom_gui import DeletionTab
@@ -62,14 +62,15 @@ class TerrainModel(DragDropCollectionModel):
             deletion_tabs.append(DeletionTab(affected_tilesets, model, msg, "Tilesets"))
 
         # Tilemaps and tilesets live in resources, which the reference schema does not cover yet
-        if reference_dialogs.check_delete(DB, DType.TERRAIN, nid, 'Terrain', self.window,
-                                          lambda: TerrainBox(self.window, exclude=res),
-                                          extra_tabs=deletion_tabs,
-                                          on_swap=lambda swap_nid: self.swap_in_resources(nid, swap_nid)):
-            super().delete(idx)
+        with HISTORY.change_set('Delete %s' % nid):
+            if reference_dialogs.check_delete(DType.TERRAIN, nid, 'Terrain', self.window,
+                                              lambda: TerrainBox(self.window, exclude=res),
+                                              extra_tabs=deletion_tabs,
+                                              on_swap=lambda swap_nid: self.swap_in_resources(nid, swap_nid)):
+                super().delete(idx)
 
     def on_nid_changed(self, old_nid, new_nid):
-        references.rewrite(DB, DType.TERRAIN, old_nid, new_nid)
+        HISTORY.rewrite(DType.TERRAIN, old_nid, new_nid)
         self.swap_in_resources(old_nid, new_nid)
 
     def swap_in_resources(self, old_nid, new_nid):

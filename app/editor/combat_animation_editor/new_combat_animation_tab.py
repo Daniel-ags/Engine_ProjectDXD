@@ -2,7 +2,7 @@ from PyQt5.QtGui import QIcon, QBrush, QColor
 from PyQt5.QtWidgets import QDialog, QWidget, QMessageBox
 
 from app.data.resources.resources import RESOURCES
-from app.data.database import references
+from app.editor.edit_history import HISTORY
 from app.data.resources.resource_types import ResourceType as RType
 from app.editor import reference_dialogs
 from app.data.resources.combat_anims import CombatCatalog, CombatEffectCatalog
@@ -68,10 +68,10 @@ class NewCombatAnimDatabase(NewEditorTab):
         return None
 
     def _on_nid_changed(self, old_nid: NID, new_nid: NID):
-        references.rewrite(self._db, RType.COMBAT_ANIMS, old_nid, new_nid)
+        HISTORY.rewrite(RType.COMBAT_ANIMS, old_nid, new_nid)
 
     def _on_delete(self, nid: NID) -> bool:
-        return reference_dialogs.check_delete(self._db, RType.COMBAT_ANIMS, nid, 'Combat Animation', self)
+        return reference_dialogs.check_delete(RType.COMBAT_ANIMS, nid, 'Combat Animation', self)
 
 class NewSimpleCombatAnimDatabase(NewCombatAnimDatabase):
     properties_type = NewSimpleCombatAnimProperties

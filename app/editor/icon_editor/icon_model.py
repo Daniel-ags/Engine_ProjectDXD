@@ -10,8 +10,7 @@ from app.data.resources.icons import Icon, IconSheet
 from app.data.resources.map_icons import MapIcon, MapIconCatalog
 from app.data.resources.resources import RESOURCES
 from app.utilities.data import Data
-from app.data.database import references
-from app.data.database.database import DB
+from app.editor.edit_history import HISTORY
 from app.data.resources.resource_types import ResourceType as RType
 from app.editor import reference_dialogs
 from app.editor.base_database_gui import ResourceCollectionModel
@@ -160,11 +159,11 @@ class Icon16Model(IconModel):
         icon = self.sub_data[idx]
         # Deleting one icon of a sheet deletes the whole sheet
         nid = icon.parent_nid or icon.nid
-        if reference_dialogs.check_delete(DB, self.resource_type, nid, 'Icon', self.window):
+        if reference_dialogs.check_delete(self.resource_type, nid, 'Icon', self.window):
             self.do_delete(nid)
 
     def on_nid_changed(self, old_nid, new_nid):
-        references.rewrite(DB, self.resource_type, old_nid, new_nid)
+        HISTORY.rewrite(self.resource_type, old_nid, new_nid)
 
 
 class Icon32Model(Icon16Model):
@@ -230,12 +229,12 @@ class MapIconModel(Icon16Model):
     def delete(self, idx):
         nid = self.sub_data[idx].nid
         # An overworld node always shows some icon, so its nodes fall back to the default
-        if reference_dialogs.check_delete(DB, self.resource_type, nid, 'Map Icon', self.window,
+        if reference_dialogs.check_delete(self.resource_type, nid, 'Map Icon', self.window,
                                           fallback=MapIconCatalog.DEFAULT()):
             self.do_delete(nid)
 
     def on_nid_changed(self, old_nid, new_nid):
-        references.rewrite(DB, self.resource_type, old_nid, new_nid)
+        HISTORY.rewrite(self.resource_type, old_nid, new_nid)
 
     def do_delete(self, nid):
         self.layoutAboutToBeChanged.emit()

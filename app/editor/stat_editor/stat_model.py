@@ -3,6 +3,7 @@ from PyQt5.QtCore import Qt
 from app.data.database.database import DB
 from app.data.database.database_types import DatabaseType as DType
 from app.editor import reference_dialogs
+from app.editor.edit_history import HISTORY
 from app.editor.base_database_gui import DragDropCollectionModel
 
 class StatTypeModel(DragDropCollectionModel):
@@ -21,5 +22,6 @@ class StatTypeModel(DragDropCollectionModel):
 
     def delete(self, idx):
         stat = self._data[idx]
-        if reference_dialogs.check_delete(DB, DType.STATS, stat.nid, 'Stat', self.window):
-            super().delete(idx)
+        with HISTORY.change_set('Delete %s' % stat.nid):
+            if reference_dialogs.check_delete(DType.STATS, stat.nid, 'Stat', self.window):
+                super().delete(idx)
