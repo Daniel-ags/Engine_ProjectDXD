@@ -71,21 +71,27 @@ class EditHistoryDialog(QDialog):
     def current_history_tab(self):
         raise NotImplementedError
 
+    def finish_editing(self):
+        """Ends the edit in the focused field. Some fields apply their edit only when
+        they lose focus -- a typed ID renames the record then -- so that has to happen
+        before the dialog commits or undoes, not after it closes."""
+        focused = QApplication.focusWidget()
+        if focused is not None and self.isAncestorOf(focused):
+            focused.clearFocus()
+
     def apply_history(self):
         self.history_mark = HISTORY.mark()
 
     def cancel_history(self):
+        self.finish_editing()
         HISTORY.undo_to(self.history_mark)
         resync_level_editor(self.main_editor)
 
     def on_focus_changed(self, old, new):
+        # The field losing focus has finished its edit by now: Qt sends it
+        # FocusOut before announcing the change
         if new is not None and self.isAncestorOf(new):
             HISTORY.commit()
-
-    def changeEvent(self, event):
-        if event.type() == QEvent.ActivationChange and not self.isActiveWindow():
-            HISTORY.commit()
-        super().changeEvent(event)
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.KeyPress and self.undo_enabled and self.isActiveWindow():
@@ -174,6 +180,7 @@ class SingleDatabaseEditor(EditHistoryDialog):
         self.tab.on_tab_close()
 
     def accept(self):
+        self.finish_editing()
         self.save_geometry()
         self.on_tab_close()
         HISTORY.commit()
@@ -328,6 +335,7 @@ class SingleResourceEditor(EditHistoryDialog):
         return self.tab
 
     def accept(self):
+        self.finish_editing()
         current_proj = self.settings.get_current_project()
         # RESOURCES must be saved here because if we grabbed a file from somewhere else
         # on our computer not under the project tree, we must transfer it under the project

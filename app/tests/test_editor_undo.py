@@ -110,6 +110,72 @@ class ItemEditorUndoTests(EditorUndoTestCase):
         self.assertEqual('Changed in another editor', self.item.name)
 
 
+class IdBoxTests(EditorUndoTestCase):
+    """An ID box writes the record's nid as the user types but renames, with its
+    cascade, only when it loses focus"""
+    OLD, NEW = 'Eirika_Lord', 'Eirika_Lrd'
+
+    def setUp(self):
+        super().setUp()
+        from PyQt5.QtTest import QTest
+        from app.editor.data_editor import SingleDatabaseEditor
+        from app.editor.class_editor.new_class_tab import NewClassDatabase
+        from app.editor import new_editor_tab
+        patcher = patch.object(new_editor_tab.QMessageBox, 'warning')
+        self.warning = patcher.start()
+        self.addCleanup(patcher.stop)
+        self.dialog = self.open(SingleDatabaseEditor, NewClassDatabase)
+        self.dialog.show()
+        self.dialog.activateWindow()
+        self.dialog.tab.on_select(self.OLD)
+        self.klass = DB.classes.get(self.OLD)
+        self.box = self.dialog.tab.right_frame.nid_box.edit
+        self.box.setFocus()
+        self.app.processEvents()
+        self.box.selectAll()
+        QTest.keyClicks(self.box, self.NEW)
+
+    def assertNamed(self, nid):
+        self.assertEqual(nid, self.klass.nid)
+        self.assertIs(self.klass, DB.classes.get(nid))
+        self.assertEqual(nid, DB.units.get(UNIT).klass)
+        self.assertEqual(nid, DB.levels.get('0').units.get(UNIT).klass)
+
+    def test_switching_windows_mid_typing_renames_with_the_cascade(self):
+        from PyQt5.QtWidgets import QWidget
+        other = QWidget()
+        self.addCleanup(other.close)
+        other.show()
+        other.activateWindow()
+        self.app.processEvents()
+        self.assertNamed(self.NEW)
+
+        self.dialog.undo()
+
+        self.assertNamed(self.OLD)
+
+    def test_cancel_mid_typing_leaves_the_old_id(self):
+        self.dialog.reject()
+        self.app.processEvents()
+        self.assertNamed(self.OLD)
+
+    def test_cancel_after_enter_leaves_the_old_id(self):
+        from PyQt5.QtCore import Qt
+        from PyQt5.QtTest import QTest
+        QTest.keyClick(self.box, Qt.Key_Return)
+        self.assertNamed(self.NEW)
+
+        self.dialog.reject()
+        self.app.processEvents()
+
+        self.assertNamed(self.OLD)
+
+    def test_ok_mid_typing_renames_with_the_cascade(self):
+        self.dialog.accept()
+        self.app.processEvents()
+        self.assertNamed(self.NEW)
+
+
 class LegacyEditorUndoTests(EditorUndoTestCase):
     def setUp(self):
         super().setUp()
