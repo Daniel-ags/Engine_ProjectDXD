@@ -307,6 +307,16 @@ def catalog(db, dtype: DType) -> Data:
     return getattr(db, dtype.name.lower())
 
 
+# === How the walk works ===
+# iter_refs goes through every record of every catalog. For each record,
+# _record_sites applies the record type's declarations: a Ref's path is parsed
+# into steps, and _locate follows those steps through the record to every place
+# a nid is stored, making a slot for each. A slot reads and writes the nid at
+# its place without the caller knowing what holds it. Each slot is wrapped in a
+# RefSite, which adds what the reference is (its target, its owner, a readable
+# path) and is what find_referrers, rewrite, clear and dangling work on.
+
+
 # === Paths ===
 _TOKEN = re.compile(r'(\w+)|\[\*\]|\[(\d+)\]|\{key\}|\{\*\}|\.')
 _ATTR, _EACH, _INDEX, _KEYS, _VALUES = 'attr', 'each', 'index', 'keys', 'values'
@@ -315,6 +325,11 @@ Step = Tuple[str, Any]
 _parsed: Dict[str, Tuple[Step, ...]] = {}
 
 def parse_path(path: str) -> Tuple[Step, ...]:
+    """Splits a path into steps, each a (kind, argument) pair:
+    'learned_skills[*][1]' -> (attr, 'learned_skills'), (each, None), (index, 1).
+    The dots between attributes only separate them and make no step. Paths are
+    parsed once and cached, since the walk reads the same few dozen paths for
+    every record."""
     if path in _parsed:
         return _parsed[path]
     steps: List[Step] = []
@@ -344,6 +359,11 @@ def field_name(declaration: Declaration) -> str:
 
 
 # === Slots: one place a nid is stored ===
+# A path ends at slots, one per stored nid. Each kind of slot knows how to read
+# and replace the nid in one kind of holder: an attribute, a list or tuple
+# position or dict value, a dict key, or one end of a team alliance pair.
+# rewrite and clear only ever call get, set and drop, so they work the same on
+# every record shape.
 Element = Tuple[Any, Any]  # (container, element)
 
 class _Slot:
@@ -364,6 +384,7 @@ class _Slot:
         return False
 
 class _AttrSlot(_Slot):
+    """A nid held in an attribute: unit.klass"""
     def __init__(self, holder, name: str):
         self.holder, self.name = holder, name
 
@@ -374,6 +395,12 @@ class _AttrSlot(_Slot):
         setattr(self.holder, self.name, value)
 
 class _ItemSlot(_Slot):
+    """A nid held at a position of a list or tuple, or as a value of a dict:
+    klass.turns_into[0], unit.learned_skills[0][1], level.music['player_phase'].
+
+    A tuple can't be changed in place, so setting into one builds a new tuple
+    and passes it to replace_holder, which stores it wherever the old tuple
+    was held."""
     def __init__(self, holder, key, replace_holder: Optional[Callable[[Any], None]]):
         self.holder, self.key = holder, key
         self.replace_holder = replace_holder
@@ -391,6 +418,13 @@ class _ItemSlot(_Slot):
             self.holder[self.key] = value
 
 class _KeySlot(_Slot):
+    """A nid used as a dict key: the stat nids of klass.bases, the weapon type
+    nids of unit.wexp_gain.
+
+    Renaming a key rebuilds the dict so the entry keeps its position in the
+    dict's order. Renaming onto a key the dict already has (a deletion swapping
+    one stat for another the class also has) keeps the existing entry and drops
+    this one."""
     def __init__(self, holder: dict, key):
         self.holder, self.key = holder, key
 
@@ -414,6 +448,10 @@ class _KeySlot(_Slot):
         return True
 
 class _AlliancePairSlot(_Slot):
+    """One end of a team alliance. Alliances are a set of (team, team) pairs held
+    by the team catalog itself rather than by any team, so they have no path
+    and iter_refs makes these slots directly. A set's members can't change in
+    place, so setting swaps the old pair for a new one."""
     def __init__(self, teams, pair: Tuple[NID, NID], index: int):
         self.teams, self.pair, self.index = teams, pair, index
 
@@ -437,10 +475,28 @@ class _AlliancePairSlot(_Slot):
 def _locate(holder, steps: Tuple[Step, ...], rekey: Tuple[Element, ...],
             replace_holder: Optional[Callable[[Any], None]] = None,
             element: Optional[Element] = None) -> Iterator[_Slot]:
-    """Every slot that the steps reach from holder"""
+    """Every slot that the steps reach from holder.
+
+    Takes the first step, then recurses on the rest from where it led; the last
+    step makes the slot. Three things ride along the way:
+
+    - rekey: each Data the walk passed through, paired with the element of it
+      the walk went into. A Data is keyed by its elements' nids, and some nids
+      are built from the very fields being rewritten (an event's nid includes
+      its level's), so RefSite.set re-keys these elements after writing.
+    - replace_holder: how to store a new value in place of the current holder,
+      for when the slot's holder is a tuple and setting has to replace it.
+    - element: the (container, element) of the last [*] passed. Clearing a
+      reference removes this whole element, so a deleted item takes its whole
+      [item, droppable] starting-item entry with it, not just the nid.
+
+    A missing value ends the walk quietly: a None attribute holds no nid, and a
+    list too short for an [n] step holds none at that position."""
     kind, arg = steps[0]
     rest = steps[1:]
     if kind == _ATTR:
+        # 'klass': the attribute holds the nid. 'bonus.support_rank' (rest
+        # remaining): move into the attribute's value and keep walking
         if not rest:
             slot = _AttrSlot(holder, arg)
         else:
@@ -449,6 +505,7 @@ def _locate(holder, steps: Tuple[Step, ...], rekey: Tuple[Element, ...],
                 yield from _locate(child, rest, rekey, lambda v: setattr(holder, arg, v), element)
             return
     elif kind == _INDEX:
+        # '[1]': one position of a list or tuple
         if not isinstance(holder, (list, tuple)) or len(holder) <= arg:
             return
         if not rest:
@@ -457,6 +514,8 @@ def _locate(holder, steps: Tuple[Step, ...], rekey: Tuple[Element, ...],
             yield from _locate(holder[arg], rest, rekey, None, element)
             return
     elif kind == _EACH:
+        # '[*]': every element. The loop runs over a copy, because clearing a
+        # reference may remove elements from holder while the walk is suspended
         for idx, child in enumerate(list(holder)):
             child_rekey = rekey + ((holder, child),) if isinstance(holder, Data) else rekey
             if not rest:
@@ -464,17 +523,21 @@ def _locate(holder, steps: Tuple[Step, ...], rekey: Tuple[Element, ...],
                 slot.rekey, slot.element = child_rekey, (holder, child)
                 yield slot
             elif child is not None:
+                # A child that is a tuple is replaced at this index when one
+                # of its nids is set
                 def replace(v, holder=holder, idx=idx):
                     holder[idx] = v
                 yield from _locate(child, rest, child_rekey, replace, (holder, child))
         return
     elif kind == _KEYS:
+        # '{key}': every key of the dict is a nid. Nothing walks on from a key
         for key in list(holder.keys()):
             slot = _KeySlot(holder, key)
             slot.rekey, slot.element = rekey, element
             yield slot
         return
     elif kind == _VALUES:
+        # '{*}': every value of the dict, as the nid itself or as the next holder
         for key in list(holder.keys()):
             if not rest:
                 slot = _ItemSlot(holder, key, replace_holder)
@@ -483,11 +546,19 @@ def _locate(holder, steps: Tuple[Step, ...], rekey: Tuple[Element, ...],
             elif holder[key] is not None:
                 yield from _locate(holder[key], rest, rekey, None, element)
         return
+    # The attribute and index cases fall through here with their one slot
     slot.rekey, slot.element = rekey, element
     yield slot
 
 
 def _component_slots(components) -> Iterator[Tuple[_Slot, Target]]:
+    """Slots for the nids in item and skill components, each with its target.
+
+    Components aren't declared here one by one: each says what its value holds
+    through its expose, and COMPONENT_TARGETS maps those types to targets. An
+    expose is a single type (CType.Item), a (container, type) pair such as
+    (CType.List, CType.Item), or NewMultipleOptions, whose value is a dict of
+    named options that each have a type of their own."""
     for component in components:
         expose = component.expose
         if expose == CType.NewMultipleOptions:
@@ -504,9 +575,13 @@ def _typed_slots(holder, key, expose) -> Iterator[Tuple[_Slot, Target]]:
         target = COMPONENT_TARGETS.get(inner) if isinstance(inner, CType) else None
         if not target or not value:
             return
+        # The same steps a declared path would take, minus its leading
+        # attribute: the walk starts at the value itself
         if container == CType.List:
             steps = parse_path('x[*]')[1:]
         elif container in (CType.Dict, CType.FloatDict, CType.StringDict):
+            # A dict-typed component value is a list of [key, value] pairs,
+            # and only the keys are nids
             steps = parse_path('x[*][0]')[1:]
         else:
             return
@@ -524,6 +599,8 @@ def _typed_slots(holder, key, expose) -> Iterator[Tuple[_Slot, Target]]:
 # === Walking the database ===
 @dataclass(eq=False)
 class RefSite:
+    """One reference found in the database: a slot plus what it means. Sites are
+    made fresh by each walk and are only good until the database next changes."""
     owner_type: DType
     owner: Any  # The top-level record holding the reference
     where: str  # Path of the reference within the owner, for messages
@@ -543,6 +620,8 @@ class RefSite:
 
     def set(self, value: Any) -> None:
         self._slot.set(value)
+        # Any Data on the way to the slot whose element's nid was built from
+        # the value just written now has that element under a stale key
         for container, element in self._slot.rekey:
             _rekey(container, element)
 
@@ -563,6 +642,8 @@ class RefSite:
             self.set(None)
 
 def _rekey(data: Data, element) -> None:
+    """Files element under its current nid in data's lookup dict. The dict's key
+    is found by identity, since the element's nid is what changed"""
     d = data.as_dict()
     old_key = next((k for k, v in d.items() if v is element), None)
     if old_key is not None and old_key != element.nid:
@@ -570,6 +651,7 @@ def _rekey(data: Data, element) -> None:
         d[element.nid] = element
 
 def _remove(container, element) -> None:
+    """Removes element from a Data or a list, finding it by identity"""
     if isinstance(container, Data):
         container.delete(element)
         return
@@ -581,11 +663,21 @@ def _remove(container, element) -> None:
 
 def _record_sites(owner_type: DType, owner, record, record_elem: Element, rekey: Tuple[Element, ...],
                   prefix: str) -> Iterator[RefSite]:
+    """The references in record, by its type's declarations, and in the
+    sub-records its Nested declarations lead to.
+
+    owner is the top-level catalog record all of these belong to, which is what
+    the editor records for undo and lists in deletion warnings. record_elem is
+    the (container, record) of the record actually holding the fields, which
+    ClearPolicy.REMOVE_RECORD removes. prefix builds the readable path of
+    sub-record references, like 'units[*].team'."""
     for declaration in REFERENCES.get(type(record), ()):
         where = prefix + declaration.path
         if isinstance(declaration, Ref):
             target = declaration.target
             if callable(target):
+                # A resolver: what this field names depends on another field
+                # of this record, and may be nothing at all
                 target = target(record)
                 if target is None:
                     continue
@@ -599,6 +691,8 @@ def _record_sites(owner_type: DType, owner, record, record_elem: Element, rekey:
             container = getattr(record, steps[0][1])
             if steps[1:] != ((_EACH, None),):
                 raise ValueError('Nested path must be "field[*]": %r' % declaration.path)
+            # Each sub-record is walked by its own type's declarations, under
+            # the same owner
             for child in list(container):
                 child_rekey = rekey + ((container, child),) if isinstance(container, Data) else rekey
                 yield from _record_sites(owner_type, owner, child, (container, child), child_rekey, where + '.')
@@ -608,7 +702,11 @@ def iter_refs(db, owner_types: Iterable[DType] = OWNER_TYPES) -> Iterator[RefSit
     for owner_type in owner_types:
         data = catalog(db, owner_type)
         for owner in list(data):
+            # The catalog itself is the first Data on the way: a record whose
+            # nid is built from a field it holds is re-keyed in its catalog
             yield from _record_sites(owner_type, owner, owner, (data, owner), ((data, owner),), '')
+        # Alliances live on the team catalog, not on any team, so no
+        # declaration reaches them
         if owner_type == DType.TEAMS:
             for pair in list(data.alliance_pairs):
                 for idx in range(2):
