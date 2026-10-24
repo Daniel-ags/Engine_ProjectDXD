@@ -10,7 +10,8 @@ from app.data.database.database import DB
 from app.data.database.database_types import DatabaseType as DType
 from app.data.database.level_units import UniqueUnit, UnitGroup
 from app.data.database.parties import PartyPrefab
-from app.data.database.references import NOT_REFERENCES, REFERENCES, field_name
+from app.data.database.reference_schema import SCHEMA
+from app.data.database.units import UnitPrefab
 from app.data.database.supports import SupportPair, SupportRankRequirementList
 from app.data.resources.resource_types import ResourceType as RType
 from app.data.resources.resources import RESOURCES
@@ -37,17 +38,34 @@ def blank(record_type):
 
 
 class SchemaCompletenessTests(unittest.TestCase):
-    def test_every_field_is_declared_a_reference_or_not_one(self):
-        for record_type in set(REFERENCES) | set(NOT_REFERENCES):
-            declared = {field_name(d) for d in REFERENCES.get(record_type, ())}
-            not_refs = NOT_REFERENCES.get(record_type, set())
-            fields = set(vars(blank(record_type)))
-            self.assertEqual(set(), declared & not_refs, record_type.__name__)
-            self.assertEqual(set(), fields - declared - not_refs,
-                             '%s has fields that are neither references nor listed as not references'
-                             % record_type.__name__)
-            self.assertEqual(set(), (declared | not_refs) - fields,
-                             '%s declares fields it does not have' % record_type.__name__)
+    def test_every_field_of_every_record_type_is_in_the_schema(self):
+        problems = []
+        for record_type in SCHEMA:
+            problems += references.schema_problems(record_type, vars(blank(record_type)))
+        self.assertEqual([], problems, '\n' + '\n'.join(problems))
+
+    def test_a_new_field_is_named_with_where_to_declare_it(self):
+        fields = list(vars(blank(UnitPrefab))) + ['signature_item']
+        problems = references.schema_problems(UnitPrefab, fields)
+        self.assertEqual(1, len(problems))
+        self.assertIn('UnitPrefab.signature_item', problems[0])
+        self.assertIn(references.SCHEMA_FILE, problems[0])
+
+    def test_the_sample_projects_match_the_schema(self):
+        logging.disable(logging.CRITICAL)
+        self.addCleanup(logging.disable, logging.NOTSET)
+        for project in ('default.ltproj', 'testing_proj.ltproj'):
+            DB.load(project, CURRENT_SERIALIZATION_VERSION)
+            self.assertEqual([], references.check_schema(DB), project)
+
+    def test_the_check_on_project_load_names_a_field_added_by_hand(self):
+        logging.disable(logging.CRITICAL)
+        self.addCleanup(logging.disable, logging.NOTSET)
+        DB.load('testing_proj.ltproj', CURRENT_SERIALIZATION_VERSION)
+        DB.units[0].signature_item = ITEM
+        problems = references.check_schema(DB)
+        self.assertEqual(1, len(problems))
+        self.assertIn('UnitPrefab.signature_item', problems[0])
 
     def test_every_catalog_holds_a_declared_type(self):
         logging.disable(logging.CRITICAL)
@@ -55,7 +73,7 @@ class SchemaCompletenessTests(unittest.TestCase):
         DB.load('testing_proj.ltproj', CURRENT_SERIALIZATION_VERSION)
         for owner_type in references.OWNER_TYPES:
             for record in references.catalog(DB, owner_type):
-                self.assertIn(type(record), set(REFERENCES) | set(NOT_REFERENCES), owner_type)
+                self.assertIn(type(record), SCHEMA, owner_type)
 
     def test_every_sub_record_holds_a_declared_type(self):
         """Records found inside the fields of loaded records are declared too,
@@ -63,7 +81,7 @@ class SchemaCompletenessTests(unittest.TestCase):
         logging.disable(logging.CRITICAL)
         self.addCleanup(logging.disable, logging.NOTSET)
         DB.load('default.ltproj', CURRENT_SERIALIZATION_VERSION)
-        known = set(REFERENCES) | set(NOT_REFERENCES)
+        known = set(SCHEMA)
 
         def scan(value, where):
             if isinstance(value, (Data, list, tuple, set)):

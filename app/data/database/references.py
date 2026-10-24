@@ -1,303 +1,28 @@
 """
-Every place one database record names another by nid.
+Finding, rewriting and clearing the references that reference_schema.py declares.
 
-REFERENCES lists, for each record type, the fields that hold a nid and what
-kind of record that nid names. Renaming, deleting and validating all read this
-one list, so none of them keeps its own idea of where references live. A field
-that names nothing is listed in NOT_REFERENCES instead; the completeness test
-fails on any field that is in neither.
-
-A path names where the nids sit inside a record:
-
-    klass                 the attribute itself
-    turns_into[*]         every element of a list (or Data)
-    learned_skills[*][1]  index 1 of every element
-    bases{key}            every key of a dict
-    music{*}              every value of a dict
-    bonus[*].support_rank an attribute of every element
-
-Ref(path, target) declares references. Its target is a DatabaseType, a
-ResourceType or an OtherType, or a function of the record holding the field
-that returns one (or None when this record's field names nothing), for fields
-whose meaning depends on another field. Nested(path) walks into sub-records,
-which have their own entry. ComponentRefs(path) reads each component's
-`expose` to find the nids in item and skill components.
+The schema says which fields of which records hold nids. This module walks
+the database by it: find_referrers lists every reference to a record, rewrite
+points them at a new nid when the record is renamed, clear removes them when
+it is deleted, and dangling finds the ones that name nothing. check_schema
+reports any field the schema leaves out.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 import re
-from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Set, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Set, Tuple
 
-from app.data.database.ai import AIBehaviour, AIPrefab
-from app.data.database.ai_groups import AIGroup
-from app.data.database.components import ComponentType as CType
-from app.data.database.constants import Constant, ConstantType
-from app.data.database.credit import CreditEntry
+from app.data.database.components import Component, ComponentType as CType
 from app.data.database.database_types import DatabaseType as DType
-from app.data.database.difficulty_modes import DifficultyModePrefab
-from app.data.database.equations import Equation
-from app.data.database.factions import Faction
-from app.data.database.items import ItemPrefab
-from app.data.database.klass import Klass
-from app.data.database.level_units import GenericUnit, UniqueUnit, UnitGroup
-from app.data.database.levels import LevelPrefab
-from app.data.database.lore import Lore
-from app.data.database.overworld import OverworldPrefab
-from app.data.database.overworld_node import OverworldNodePrefab
-from app.data.database.parties import PartyPrefab
-from app.data.database.raw_data import RawDataPrefab
-from app.data.database.skills import SkillPrefab
-from app.data.database.stats import StatPrefab
-from app.data.database.supports import (Affinity, SupportPair, SupportRank,
-                                        SupportRankBonus, SupportRankRequirement)
-from app.data.database.tags import Tag
-from app.data.database.teams import Team
-from app.data.database.terrain import Terrain
-from app.data.database.translations import Translation
-from app.data.database.units import UnitPrefab
-from app.data.database.varslot import VarSlot
-from app.data.database.weapons import CombatBonus, WeaponRank, WeaponType, WexpGain
+from app.data.database.reference_schema import (COMPONENT_TARGETS, SCHEMA, ClearPolicy, ComponentRefs,
+                                                Declaration, FieldDeclarations, Nested, OtherType, Ref,
+                                                Target)
 from app.data.resources.resource_types import ResourceType as RType
-from app.events.event_prefab import EventPrefab
-from app.events.node_events import NodeMenuEvent
-from app.events.regions import Region, RegionType
 from app.utilities.data import Data
 from app.utilities.typing import NID
 
-
-class OtherType(Enum):
-    """Things a nid can name that are neither a database catalog nor a resource catalog"""
-    MOVEMENT_TYPES = 'movement_types'  # A column of the movement cost grid
-    TERRAIN_MOVEMENT_TYPES = 'terrain_movement_types'  # A row of the movement cost grid
-
-
-Target = Union[DType, RType, OtherType]
-Resolver = Callable[[Any], Optional[Target]]
-
-
-class ClearPolicy(Enum):
-    AUTO = 0  # Drop the element of the last [*] in the path, or the dict key; otherwise set None
-    REMOVE_RECORD = 1  # Remove the sub-record holding the field from its Data
-    REPLACE = 2  # The field must name something: point it at the caller's fallback
-
-
-@dataclass(frozen=True)
-class Ref:
-    path: str
-    target: Union[Target, Resolver]
-    # The name of a Data on the top-level record whose keys also satisfy this
-    # reference. Level units name their travelers and group members by level
-    # unit nid, which is a generic unit's own nid as often as a unit prefab's.
-    local: Optional[str] = None
-    on_clear: ClearPolicy = ClearPolicy.AUTO
-    # False for a dict holding an entry for every record of the target, like a
-    # class's wexp gain per weapon type: a deletion drops the entry without
-    # listing every class as affected
-    listed: bool = True
-
-
-@dataclass(frozen=True)
-class Nested:
-    path: str
-
-
-@dataclass(frozen=True)
-class ComponentRefs:
-    path: str = 'components'
-
-
-Declaration = Union[Ref, Nested, ComponentRefs]
-
-COMPONENT_TARGETS: Dict[CType, Target] = {
-    CType.WeaponType: DType.WEAPONS,
-    CType.WeaponRank: DType.WEAPON_RANKS,
-    CType.Unit: DType.UNITS,
-    CType.Class: DType.CLASSES,
-    CType.Tag: DType.TAGS,
-    CType.Item: DType.ITEMS,
-    CType.Skill: DType.SKILLS,
-    CType.Stat: DType.STATS,
-    CType.StatFloat: DType.STATS,
-    CType.StatString: DType.STATS,
-    CType.Equation: DType.EQUATIONS,
-    CType.MovementType: OtherType.MOVEMENT_TYPES,
-    CType.AI: DType.AI,
-    CType.Affinity: DType.AFFINITIES,
-    CType.Terrain: DType.TERRAIN,
-    CType.Lore: DType.LORE,
-    CType.Event: DType.EVENTS,
-    CType.MapAnimation: RType.ANIMATIONS,
-    CType.Sound: RType.SFX,
-    CType.Music: RType.MUSIC,
-    CType.CombatAnimation: RType.COMBAT_ANIMS,
-    CType.EffectAnimation: RType.COMBAT_EFFECTS,
-}
-
-AI_UNIT_SPEC_TARGETS: Dict[str, DType] = {
-    'Class': DType.CLASSES,
-    'Tag': DType.TAGS,
-    'Team': DType.TEAMS,
-    'Faction': DType.FACTIONS,
-    'Party': DType.PARTIES,
-    'ID': DType.UNITS,
-}
-
-def _ai_unit_spec_target(behaviour: AIBehaviour) -> Optional[Target]:
-    if behaviour.target in ('Enemy', 'Ally', 'Unit') and behaviour.target_spec:
-        return AI_UNIT_SPEC_TARGETS.get(behaviour.target_spec[0])
-    return None
-
-def _ai_terrain_target(behaviour: AIBehaviour) -> Optional[Target]:
-    return DType.TERRAIN if behaviour.target == 'Terrain' else None
-
-def _region_target(region: Region) -> Optional[Target]:
-    if region.region_type == RegionType.STATUS:
-        return DType.SKILLS
-    elif region.region_type == RegionType.TERRAIN:
-        return DType.TERRAIN
-    return None
-
-def _credit_target(credit: CreditEntry) -> Optional[Target]:
-    return credit.credit_type if isinstance(credit.credit_type, RType) else None
-
-def _constant_target(constant: Constant) -> Optional[Target]:
-    return RType.MUSIC if constant.attr == ConstantType.MUSIC else None
-
-def _weapon_rank_target(bonus: CombatBonus) -> Optional[Target]:
-    return None if bonus.weapon_rank == 'All' else DType.WEAPON_RANKS
-
-def _stat_dicts(*names: str) -> List[Ref]:
-    return [Ref('%s{key}' % name, DType.STATS, listed=False) for name in names]
-
-
-REFERENCES: Dict[type, List[Declaration]] = {
-    Constant: [Ref('value', _constant_target)],
-    Terrain: [Ref('background', RType.PANORAMAS),
-              Ref('mtype', OtherType.TERRAIN_MOVEMENT_TYPES),
-              Ref('status', DType.SKILLS)],
-    WeaponType: [Nested('rank_bonus[*]'), Nested('advantage[*]'), Nested('disadvantage[*]'),
-                 Ref('icon_nid', RType.ICONS16)],
-    CombatBonus: [Ref('weapon_type', DType.WEAPONS), Ref('weapon_rank', _weapon_rank_target)],
-    Team: [Ref('map_sprite_palette', RType.COMBAT_PALETTES),
-           Ref('phase_change_sound_effect', RType.SFX)],
-    Faction: [Ref('icon_nid', RType.ICONS32)],
-    ItemPrefab: [Ref('icon_nid', RType.ICONS16), ComponentRefs('components')],
-    SkillPrefab: [Ref('icon_nid', RType.ICONS16), ComponentRefs('components')],
-    Klass: [Ref('movement_group', OtherType.MOVEMENT_TYPES),
-            Ref('promotes_from', DType.CLASSES),
-            Ref('turns_into[*]', DType.CLASSES),
-            Ref('tags[*]', DType.TAGS),
-            *_stat_dicts('bases', 'growths', 'growth_bonus', 'promotion', 'max_stats'),
-            Ref('learned_skills[*][1]', DType.SKILLS),
-            Ref('wexp_gain{key}', DType.WEAPONS, listed=False),
-            Ref('icon_nid', RType.ICONS80),
-            Ref('map_sprite_nid', RType.MAP_SPRITES),
-            Ref('combat_anim_nid', RType.COMBAT_ANIMS)],
-    Affinity: [Nested('bonus[*]'), Ref('icon_nid', RType.ICONS16)],
-    SupportRankBonus: [Ref('support_rank', DType.SUPPORT_RANKS)],
-    SupportRankRequirement: [Ref('support_rank', DType.SUPPORT_RANKS)],
-    UnitPrefab: [Ref('klass', DType.CLASSES),
-                 Ref('tags[*]', DType.TAGS),
-                 *_stat_dicts('bases', 'growths', 'stat_cap_modifiers'),
-                 Ref('starting_items[*][0]', DType.ITEMS),
-                 Ref('learned_skills[*][1]', DType.SKILLS),
-                 Ref('wexp_gain{key}', DType.WEAPONS, listed=False),
-                 Ref('alternate_classes[*]', DType.CLASSES),
-                 Ref('portrait_nid', RType.PORTRAITS),
-                 Ref('affinity', DType.AFFINITIES)],
-    SupportPair: [Ref('unit1', DType.UNITS), Ref('unit2', DType.UNITS), Nested('requirements[*]')],
-    AIPrefab: [Nested('behaviours[*]')],
-    AIBehaviour: [Ref('target_spec[1]', _ai_unit_spec_target), Ref('target_spec', _ai_terrain_target)],
-    PartyPrefab: [Ref('leader', DType.UNITS, on_clear=ClearPolicy.REPLACE)],
-    DifficultyModePrefab: _stat_dicts('player_bases', 'enemy_bases', 'boss_bases',
-                                      'player_growths', 'enemy_growths', 'boss_growths'),
-    CreditEntry: [Ref('sub_nid', _credit_target)],
-    LevelPrefab: [Ref('tilemap', RType.TILEMAPS),
-                  Ref('bg_tilemap', RType.TILEMAPS),
-                  Ref('party', DType.PARTIES),
-                  Ref('music{*}', RType.MUSIC),
-                  Ref('roam_unit', DType.UNITS),
-                  Ref('tags[*]', DType.TAGS),
-                  Nested('units[*]'), Nested('regions[*]'), Nested('unit_groups[*]'), Nested('ai_groups[*]')],
-    GenericUnit: [Ref('klass', DType.CLASSES),
-                  Ref('faction', DType.FACTIONS),
-                  Ref('starting_items[*][0]', DType.ITEMS),
-                  Ref('starting_skills[*]', DType.SKILLS),
-                  Ref('team', DType.TEAMS),
-                  Ref('ai', DType.AI),
-                  Ref('roam_ai', DType.AI),
-                  Ref('starting_traveler', DType.UNITS, local='units')],
-    UniqueUnit: [Ref('nid', DType.UNITS, on_clear=ClearPolicy.REMOVE_RECORD),
-                 Ref('team', DType.TEAMS),
-                 Ref('ai', DType.AI),
-                 Ref('roam_ai', DType.AI),
-                 Ref('starting_traveler', DType.UNITS, local='units')],
-    UnitGroup: [Ref('units[*]', DType.UNITS, local='units'),
-                Ref('positions{key}', DType.UNITS, local='units')],
-    Region: [Ref('sub_nid', _region_target)],
-    EventPrefab: [Ref('level_nid', DType.LEVELS)],
-    OverworldPrefab: [Ref('tilemap', RType.TILEMAPS), Ref('music', RType.MUSIC), Nested('overworld_nodes[*]')],
-    OverworldNodePrefab: [Ref('icon', RType.MAP_ICONS, on_clear=ClearPolicy.REPLACE),
-                          Ref('level', DType.LEVELS), Nested('menu_options[*]')],
-    NodeMenuEvent: [Ref('event', DType.EVENTS)],
-}
-
-NOT_REFERENCES: Dict[type, Set[str]] = {
-    Constant: {'nid', 'name', 'attr', 'tag'},
-    StatPrefab: {'nid', 'name', 'maximum', 'desc', 'position', 'growth_colors', 'hidden_stat'},
-    Equation: {'nid', 'expression'},
-    # minimap and platform name fixed engine sprite sets, not editable catalogs
-    Terrain: {'nid', 'name', 'color', 'minimap', 'platform', 'opaque'},
-    WeaponRank: {'rank', 'requirement'},
-    WeaponType: {'nid', 'name', 'force_melee_anim', 'hide_from_display', 'hide_from_convoy', 'icon_index'},
-    CombatBonus: {'damage', 'resist', 'accuracy', 'avoid', 'crit', 'dodge', 'attack_speed', 'defense_speed'},
-    WexpGain: {'usable', 'wexp_gain', 'cap'},
-    # combat_variant_palette is matched against the palette names inside each
-    # combat animation, not a palette nid
-    Team: {'nid', 'combat_variant_palette', 'combat_color'},
-    Faction: {'nid', 'name', 'desc', 'icon_index'},
-    ItemPrefab: {'nid', 'name', 'desc', 'icon_index'},
-    SkillPrefab: {'nid', 'name', 'desc', 'icon_index'},
-    Tag: {'nid'},
-    VarSlot: {'nid', 'desc'},
-    Klass: {'nid', 'name', 'desc', 'tier', 'max_level', 'icon_index', 'fields'},
-    SupportRank: {'nid'},
-    Affinity: {'nid', 'name', 'desc', 'icon_index'},
-    SupportRankBonus: {'damage', 'resist', 'accuracy', 'avoid', 'crit', 'dodge', 'attack_speed', 'defense_speed'},
-    SupportRankRequirement: {'requirement', 'gate', 'damage', 'resist', 'accuracy', 'avoid', 'crit', 'dodge',
-                             'attack_speed', 'defense_speed'},
-    # variant names a palette variant of the unit's own sprites, not a record
-    UnitPrefab: {'nid', 'name', 'desc', 'variant', 'level', 'unit_notes', 'fields'},
-    SupportPair: {'one_way'},
-    AIPrefab: {'nid', 'priority', 'offense_bias', 'roam_ai'},
-    AIBehaviour: {'action', 'target', 'view_range', 'invert_targeting', 'roam_speed', 'desired_proximity',
-                  'condition'},
-    PartyPrefab: {'nid', 'name'},
-    DifficultyModePrefab: {'nid', 'name', 'color', 'permadeath_choice', 'growths_choice', 'rng_choice',
-                           'player_autolevels', 'enemy_autolevels', 'boss_autolevels',
-                           'promoted_autolevels_fraction', 'start_locked'},
-    CreditEntry: {'nid', 'credit_type', 'category', 'custom_header', 'icon_index', 'contrib'},
-    Translation: {'nid', 'text'},
-    Lore: {'nid', 'name', 'title', 'category', 'text'},
-    LevelPrefab: {'nid', 'name', 'objective', 'roam', 'go_to_overworld', 'should_record'},
-    # A generic unit's nid and its ai_group are level-local names; the level
-    # rebuilds its ai_groups from its units on load
-    GenericUnit: {'nid', 'variant', 'level', 'ai_group', 'starting_position', 'generic'},
-    # faction is always None on a unique unit
-    UniqueUnit: {'ai_group', 'faction', 'starting_position', 'generic'},
-    UnitGroup: {'nid'},
-    AIGroup: {'nid', 'trigger_threshold'},
-    Region: {'nid', 'region_type', 'position', 'size', 'highlight', 'condition', 'time_left', 'only_once',
-             'interrupt_move', 'hide_time'},
-    # Event scripts name records in free text; they are searched, not rewritten
-    EventPrefab: {'name', 'trigger', 'condition', 'commands', 'only_once', 'priority', '_source'},
-    OverworldPrefab: {'nid', 'name', 'map_paths', 'border_tile_width'},
-    OverworldNodePrefab: {'nid', 'name', 'pos'},
-    NodeMenuEvent: {'nid', 'option_name', 'visible', 'enabled'},
-    RawDataPrefab: {'nid', 'dtype', 'svalue', 'kvvalue', 'oattrs', 'lovalue'},
-}
+SCHEMA_FILE = 'app/data/database/reference_schema.py'
 
 # The movement cost grid and the minimap types are not lists of records
 OWNER_TYPES: Tuple[DType, ...] = tuple(dtype for dtype in DType if dtype not in (DType.MCOST, DType.MINIMAP))
@@ -309,8 +34,9 @@ def catalog(db, dtype: DType) -> Data:
 
 # === How the walk works ===
 # iter_refs goes through every record of every catalog. For each record,
-# _record_sites applies the record type's declarations: a Ref's path is parsed
-# into steps, and _locate follows those steps through the record to every place
+# _record_sites reads the record type's schema entry: each Ref's field and at
+# make a path, parsed into steps, and _locate follows those steps through the
+# record to every place
 # a nid is stored, making a slot for each. A slot reads and writes the nid at
 # its place without the caller knowing what holds it. Each slot is wrapped in a
 # RefSite, which adds what the reference is (its target, its owner, a readable
@@ -353,9 +79,13 @@ def parse_path(path: str) -> Tuple[Step, ...]:
     _parsed[path] = tuple(steps)
     return _parsed[path]
 
-def field_name(declaration: Declaration) -> str:
-    """The attribute of the record that a declaration starts from"""
-    return parse_path(declaration.path)[0][1]
+def declarations(field_declarations: FieldDeclarations) -> List[Declaration]:
+    """A field's declarations as a list: none for NOT_REF, one, or several Refs"""
+    if field_declarations is None:
+        return []
+    if isinstance(field_declarations, list):
+        return field_declarations
+    return [field_declarations]
 
 
 # === Slots: one place a nid is stored ===
@@ -663,39 +393,38 @@ def _remove(container, element) -> None:
 
 def _record_sites(owner_type: DType, owner, record, record_elem: Element, rekey: Tuple[Element, ...],
                   prefix: str) -> Iterator[RefSite]:
-    """The references in record, by its type's declarations, and in the
-    sub-records its Nested declarations lead to.
+    """The references in record, by its type's schema entry, and in the
+    sub-records its Nested fields hold.
 
     owner is the top-level catalog record all of these belong to, which is what
     the editor records for undo and lists in deletion warnings. record_elem is
     the (container, record) of the record actually holding the fields, which
     ClearPolicy.REMOVE_RECORD removes. prefix builds the readable path of
     sub-record references, like 'units[*].team'."""
-    for declaration in REFERENCES.get(type(record), ()):
-        where = prefix + declaration.path
-        if isinstance(declaration, Ref):
-            target = declaration.target
-            if callable(target):
-                # A resolver: what this field names depends on another field
-                # of this record, and may be nothing at all
-                target = target(record)
-                if target is None:
-                    continue
-            for slot in _locate(record, parse_path(declaration.path), rekey):
-                yield RefSite(owner_type, owner, where, target, declaration, record_elem, slot)
-        elif isinstance(declaration, ComponentRefs):
-            for slot, target in _component_slots(getattr(record, declaration.path)):
-                yield RefSite(owner_type, owner, where, target, None, record_elem, slot)
-        elif isinstance(declaration, Nested):
-            steps = parse_path(declaration.path)
-            container = getattr(record, steps[0][1])
-            if steps[1:] != ((_EACH, None),):
-                raise ValueError('Nested path must be "field[*]": %r' % declaration.path)
-            # Each sub-record is walked by its own type's declarations, under
-            # the same owner
-            for child in list(container):
-                child_rekey = rekey + ((container, child),) if isinstance(container, Data) else rekey
-                yield from _record_sites(owner_type, owner, child, (container, child), child_rekey, where + '.')
+    for field, field_declarations in SCHEMA.get(type(record), {}).items():
+        for declaration in declarations(field_declarations):
+            if isinstance(declaration, Ref):
+                target = declaration.target
+                if callable(target):
+                    # A resolver: what this field names depends on another
+                    # field of this record, and may be nothing at all
+                    target = target(record)
+                    if target is None:
+                        continue
+                path = field + declaration.at
+                for slot in _locate(record, parse_path(path), rekey):
+                    yield RefSite(owner_type, owner, prefix + path, target, declaration, record_elem, slot)
+            elif isinstance(declaration, ComponentRefs):
+                for slot, target in _component_slots(getattr(record, field)):
+                    yield RefSite(owner_type, owner, prefix + field, target, None, record_elem, slot)
+            elif isinstance(declaration, Nested):
+                # Each sub-record is walked by its own type's entry, under the
+                # same owner
+                container = getattr(record, field)
+                for child in list(container):
+                    child_rekey = rekey + ((container, child),) if isinstance(container, Data) else rekey
+                    yield from _record_sites(owner_type, owner, child, (container, child), child_rekey,
+                                             prefix + field + '[*].')
 
 def iter_refs(db, owner_types: Iterable[DType] = OWNER_TYPES) -> Iterator[RefSite]:
     """Every reference in the database, whatever its value"""
@@ -776,3 +505,52 @@ def dangling(db, resources) -> List[RefSite]:
             continue
         result.append(site)
     return result
+
+
+# === Checking the schema ===
+def schema_problems(record_type: type, fields: Iterable[str]) -> List[str]:
+    """Where the schema's entry for a record type disagrees with the fields the
+    record has, each as a message saying what to change"""
+    name = record_type.__name__
+    fields = list(fields)
+    entry = SCHEMA.get(record_type)
+    if entry is None:
+        return ['%s has no entry in %s, so renames and deletions never look inside it. '
+                'Add one listing each of its fields (%s), as a Ref if it holds a nid or NOT_REF if not.'
+                % (name, SCHEMA_FILE, ', '.join(fields))]
+    problems = []
+    for field in fields:
+        if field not in entry:
+            problems.append("%s.%s is not in %s, so renames and deletions will not update it. "
+                            "Add it to %s's entry: '%s': Ref(<what it names>) if it holds a nid, "
+                            "or '%s': NOT_REF if it does not."
+                            % (name, field, SCHEMA_FILE, name, field, field))
+    for field in entry:
+        if field not in fields:
+            problems.append("%s's entry in %s lists %s, which %s does not have. Remove it."
+                            % (name, SCHEMA_FILE, field, name))
+    return problems
+
+def check_schema(db) -> List[str]:
+    """Problems with the schema for the records in db, each as a message saying
+    what to change. Each record type is checked once, by the first record of it
+    found, down through the sub-records of Nested fields."""
+    checked: Set[type] = set()
+    problems: List[str] = []
+
+    def check(record):
+        if type(record) not in checked:
+            checked.add(type(record))
+            # Items and skills also hold each component under its own nid,
+            # beside their components field, which ComponentRefs covers
+            fields = [name for name, value in vars(record).items() if not isinstance(value, Component)]
+            problems.extend(schema_problems(type(record), fields))
+        for field, field_declarations in SCHEMA.get(type(record), {}).items():
+            if any(isinstance(declaration, Nested) for declaration in declarations(field_declarations)):
+                for child in getattr(record, field):
+                    check(child)
+
+    for owner_type in OWNER_TYPES:
+        for record in catalog(db, owner_type):
+            check(record)
+    return problems

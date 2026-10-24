@@ -14,6 +14,7 @@ from PyQt5.QtCore import QDir, Qt, QTimer
 from PyQt5.QtWidgets import QApplication, QFileDialog, QMessageBox, QProgressDialog, QVBoxLayout, QLabel, QDialogButtonBox, QCheckBox
 
 from app.constants import VERSION
+from app.data.database import references
 from app.data.database.database import DB, Database
 from app.data.resources.resources import RESOURCES, Resources
 from app.data.serialization.dataclass_serialization import dataclass_from_dict
@@ -377,6 +378,10 @@ class ProjectFileBackend():
         DB.load(curr_proj_path, self.metadata.serialization_version)
         # Undo never reaches back into another project
         HISTORY.clear()
+        # A field added to a record but not to the reference schema is one
+        # renames and deletions would silently skip
+        for problem in references.check_schema(DB):
+            logging.warning(problem)
 
         if self.metadata.serialization_version < CURRENT_SERIALIZATION_VERSION:
             self.save()     # To ensure updates from migration are saved
