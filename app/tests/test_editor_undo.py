@@ -86,6 +86,17 @@ class ItemEditorUndoTests(EditorUndoTestCase):
         self.assertIs(self.item, DB.items.get(ITEM))
         self.assertEqual([[ITEM, False]], DB.units.get(UNIT).starting_items)
 
+    def test_an_edit_after_undoing_a_rename_is_still_recorded(self):
+        old_name = self.item.name
+        self.tab.rename(ITEM, 'Sword_Two')
+        self.dialog.undo()
+        self.assertIs(self.item, self.tab.right_frame.current)
+
+        self.type_name('Renamed Sword')
+        self.dialog.undo()
+
+        self.assertEqual(old_name, self.item.name)
+
     def test_deleting_is_one_undo_step(self):
         DB.units.get(UNIT).starting_items = [[ITEM, False]]
         self.history.commit()
@@ -167,6 +178,17 @@ class IdBoxTests(EditorUndoTestCase):
 
         self.dialog.reject()
         self.app.processEvents()
+
+        self.assertNamed(self.OLD)
+
+    def test_redo_mid_typing_renames_with_the_cascade(self):
+        from PyQt5.QtCore import Qt
+        from PyQt5.QtTest import QTest
+        # The box has no redo of its own, so the key goes to the history
+        QTest.keyClick(self.box, Qt.Key_Z, Qt.ControlModifier | Qt.ShiftModifier)
+        self.assertNamed(self.NEW)
+
+        self.dialog.undo()
 
         self.assertNamed(self.OLD)
 

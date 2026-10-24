@@ -112,11 +112,13 @@ class EditHistoryDialog(QDialog):
         return super().eventFilter(obj, event)
 
     def undo(self):
+        self.finish_editing()
         # Edits from before the dialog opened are not this dialog's to take back
         if HISTORY.undo(floor=self.history_mark):
             self.after_history_change()
 
     def redo(self):
+        self.finish_editing()
         if HISTORY.redo():
             self.after_history_change()
 

@@ -143,8 +143,14 @@ class NewEditorTab(QWidget, Generic[T]):
         """Shows the data again after an undo or redo changed it underneath this tab"""
         current = self.right_frame.current
         if current is not None and not any(entry is current for entry in self.data):
-            self.right_frame.set_current(None)
-        self.reset()
+            current = None
+        # Rebuilding the list drops its selection, and so the binding; the undo may
+        # also have renamed the shown entry, so select it again by its nid now
+        self.tree_list.reset(self.data.keys(), self.categories)
+        if current is not None:
+            self.tree_list.select_item(current.nid)
+        else:
+            self.on_select(None)
 
     def resort_db(self, entries: List[str], categories: Categories):
         self.data.categories = categories
