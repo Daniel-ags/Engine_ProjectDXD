@@ -14,6 +14,7 @@ from app.editor.mcost_dialog import McostDialog
 from app.editor.skill_editor import skill_model
 from app.extensions.color_icon import ColorIcon
 from app.editor.lib.components.validated_line_edit import NidLineEdit
+from app.editor.edit_history import HISTORY
 from app.utilities import str_utils
 
 class TerrainProperties(QWidget):
@@ -36,7 +37,6 @@ class TerrainProperties(QWidget):
         name_section = QVBoxLayout()
 
         self.nid_box = PropertyBox(_("Unique ID"), NidLineEdit, self)
-        self.nid_box.edit.textChanged.connect(self.nid_changed)
         self.nid_box.edit.editingFinished.connect(self.nid_done_editing)
         name_section.addWidget(self.nid_box)
 
@@ -106,18 +106,15 @@ class TerrainProperties(QWidget):
         total_section.addLayout(main_section)
         total_section.setAlignment(Qt.AlignTop)
 
-    def nid_changed(self, text):
-        self.current.nid = text
-        self.window.update_list()
-
     def nid_done_editing(self):
         # Check validity of nid!
+        new_nid = self.nid_box.edit.text()
         other_nids = [terrain.nid for terrain in DB.terrain.values() if terrain is not self.current]
-        if self.current.nid in other_nids:
-            QMessageBox.warning(self.window, 'Warning', 'Terrain ID %s already in use' % self.current.nid)
-            self.current.nid = str_utils.get_next_int(self.current.nid, other_nids)
-        self.window.left_frame.model.on_nid_changed(DB.terrain.find_key(self.current), self.current.nid)
-        DB.terrain.update_nid(self.current, self.current.nid)
+        if new_nid in other_nids:
+            QMessageBox.warning(self.window, 'Warning', 'Terrain ID %s already in use' % new_nid)
+            new_nid = str_utils.get_next_int(new_nid, other_nids)
+            self.nid_box.edit.setText(new_nid)
+        HISTORY.rename(DB.terrain, self.current, new_nid, self.window.left_frame.model.on_nid_changed)
         self.window.update_list()
 
     def name_changed(self, text):

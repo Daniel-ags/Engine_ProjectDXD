@@ -73,7 +73,6 @@ class NewCombatEffectProperties(NewCombatAnimProperties):
         self.info_form = QFormLayout()
 
         self.nid_box = NidLineEdit()
-        self.nid_box.textChanged.connect(self.nid_changed)
         self.nid_box.editingFinished.connect(self.nid_done_editing)
 
         theme = dark_theme.get_theme()

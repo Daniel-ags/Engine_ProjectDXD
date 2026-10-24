@@ -137,7 +137,6 @@ class GroupWidget(QWidget):
         self.setLayout(self.layout)
 
         self.nid_box = NidLineEdit(self)
-        self.nid_box.textChanged.connect(self.nid_changed)
         self.nid_box.editingFinished.connect(self.nid_done_editing)
         self.layout.addWidget(self.nid_box, 0, 0)
 
@@ -179,18 +178,16 @@ class GroupWidget(QWidget):
     def tick(self):
         self.model.layoutChanged.emit()
 
-    def nid_changed(self, text: str):
-        self.current.nid = text
-
     def nid_done_editing(self):
+        new_nid = self.nid_box.text()
         other_nids = [d.nid for d in self._data.values()
                       if d is not self.current]
-        if self.current.nid in other_nids:
+        if new_nid in other_nids:
             QMessageBox.warning(self.window, 'Warning',
-                                'Group ID %s already in use' % self.current.nid)
-        self.current.nid = str_utils.get_next_name(
-            self.current.nid, other_nids)
-        self._data.update_nid(self.current, self.current.nid)
+                                'Group ID %s already in use' % new_nid)
+            new_nid = str_utils.get_next_name(new_nid, other_nids)
+            self.nid_box.setText(new_nid)
+        self._data.update_nid(self.current, new_nid)
 
     @property
     def current_level(self):

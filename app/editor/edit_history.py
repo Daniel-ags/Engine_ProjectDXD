@@ -26,7 +26,7 @@ import copy
 from dataclasses import dataclass, field
 import logging
 import os
-from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Tuple
 
 from app.data.category import CategorizedCatalog
 from app.data.database import references
@@ -265,6 +265,18 @@ class EditHistory:
         sites = references.find_referrers(self.db, target, nid)
         with self.change_set('Delete %s' % nid), self.modifying(self._owners(sites)):
             return references.clear(self.db, target, nid, fallback)
+
+    def rename(self, data: Data, record, new_nid: NID,
+               cascade: Optional[Callable[[NID, NID], Any]] = None) -> None:
+        """Renames a record in its catalog, and with cascade(old_nid, new_nid) whatever
+        names it, as one undo step"""
+        old_nid = record.nid
+        if new_nid == old_nid:
+            return
+        with self.change_set('Rename %s' % old_nid), self.modifying([(record, data)]):
+            if cascade:
+                cascade(old_nid, new_nid)
+            data.update_nid(record, new_nid)
 
     def _owners(self, sites: List[references.RefSite]) -> Iterator[Tuple[Any, Data]]:
         for owner_type, records in references.owners(sites).items():

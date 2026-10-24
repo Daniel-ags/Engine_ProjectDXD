@@ -122,8 +122,7 @@ class ItemEditorUndoTests(EditorUndoTestCase):
 
 
 class IdBoxTests(EditorUndoTestCase):
-    """An ID box writes the record's nid as the user types but renames, with its
-    cascade, only when it loses focus"""
+    """An ID box renames the record, with its cascade, only when editing finishes"""
     OLD, NEW = 'Eirika_Lord', 'Eirika_Lrd'
 
     def setUp(self):
@@ -151,6 +150,20 @@ class IdBoxTests(EditorUndoTestCase):
         self.assertIs(self.klass, DB.classes.get(nid))
         self.assertEqual(nid, DB.units.get(UNIT).klass)
         self.assertEqual(nid, DB.levels.get('0').units.get(UNIT).klass)
+
+    def test_typing_changes_nothing_until_editing_finishes(self):
+        from PyQt5.QtCore import Qt
+        from PyQt5.QtTest import QTest
+        self.history.commit()
+        self.assertNamed(self.OLD)
+        self.assertFalse(self.history.can_undo())
+
+        QTest.keyClick(self.box, Qt.Key_Tab)
+        self.assertNamed(self.NEW)
+        self.assertEqual('Lord', self.klass.name)  # The name was not the ID's
+
+        self.dialog.undo()
+        self.assertNamed(self.OLD)
 
     def test_switching_windows_mid_typing_renames_with_the_cascade(self):
         from PyQt5.QtWidgets import QWidget
@@ -253,6 +266,38 @@ class LegacyEditorUndoTests(EditorUndoTestCase):
 
         self.assertEqual('Typed', name_box.text())
         self.assertEqual('Typed', self.tab.right_frame.current.name)
+
+    def test_renaming_in_the_id_box_with_its_cascade_and_name_is_one_undo_step(self):
+        from PyQt5.QtCore import Qt
+        from PyQt5.QtTest import QTest
+        self.dialog.show()
+        self.dialog.activateWindow()
+        self.app.processEvents()
+        faction = self.tab.right_frame.current
+        old_nid = faction.nid
+        faction.name = old_nid.replace('_', ' ')
+        level_unit = DB.levels.get('0').units.get('101')
+        level_unit.faction = old_nid
+        self.history.commit()
+        self.tab.right_frame.set_current(faction)
+        box = self.tab.right_frame.nid_box.edit
+        box.setFocus()
+        self.app.processEvents()
+        box.selectAll()
+        QTest.keyClicks(box, 'New_Faction')
+        self.assertEqual(old_nid, faction.nid)  # Not until editing finishes
+
+        QTest.keyClick(box, Qt.Key_Tab)
+        self.assertIs(faction, DB.factions.get('New_Faction'))
+        self.assertEqual('New Faction', faction.name)
+        self.assertEqual('New_Faction', level_unit.faction)
+
+        self.dialog.undo()
+
+        self.assertIs(faction, DB.factions.get(old_nid))
+        self.assertEqual(old_nid.replace('_', ' '), faction.name)
+        # Undo rebuilds the level's units, so look the unit up again
+        self.assertEqual(old_nid, DB.levels.get('0').units.get('101').faction)
 
     def test_creating_is_undone_and_the_list_shows_what_is_left(self):
         count = len(DB.factions)

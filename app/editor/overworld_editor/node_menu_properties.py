@@ -138,7 +138,6 @@ class ModifyOptionsWidget(QWidget):
         self.current = current
 
         self.opt_nid_box = PropertyBox("Menu Option ID", NidLineEdit, self)
-        self.opt_nid_box.edit.textChanged.connect(self.option_nid_changed)
         self.opt_nid_box.edit.editingFinished.connect(self.option_nid_done_editing)
         layout.addWidget(self.opt_nid_box)
 
@@ -158,23 +157,20 @@ class ModifyOptionsWidget(QWidget):
         self.enabled_box.edit.stateChanged.connect(self.selectable_changed)
         layout.addWidget(self.enabled_box)
 
-    def option_nid_changed(self, text):
-        if self.current:
-            self.current.nid = text
-            self.window.update_list()
-
     def option_nid_done_editing(self):
         if not self.current:
             return
         # Check validity of nid!
+        new_nid = self.opt_nid_box.edit.text()
         other_nids = [d.nid for d in self._data.values()
                       if d is not self.current]
-        if self.current.nid in other_nids:
+        if new_nid in other_nids:
             QMessageBox.warning(self.window, 'Warning',
-                                'Option ID %s already in use' % self.current.nid)
-            self.current.nid = str_utils.get_next_name(
-                self.current.nid, other_nids)
-        self._data.update_nid(self.current, self.current.nid)
+                                'Option ID %s already in use' % new_nid)
+            new_nid = str_utils.get_next_name(new_nid, other_nids)
+            self.opt_nid_box.edit.setText(new_nid)
+        self._data.update_nid(self.current, new_nid)
+        self.window.update_list()
         self.window.update_list()
 
     def sub_nid_changed(self, text):

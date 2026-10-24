@@ -12,6 +12,7 @@ from app.extensions.key_value_delegate import KeyValueDelegate, KeyValueDoubleLi
 from app.editor.icons import PushableIcon16, MapSpriteBox, UnitPortrait
 from app.editor.icon_editor import icon_tab
 from app.editor.lib.components.validated_line_edit import NidLineEdit
+from app.editor.edit_history import HISTORY
 
 from app.utilities.enums import Orientation
 from app.utilities.typing import NID
@@ -37,7 +38,6 @@ class NewCreditProperties(QWidget):
         self.on_icon_change = on_icon_change
 
         self.nid_box = PropertyBox("Unique ID", NidLineEdit, self)
-        self.nid_box.edit.textChanged.connect(self.nid_changed)
         self.nid_box.edit.editingFinished.connect(self.nid_done_editing)
 
         self.type_box = PropertyBox(("Type"), ComboBox, self)
@@ -77,18 +77,16 @@ class NewCreditProperties(QWidget):
 
         self.set_current(self.current)
 
-    def nid_changed(self, text):
-        self.current.nid = text
-
     def nid_done_editing(self):
         if self.current and self.cached_nid:
+            new_nid = self.nid_box.edit.text()
             self.nid_box.edit.blockSignals(True)  # message box causes focus loss which double triggers nid_done_editing
-            # Check validity of nid!
-            if self.attempt_change_nid and self.attempt_change_nid(self.cached_nid, self.current.nid):
-                self.cached_nid = self.current.nid
-            else:
-                self.current.nid = self.cached_nid
-                self.nid_box.edit.setText(self.cached_nid)
+            with HISTORY.change_set('Rename %s' % self.cached_nid):
+                # Check validity of nid!
+                if self.attempt_change_nid and self.attempt_change_nid(self.cached_nid, new_nid):
+                    self.cached_nid = new_nid
+                else:
+                    self.nid_box.edit.setText(self.cached_nid)
             self.nid_box.edit.blockSignals(False)
 
     def type_changed(self, index):

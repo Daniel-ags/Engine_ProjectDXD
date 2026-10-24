@@ -29,7 +29,6 @@ class ModifySFXDialog(Dialog):
             self.nid_box.setEnabled(False)
         else:
             self.nid_box.edit.setText(self.current[0].nid)
-            self.nid_box.edit.textChanged.connect(self.nid_changed)
             self.nid_box.edit.editingFinished.connect(self.nid_done_editing)
 
         self.tag_box = PropertyBox("Tag", QLineEdit, self)
@@ -43,19 +42,17 @@ class ModifySFXDialog(Dialog):
 
         layout.addWidget(self.buttonbox)
 
-    def nid_changed(self, text):
-        for d in self.current:
-            d.nid = text
-
     def nid_done_editing(self):
         current = self.current[0]
         # Check validity of nid!
+        new_nid = self.nid_box.edit.text()
         other_nids = [d.nid for d in self._data.values() if d is not current]
-        if current.nid in other_nids:
-            QMessageBox.warning(self.window, 'Warning', 'SFX ID %s already in use' % current.nid)
-            current.nid = str_utils.get_next_name(current.nid, other_nids)
-        HISTORY.rewrite(RType.SFX, self._data.find_key(current), current.nid)
-        self._data.update_nid(current, current.nid)
+        if new_nid in other_nids:
+            QMessageBox.warning(self.window, 'Warning', 'SFX ID %s already in use' % new_nid)
+            new_nid = str_utils.get_next_name(new_nid, other_nids)
+            self.nid_box.edit.setText(new_nid)
+        HISTORY.rename(self._data, current, new_nid,
+                       lambda old_nid, new_nid: HISTORY.rewrite(RType.SFX, old_nid, new_nid))
 
     def tag_changed(self, text):
         for d in self.current:
@@ -79,7 +76,6 @@ class ModifyMusicDialog(Dialog):
         layout.addWidget(self.nid_box)
 
         self.nid_box.edit.setText(self.current.nid)
-        self.nid_box.edit.textChanged.connect(self.nid_changed)
         self.nid_box.edit.editingFinished.connect(self.nid_done_editing)
 
         self.choice_box = ComboBox()
@@ -157,18 +153,17 @@ class ModifyMusicDialog(Dialog):
             self.battle_box.edit.setText("")
             self.current.battle_full_path = None
 
-    def nid_changed(self, text):
-        self.current.nid = text
-
     def nid_done_editing(self):
         current = self.current
         # Check validity of nid!
+        new_nid = self.nid_box.edit.text()
         other_nids = [d.nid for d in self._data.values() if d is not current]
-        if current.nid in other_nids:
-            QMessageBox.warning(self.window, 'Warning', 'Music ID %s already in use' % current.nid)
-            current.nid = str_utils.get_next_name(current.nid, other_nids)
-        HISTORY.rewrite(RType.MUSIC, self._data.find_key(current), current.nid)
-        self._data.update_nid(current, current.nid)
+        if new_nid in other_nids:
+            QMessageBox.warning(self.window, 'Warning', 'Music ID %s already in use' % new_nid)
+            new_nid = str_utils.get_next_name(new_nid, other_nids)
+            self.nid_box.edit.setText(new_nid)
+        HISTORY.rename(self._data, current, new_nid,
+                       lambda old_nid, new_nid: HISTORY.rewrite(RType.MUSIC, old_nid, new_nid))
 
     def load_battle_variant(self):
         settings = MainSettingsController()

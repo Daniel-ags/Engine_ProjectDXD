@@ -6,6 +6,7 @@ from PyQt5.QtWidgets import (QHBoxLayout, QLineEdit, QMessageBox, QSpinBox,
 from app.data.database.difficulty_modes import GrowthOption, PermadeathOption, RNGOption
 from app.editor.stat_widget import StatListWidget
 from app.editor.lib.components.validated_line_edit import NidLineEdit
+from app.editor.edit_history import HISTORY
 from app.extensions.custom_gui import ComboBox, PropertyBox, PropertyCheckBox
 from app.sprites import SPRITES
 from app.utilities import str_utils
@@ -31,7 +32,6 @@ class DifficultyModeProperties(QWidget):
         self.current = current
 
         self.nid_box = PropertyBox("Unique ID", NidLineEdit, self)
-        self.nid_box.edit.textChanged.connect(self.nid_changed)
         self.nid_box.edit.editingFinished.connect(self.nid_done_editing)
 
         self.name_box = PropertyBox("Display Name", QLineEdit, self)
@@ -105,20 +105,17 @@ class DifficultyModeProperties(QWidget):
         main_section.addWidget(self.start_locked_box)
         self.setLayout(main_section)
 
-    def nid_changed(self, text):
-        if self.current.name == self.current.nid.replace('_', ' '):
-            self.name_box.edit.setText(text.replace('_', ' '))
-        self.current.nid = text
-        self.window.update_list()
-
     def nid_done_editing(self):
+        new_nid = self.nid_box.edit.text()
         other_nids = [d.nid for d in self._data.values() if d is not self.current]
-        if self.current.nid in other_nids:
-            QMessageBox.warning(self.window, 'Warning', 'Difficulty Mode ID %s already in use' % self.current.nid)
-        self.current.nid = str_utils.get_next_name(self.current.nid, other_nids)
-        old_nid = self._data.find_key(self.current)
-        self.window.left_frame.model.on_nid_changed(old_nid, self.current.nid)
-        self._data.update_nid(self.current, self.current.nid)
+        if new_nid in other_nids:
+            QMessageBox.warning(self.window, 'Warning', 'Difficulty Mode ID %s already in use' % new_nid)
+            new_nid = str_utils.get_next_name(new_nid, other_nids)
+            self.nid_box.edit.setText(new_nid)
+        # Also change name if identical to the ID
+        if self.current.name == self.current.nid.replace('_', ' '):
+            self.name_box.edit.setText(new_nid.replace('_', ' '))
+        HISTORY.rename(self._data, self.current, new_nid, self.window.left_frame.model.on_nid_changed)
         self.window.update_list()
 
     def name_changed(self, text):

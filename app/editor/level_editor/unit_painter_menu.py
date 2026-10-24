@@ -564,7 +564,6 @@ class GenericUnitDialog(Dialog):
 
         self.nid_box = PropertyBox("Unique ID", NidLineEdit, self)
         self.nid_box.edit.setPlaceholderText("Unique ID")
-        self.nid_box.edit.textChanged.connect(self.nid_changed)
         self.nid_box.edit.editingFinished.connect(self.nid_done_editing)
         layout.addWidget(self.nid_box)
 
@@ -655,33 +654,29 @@ class GenericUnitDialog(Dialog):
         self.class_box.model.dataChanged.emit(self.class_box.model.index(
             0), self.class_box.model.index(self.class_box.model.rowCount()))
 
-    def nid_changed(self, text):
-        if self.current:
-            self.current.nid = text
-
     def nid_done_editing(self):
         if not self.current:
             return
         # Check validity of nid!
+        new_nid = self.nid_box.edit.text()
         other_nids = [d.nid for d in self._data.values()
                       if d is not self.current]
         other_nids += DB.units.keys()  # Can't use these either
-        if not self.current.nid or self.current.nid in other_nids:
+        if not new_nid or new_nid in other_nids:
             QMessageBox.warning(self.window, 'Warning',
-                                'Unit ID %s already in use' % self.current.nid)
+                                'Unit ID %s already in use' % new_nid)
             new_nid = str_utils.get_next_generic_nid("101", other_nids)
-            self.current.nid = new_nid
-        # Find old nid
-        old_nid = self._data.find_key(self.current)
+            self.nid_box.edit.setText(new_nid)
+        old_nid = self.current.nid
         # Swap level units
-        self._data.update_nid(self.current, self.current.nid)
+        self._data.update_nid(self.current, new_nid)
         # Swap level unit groups
         for unit_group in self.window.current_level.unit_groups:
-            unit_group.swap(old_nid, self.current.nid)
+            unit_group.swap(old_nid, new_nid)
         # Swap travelers
         for unit in self.window.current_level.units:
             if old_nid and unit.starting_traveler == old_nid:
-                unit.starting_traveler = self.current.nid
+                unit.starting_traveler = new_nid
 
     def team_changed(self, val):
         self.current.team = self.team_box.edit.currentText()

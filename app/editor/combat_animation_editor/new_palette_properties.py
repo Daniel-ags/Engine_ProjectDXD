@@ -522,7 +522,6 @@ class NewPaletteProperties(QWidget):
         self.addAction(self.redo_action)
 
         self.nid_box = PropertyBox("Unique ID", NidLineEdit, self)
-        self.nid_box.edit.textChanged.connect(self.nid_changed)
         self.nid_box.edit.editingFinished.connect(self.nid_done_editing)
 
         self.import_box = QPushButton("Import from PNG Image...")
@@ -600,14 +599,13 @@ class NewPaletteProperties(QWidget):
         palette_commands.redo()
         self.draw_frame()
 
-    def nid_changed(self, text):
-        self.current_palette.nid = text
-
     def nid_done_editing(self):
         # Check validity of nid!
-        if not self.attempt_change_nid(self.cached_nid, self.current_palette.nid):
-            self.current_palette.nid = self.cached_nid
-        self.cached_nid = self.current_palette.nid
+        new_nid = self.nid_box.edit.text()
+        if self.attempt_change_nid(self.cached_nid, new_nid):
+            self.cached_nid = new_nid
+        else:
+            self.nid_box.edit.setText(self.cached_nid)
 
     @property
     def current(self):

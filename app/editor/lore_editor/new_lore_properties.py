@@ -7,6 +7,7 @@ from PyQt5.QtGui import QFontMetrics
 from app.data.database.lore import Lore
 from app.extensions.custom_gui import PropertyBox
 from app.editor.lib.components.validated_line_edit import NidLineEdit
+from app.editor.edit_history import HISTORY
 
 from app.utilities.typing import NID
 
@@ -27,7 +28,6 @@ class NewLoreProperties(QWidget):
         name_section = QVBoxLayout()
 
         self.nid_box = PropertyBox(_("Unique ID"), NidLineEdit, self)
-        self.nid_box.edit.textChanged.connect(self.nid_changed)
         self.nid_box.edit.editingFinished.connect(self.nid_done_editing)
         name_section.addWidget(self.nid_box)
 
@@ -57,24 +57,21 @@ class NewLoreProperties(QWidget):
 
         self.set_current(self.current)
 
-    def nid_changed(self, text):
-        if self.current:
-            # Also change names if they are identical
-            if self.current.name == self.current.nid.replace('_', ' '):
-                self.short_name_box.edit.setText(text.replace('_', ' '))
-            if self.current.title == self.current.nid.replace('_', ' '):
-                self.long_name_box.edit.setText(text.replace('_', ' '))
-            self.current.nid = text
-
     def nid_done_editing(self):
         if self.current and self.cached_nid:
+            new_nid = self.nid_box.edit.text()
             self.nid_box.edit.blockSignals(True)  # message box causes focus loss which double triggers nid_done_editing
-            # Check validity of nid!
-            if self.attempt_change_nid and self.attempt_change_nid(self.cached_nid, self.current.nid):
-                self.cached_nid = self.current.nid
-            else:
-                self.current.nid = self.cached_nid
-                self.nid_box.edit.setText(self.cached_nid)
+            with HISTORY.change_set('Rename %s' % self.cached_nid):
+                # Check validity of nid!
+                if self.attempt_change_nid and self.attempt_change_nid(self.cached_nid, new_nid):
+                    # Also change names if identical to the ID
+                    if self.current.name == self.cached_nid.replace('_', ' '):
+                        self.short_name_box.edit.setText(new_nid.replace('_', ' '))
+                    if self.current.title == self.cached_nid.replace('_', ' '):
+                        self.long_name_box.edit.setText(new_nid.replace('_', ' '))
+                    self.cached_nid = new_nid
+                else:
+                    self.nid_box.edit.setText(self.cached_nid)
             self.nid_box.edit.blockSignals(False)
 
     def short_name_changed(self, text):

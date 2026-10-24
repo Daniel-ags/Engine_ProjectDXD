@@ -79,7 +79,6 @@ class NewCombatAnimProperties(QWidget):
         self.info_form = QFormLayout()
 
         self.nid_box = NidLineEdit()
-        self.nid_box.textChanged.connect(self.nid_changed)
         self.nid_box.editingFinished.connect(self.nid_done_editing)
 
         theme = dark_theme.get_theme()
@@ -330,13 +329,12 @@ class NewCombatAnimProperties(QWidget):
                 self.export_all_frames(fn_dir)
                 QMessageBox.information(self, "Export Complete", "Export of frames complete!")
 
-    def nid_changed(self, text):
-        self.current.nid = text
-
     def nid_done_editing(self):
-        if not self.attempt_change_nid(self.cached_nid, self.current.nid):
-            self.current.nid = self.cached_nid
-        self.cached_nid = self.current.nid
+        new_nid = self.nid_box.text()
+        if self.attempt_change_nid(self.cached_nid, new_nid):
+            self.cached_nid = new_nid
+        else:
+            self.nid_box.setText(self.cached_nid)
 
     def ask_permission(self, obj, text: str) -> bool:
         ret = QMessageBox.warning(self, "Deletion Warning",
