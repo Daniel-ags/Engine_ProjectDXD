@@ -6,8 +6,9 @@ from typing import Optional
 
 from PyQt5.QtWidgets import QMainWindow, QAction, QMenu, QMessageBox, QApplication, \
     QDesktopWidget, \
-    QToolButton, QWidgetAction, QStackedWidget
+    QToolButton, QWidget, QWidgetAction, QStackedWidget
 from PyQt5.QtGui import QIcon
+from PyQt5.QtCore import QTimer
 
 from app import autoupdate, dark_theme
 from app.utilities import file_utils
@@ -21,6 +22,9 @@ from app.constants import VERSION
 from app.data.database.database import DB
 
 from app.editor import log_viewer, timer, error_viewer
+from app.editor.custom_widgets import ObjBox
+from app.editor.data_editor import EditHistoryDialog
+from app.editor.edit_history import HISTORY
 
 # components
 from app.editor.lib.components.menubar import MenuBar
@@ -152,6 +156,43 @@ class MainEditor(QMainWindow):
         first_level_nid = DB.levels[0].nid
         self.app_state_manager.change_and_broadcast(
             'selected_level', first_level_nid)
+
+        self.history_changed = False
+        HISTORY.listen(self.on_history_changed)
+
+    def on_history_changed(self, origin):
+        # Dialogs change the database while this window waits behind them
+        if not self.history_changed:
+            self.history_changed = True
+            QTimer.singleShot(0, self.show_changes)
+
+    def show_changes(self):
+        """Shows the database again after a dialog changed it.
+
+        Undo restores a level's fields in place, which rebuilds the units and regions
+        inside it. The level editor (and its sub-widgets) cache those and only refresh
+        on a 'selected_level' broadcast, so without it unit edits would go to objects
+        the level no longer holds -- the "unit positions revert" bug.
+        """
+        self.history_changed = False
+        # Including the boxes of dialogs opened from this window, like Load Unit;
+        # editor dialogs refresh their own, leaving out the tab that made the change.
+        # PropertyBox keeps its parent as box.window, hiding QWidget.window
+        for box in self.findChildren(ObjBox):
+            if not isinstance(QWidget.window(box), EditHistoryDialog):
+                box.refresh()
+        state = self.app_state_manager.state
+        # Sometimes the stored current level nid does not exist as a valid
+        # level; check before broadcasting.
+        if state.selected_level in DB.levels:
+            self.app_state_manager.change_and_broadcast('selected_level', state.selected_level)
+        # Overworlds hold their nodes the way levels hold their units
+        overworld = DB.overworlds.get(state.selected_overworld)
+        if overworld:
+            self.app_state_manager.change_and_broadcast('selected_overworld', overworld.nid)
+            node_nid = state.selected_node if state.selected_node in overworld.overworld_nodes else None
+            self.app_state_manager.change_and_broadcast('selected_node', node_nid)
+        self.app_state_manager.change_and_broadcast('ui_refresh_signal', None)
 
     def on_clean_changed(self, clean):
         # Change Title
@@ -471,6 +512,8 @@ class MainEditor(QMainWindow):
                     'main_editor_mode', MainEditorScreenStates.GLOBAL_EDITOR)
             self.app_state_manager.change_and_broadcast(
                 'selected_level', DB.levels[0].nid)  # Needed in order to update map view
+            if DB.overworlds:
+                self.app_state_manager.change_and_broadcast('selected_overworld', DB.overworlds[0].nid)
             self.app_state_manager.change_and_broadcast(
                 'ui_refresh_signal', None)
 
@@ -487,6 +530,8 @@ class MainEditor(QMainWindow):
                 'main_editor_mode', MainEditorScreenStates.GLOBAL_EDITOR)
         self.app_state_manager.change_and_broadcast(
             'selected_level', DB.levels[0].nid)  # Needed in order to update map view
+        if DB.overworlds:  # And so the overworld editor shows this project's overworld
+            self.app_state_manager.change_and_broadcast('selected_overworld', DB.overworlds[0].nid)
         self.app_state_manager.change_and_broadcast(
             'ui_refresh_signal', None)
 

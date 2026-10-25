@@ -8,6 +8,7 @@ from app.events.event_prefab import EventInspectorEngine
 
 from app.utilities import str_utils
 from app.utilities.data import Data
+from app.utilities.typing import NID
 from app.data.database.level_units import GenericUnit, UniqueUnit
 from app.data.database.ai_groups import AIGroup
 from app.data.database.database import DB
@@ -157,22 +158,8 @@ class UnitPainterMenu(QWidget):
                 unit = GenericUnit.restore(serialized_unit)
                 self._data.pop(idx)
                 self._data.insert(idx, unit)
-        else:  # Unique unit
-            old_unit_nid = unit.nid
-            old_unit_team = unit.team
-            old_unit_ai = unit.ai
-            old_unit_roam_ai = unit.roam_ai
-            old_unit_ai_group = unit.ai_group
-            edited_unit, ok = LoadUnitDialog.get_unit(self, unit)
-            if ok:
-                pass
-            else:
-                unit.nid = old_unit_nid
-                unit.prefab = DB.units.get(unit.nid)
-                unit.team = old_unit_team
-                unit.ai = old_unit_ai
-                unit.roam_ai = old_unit_roam_ai
-                unit.ai_group = old_unit_ai_group
+        else:  # Unique unit; the dialog puts the unit back as it was on Cancel
+            LoadUnitDialog.get_unit(self, unit)
 
 
 class LevelUnitModel(DragDropCollectionModel):
@@ -328,7 +315,8 @@ def valid_partners(units, unit) -> list:
                  or u.nid not in partners)]
 
 def build_traveler_box(self):
-    self.traveler_box = ObjBox("Paired With", AllUnitModel, valid_partners(self.window.current_level.units, self.current), self)
+    self.traveler_box = ObjBox("Paired With", AllUnitModel,
+                              lambda: valid_partners(self.window.current_level.units, self.current), self)
     self.traveler_box.edit.setIconSize(QSize(32, 32))
     self.traveler_box.edit.view().setUniformItemSizes(True)
     if self.current.starting_traveler:
@@ -349,6 +337,16 @@ def build_traveler_box(self):
     traveler_layout.addWidget(self.traveler_box)
     return traveler_layout
 
+def change_level_unit_nid(level, unit: UniqueUnit, nid: NID):
+    """Makes a level's unit another unit, with the level's key, unit groups and travelers that name it"""
+    old_nid = unit.nid
+    level.units.update_nid(unit, nid)
+    for unit_group in level.unit_groups:
+        unit_group.swap(old_nid, nid)
+    for other in level.units:
+        if old_nid and other.starting_traveler == old_nid:
+            other.starting_traveler = nid
+
 class LoadUnitDialog(Dialog):
     def __init__(self, parent=None, current=None):
         super().__init__(parent)
@@ -364,6 +362,11 @@ class LoadUnitDialog(Dialog):
         if current:
             self.current = current
             self.is_new_unit = False
+            # What reject() puts back. The unit itself is kept, not its nid, since
+            # the unit editor opened from here can rename it
+            self.original_unit = DB.units.get(current.nid)
+            self.original = (current.team, current.ai, current.roam_ai,
+                             current.ai_group, current.starting_traveler)
         else:
             assert len(DB.units) > 0 and len(DB.ai) > 0
             nid = DB.units[0].nid
@@ -482,9 +485,45 @@ class LoadUnitDialog(Dialog):
         self.current.roam_ai = self.roam_ai_box.edit.currentText()
 
     def access_units(self):
-        unit, ok = new_unit_tab.get(self.current.nid)
+        # The unit the level unit names, which keeps its identity through renames and undos
+        named = DB.units.get(self.current.nid)
+        unit, ok = new_unit_tab.get(self.current.nid, self)
+        if not self.is_new_unit and not any(level_unit is self.current for level_unit in self.window.current_level.units):
+            # Deleting the unit took it out of the level, or an undo or Cancel rebuilt
+            # the level's units, perhaps under the unit's name from before a rename
+            level_unit = None
+            if named and DB.units.get(named.nid) is named:
+                level_unit = self.window.current_level.units.get(named.nid)
+            if not level_unit:
+                QMessageBox.information(self, 'Unit Deleted', 'Unit %s is no longer in the level.' % self.current.nid)
+                self.reject()
+                return
+            self.current = level_unit
+        self.unit_box.refresh()
         if ok:
             self.unit_box.edit.setValue(unit.nid)
+
+    def accept(self):
+        # The unit editor opened from here may have deleted the chosen unit
+        if self.current.nid not in DB.units:
+            QMessageBox.warning(self, 'Warning', 'Unit %s no longer exists. Choose another unit.' % self.current.nid)
+            return
+        super().accept()
+
+    def reject(self):
+        # A level unit still in the level gets back the unit and fields it had when the dialog opened
+        if not self.is_new_unit and any(level_unit is self.current for level_unit in self.window.current_level.units):
+            team, ai, roam_ai, ai_group, starting_traveler = self.original
+            unit = self.original_unit
+            # Unless the unit editor deleted it
+            if unit and DB.units.get(unit.nid) is unit and self.current.nid != unit.nid:
+                change_level_unit_nid(self.window.current_level, self.current, unit.nid)
+            self.current.team = team
+            self.current.ai = ai
+            self.current.roam_ai = roam_ai
+            self.current.ai_group = ai_group
+            self.current.starting_traveler = starting_traveler
+        super().reject()
 
     def nid_changed(self, nid):
         # Don't bother if already identical
@@ -498,20 +537,10 @@ class LoadUnitDialog(Dialog):
                                 'Unit ID %s already in use' % nid)
             return
 
-        old_nid = self.current.nid
-        self.current.nid = nid
-        self.current.prefab = DB.units.get(nid)
-
-        if not self.is_new_unit:
-            # Swap level units
-            self.window.current_level.units.update_nid(self.current, self.current.nid)
-            # Swap level unit groups
-            for unit_group in self.window.current_level.unit_groups:
-                unit_group.swap(old_nid, self.current.nid)
-            # Swap travelers
-            for unit in self.window.current_level.units:
-                if old_nid and unit.starting_traveler == old_nid:
-                    unit.starting_traveler = self.current.nid
+        if self.is_new_unit:
+            self.current.nid = nid
+        else:
+            change_level_unit_nid(self.window.current_level, self.current, nid)
 
     # def set_current(self, current):
     #     self.current = current
@@ -521,14 +550,14 @@ class LoadUnitDialog(Dialog):
 
     @classmethod
     def get_unit(cls, parent, unit=None):
+        """The unit the dialog ends on, and whether it was accepted"""
         dialog = cls(parent, unit)
         result = dialog.exec_()
         if result == QDialog.Accepted:
             dialog.check_ai_group()
-            unit = dialog.current
-            return unit, True
+            return dialog.current, True
         else:
-            return None, False
+            return dialog.current, False
 
 
 class GenericUnitDialog(Dialog):

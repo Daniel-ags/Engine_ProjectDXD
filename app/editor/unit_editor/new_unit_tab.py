@@ -1,18 +1,17 @@
 from __future__ import annotations
 
-import logging
 import os
 from typing import Optional
 
 from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import QApplication, QFileDialog, QMessageBox
+from PyQt5.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox
 
-from app.data.resources.resources import RESOURCES
 from app.editor.edit_history import HISTORY
 from app.data.database.database import DB
 from app.data.database.database_types import DatabaseType as DType
 from app.data.database.units import UnitCatalog
-from app.editor import reference_dialogs
+from app.editor import reference_dialogs, timer
+from app.editor.data_editor import SingleDatabaseEditor
 from app.editor.unit_editor import unit_import, new_unit_properties
 from app.editor.portrait_editor import portrait_model
 from app.editor.settings.main_settings_controller import MainSettingsController
@@ -96,22 +95,17 @@ class NewUnitDatabase(NewEditorTab):
                     if unit_nid not in level.units:
                         unit_group.remove(unit_nid)
 
-def get(unit_nid=None):
-    window = NewUnitDatabase(None, DB, RESOURCES)
-    unit = DB.units.get(unit_nid)
-    if unit:
-        window.on_select(unit_nid)
-
-    try:
-        true_window = NewUnitDatabase.edit().tab
-        result = True
-    except Exception as err:
-        logging.warning(f"Failed to open Unit Window due to {err}")
-        result = False
-    if result:
-        selected_unit = true_window.right_frame.current
-        if selected_unit:
-            return selected_unit, True
+def get(unit_nid: Optional[NID] = None, parent=None):
+    """Opens the unit editor on unit_nid. Returns the unit it shows when closed with OK."""
+    timer.get_timer().stop_for_editor()  # Don't need these while running game
+    window = SingleDatabaseEditor(NewUnitDatabase, parent)
+    if unit_nid in DB.units:
+        window.tab.tree_list.select_item(unit_nid)
+    result = window.exec_()
+    timer.get_timer().start_for_editor()
+    selected_unit = window.tab.right_frame.current
+    if result == QDialog.Accepted and selected_unit:
+        return selected_unit, True
     return None, False
 
 # Testing

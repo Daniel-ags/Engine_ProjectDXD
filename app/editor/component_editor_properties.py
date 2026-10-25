@@ -45,6 +45,7 @@ class NewComponentProperties(QWidget, Generic[T]):
                  attempt_change_nid: Optional[Callable[[NID, NID], bool]] = None,
                  on_icon_change: Optional[Callable] = None):
         super().__init__(parent)
+        self.window = parent
         self.attempt_change_nid = attempt_change_nid
         self.on_icon_change = on_icon_change
 
@@ -181,7 +182,7 @@ class NewComponentProperties(QWidget, Generic[T]):
         if self.current and self.cached_nid:
             new_nid = self.nid_box.edit.text()
             self.nid_box.edit.blockSignals(True)  # message box causes focus loss which double triggers nid_done_editing
-            with HISTORY.change_set('Rename %s' % self.cached_nid):
+            with HISTORY.change_set('Rename %s' % self.cached_nid, origin=self.window):
                 # Check validity of nid!
                 if self.attempt_change_nid and self.attempt_change_nid(self.cached_nid, new_nid):
                     # Also change name if identical to the ID

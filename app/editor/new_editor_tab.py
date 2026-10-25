@@ -14,6 +14,7 @@ from app.data.resources.resources import RESOURCES, Resources
 from app.data.resources.base_catalog import ManifestCatalog
 from app.data.category import Categories, CategorizedCatalog
 from app.editor import timer
+from app.editor.custom_widgets import ObjBox
 from app.editor.data_editor import SingleDatabaseEditor
 from app.editor.edit_history import HISTORY
 from app.editor.lib.components.nested_list import LTNestedList
@@ -103,12 +104,33 @@ class NewEditorTab(QWidget, Generic[T]):
         return window
 
     def reset(self):
+        """Shows the database again, as it is now. The properties widget draws on data
+        other tabs own -- a unit's stat columns come from DB.stats -- and an undo may
+        have taken away or renamed the shown entry."""
+        current = self.right_frame.current
+        if current is not None and not any(entry is current for entry in self.data):
+            current = self.neighbour_of(current.nid)
+        for box in self.right_frame.findChildren(ObjBox):
+            box.refresh()
+        # Rebuilding the list drops its selection, and so the binding, so select
+        # the entry again by its nid
         self.tree_list.reset(self.data.keys(), self.categories)
-        # The properties widget draws on data other tabs own -- a unit's stat columns
-        # come from DB.stats -- so re-push the current entry through it whenever this
-        # tab comes back into view
-        if self.right_frame.current:
-            self.right_frame.set_current(self.right_frame.current)
+        if current is not None:
+            self.tree_list.select_item(current.nid)
+        else:
+            self.on_select(None)
+
+    def neighbour_of(self, nid: NID):
+        """The entry the list showed below nid, or else above it, that is still in the
+        catalog: what takes the place of a shown entry something else deleted"""
+        shown, _ = self.tree_list.get_list_and_category_structure()
+        if nid not in shown:
+            return self.data[0] if self.data else None
+        idx = shown.index(nid)
+        for other in shown[idx + 1:] + shown[:idx][::-1]:
+            if other in self.data:
+                return self.data.get(other)
+        return None
 
     def attempt_change_nid(self, old_nid: NID, new_nid: NID) -> bool:
         if not new_nid:
@@ -118,7 +140,7 @@ class NewEditorTab(QWidget, Generic[T]):
         if self.data.get(new_nid):
             QMessageBox.warning(self, 'Warning', 'ID %s already in use' % new_nid)
             return False
-        with HISTORY.change_set('Rename %s' % old_nid), HISTORY.modifying([(self.data.get(old_nid), self.data)]):
+        with HISTORY.change_set('Rename %s' % old_nid, origin=self),                 HISTORY.modifying([(self.data.get(old_nid), self.data)]):
             self._on_nid_changed(old_nid, new_nid)
             if isinstance(self.data, ManifestCatalog):
                 self.data.update_nid(self.data.get(old_nid), new_nid)
@@ -135,22 +157,9 @@ class NewEditorTab(QWidget, Generic[T]):
             return
         curr_entry = self.data.get(entry_nid)
         if curr_entry:
-            HISTORY.commit()
+            HISTORY.commit(origin=self)
             self.right_frame.set_current(curr_entry)
             HISTORY.bind(curr_entry, self.data, self)
-
-    def after_history_change(self):
-        """Shows the data again after an undo or redo changed it underneath this tab"""
-        current = self.right_frame.current
-        if current is not None and not any(entry is current for entry in self.data):
-            current = None
-        # Rebuilding the list drops its selection, and so the binding; the undo may
-        # also have renamed the shown entry, so select it again by its nid now
-        self.tree_list.reset(self.data.keys(), self.categories)
-        if current is not None:
-            self.tree_list.select_item(current.nid)
-        else:
-            self.on_select(None)
 
     def resort_db(self, entries: List[str], categories: Categories):
         self.data.categories = categories
@@ -163,7 +172,7 @@ class NewEditorTab(QWidget, Generic[T]):
     def delete_from_db(self, nid):
         if len(self.data) == 1:
             return False
-        with HISTORY.change_set('Delete %s' % nid):
+        with HISTORY.change_set('Delete %s' % nid, origin=self):
             if self._on_delete(nid):
                 self.data.remove_key(nid)
                 return True
@@ -198,7 +207,7 @@ class NewEditorTab(QWidget, Generic[T]):
         if not orig_obj:
             QMessageBox.warning(self, 'Warning', 'ID %s not found' % old_nid)
             return False
-        with HISTORY.change_set('Rename %s' % old_nid), HISTORY.modifying([(orig_obj, self.data)]):
+        with HISTORY.change_set('Rename %s' % old_nid, origin=self), HISTORY.modifying([(orig_obj, self.data)]):
             self._on_nid_changed(old_nid, new_nid)
             if isinstance(self.data, ManifestCatalog):
                 self.data.update_nid(self.data.get(old_nid), new_nid)

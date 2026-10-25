@@ -66,10 +66,6 @@ class TerrainProperties(QWidget):
         self.platform_box.edit.currentIndexChanged.connect(self.platform_changed)
 
         self.background_box = PropertyBox(_("Combat Background"), ComboBox, self)
-        self.background_box.edit.addItem(QIcon(), 'None')
-        for panorama in RESOURCES.panoramas:
-            icon = QIcon(panorama.get_all_paths()[0])
-            self.background_box.edit.addItem(icon, panorama.nid)
         self.background_box.edit.setIconSize(QSize(240, 160))
         self.background_box.edit.currentIndexChanged.connect(self.background_changed)
 
@@ -83,13 +79,6 @@ class TerrainProperties(QWidget):
         self.opaque_box.edit.stateChanged.connect(self.opacity_changed)
 
         self.status_box = PropertyBox(_("Status"), ComboBox, self)
-        self.status_box.edit.addItem(_("None"))
-        for skill in DB.skills:
-            pixmap = skill_model.get_pixmap(skill)
-            if pixmap:
-                self.status_box.edit.addItem(QIcon(pixmap), skill.nid)
-            else:
-                self.status_box.edit.addItem(skill.nid)
         self.status_box.edit.setIconSize(QSize(16, 16))
         self.status_box.edit.currentIndexChanged.connect(self.status_changed)
 
@@ -155,8 +144,23 @@ class TerrainProperties(QWidget):
         self.current.color = tuple(color.getRgb()[:3])
         self.window.update_list()
 
+    def fill_choices(self):
+        """Lists the panoramas and skills as they are now"""
+        def panorama_icon(nid):
+            panorama = RESOURCES.panoramas.get(nid)
+            return QIcon(panorama.get_all_paths()[0]) if panorama else None
+
+        def skill_icon(nid):
+            skill = DB.skills.get(nid)
+            pixmap = skill_model.get_pixmap(skill) if skill else None
+            return QIcon(pixmap) if pixmap else None
+
+        self.background_box.edit.set_choices(['None'] + RESOURCES.panoramas.keys(), panorama_icon)
+        self.status_box.edit.set_choices([_("None")] + DB.skills.keys(), skill_icon)
+
     def set_current(self, current):
         self.current = current
+        self.fill_choices()
         self.nid_box.edit.setText(current.nid)
         self.name_box.edit.setText(current.name)
         self.minimap_box.edit.setValue(current.minimap)

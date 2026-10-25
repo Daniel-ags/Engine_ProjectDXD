@@ -20,6 +20,14 @@ class EventDatabase(DatabaseTab):
         dialog = cls(data, title, right_frame, None, collection_model, parent, view_type=QTableView, collection_type=collection)
         return dialog
 
+    def reset(self):
+        self.left_frame.fill_level_filter()
+        # An undo may have moved the shown event to another level, out of the filter's
+        current = self.right_frame.current
+        if current is not None and any(event is current for event in self._data):
+            self.left_frame.filter_to_level_of(current)
+        super().reset()
+
 # Testing
 # Run "python -m app.editor.event_editor.event_tab"
 if __name__ == '__main__':

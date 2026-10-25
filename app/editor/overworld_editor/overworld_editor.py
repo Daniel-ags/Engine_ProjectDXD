@@ -12,6 +12,7 @@ from app.data.database.database import DB
 from app.data.database.overworld import OverworldPrefab
 from app.data.database.overworld_node import OverworldNodePrefab
 # Components
+from app.editor.edit_history import HISTORY
 from app.editor.lib.components.dock import Dock
 # utils
 from app.editor.lib.math.math_utils import distance_from_line
@@ -52,9 +53,9 @@ class OverworldEditor(QMainWindow):
         self._initialize_subscriptions()
 
         # editor state
-        self.set_current_overworld(self.state_manager.state.selected_overworld)
         self.edit_mode = OverworldEditorEditMode.NONE
         self.selected_object = SelectedObject(type=OverworldEditorInternalTypes.NONE, obj=None)
+        self.set_current_overworld(self.state_manager.state.selected_overworld)
 
     @property
     def double_fit_ghost_road(self) -> bool:
@@ -121,6 +122,26 @@ class OverworldEditor(QMainWindow):
 
     def set_current_overworld(self, overworld_nid):
         self.current_overworld = DB.overworlds.get(overworld_nid)
+        self.find_selected_object()
+        # It and its node menus edit the overworld in place, which the next commit records
+        HISTORY.bind(self.current_overworld, DB.overworlds, self)
+
+    def find_selected_object(self):
+        """Selects again, in the current overworld, the node or finished road that was selected.
+        An undo rebuilds an overworld's nodes and roads, so the selection is looked up by nid
+        or by its points; it is deselected if the current overworld no longer has it."""
+        sel = self.selected_object
+        if sel.type in (OverworldEditorInternalTypes.NONE, OverworldEditorInternalTypes.UNFINISHED_ROAD):
+            return  # An unfinished road is not in the database until it is finished
+        found = None
+        if self.current_overworld and sel.type == OverworldEditorInternalTypes.MAP_NODE:
+            found = self.current_overworld.overworld_nodes.get(sel.obj.nid)
+        elif self.current_overworld and sel.type == OverworldEditorInternalTypes.FINISHED_ROAD:
+            found = next((road for road in self.current_overworld.map_paths.values() if road == sel.obj), None)
+        if found is not None:
+            self.selected_object = SelectedObject(type=sel.type, obj=found)
+        else:
+            self.selected_object = SelectedObject(type=OverworldEditorInternalTypes.NONE, obj=None)
 
     def on_map_double_left_click(self, x, y):
         if self.edit_mode == OverworldEditorEditMode.NODES:

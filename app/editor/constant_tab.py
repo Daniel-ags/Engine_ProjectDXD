@@ -1,5 +1,6 @@
 import logging
 from functools import partial
+from typing import List, Tuple
 
 from PyQt5.QtCore import QAbstractItemModel, Qt
 from PyQt5.QtWidgets import (QDoubleSpinBox, QFormLayout, QFrame, QGridLayout,
@@ -8,7 +9,7 @@ from PyQt5.QtWidgets import (QDoubleSpinBox, QFormLayout, QFrame, QGridLayout,
                              QTreeView, QVBoxLayout, QWidget, QTabWidget,
                              QScrollArea, QLayout)
 
-from app.data.database.constants import ConstantCatalog, ConstantType, ConstantTag
+from app.data.database.constants import Constant, ConstantCatalog, ConstantType, ConstantTag
 from app.data.database.database import DB
 from app.editor.edit_history import HISTORY
 from app.editor.base_database_gui import DatabaseTab
@@ -64,6 +65,7 @@ class MainExpEquation(QWidget):
         super().__init__(parent)
         self.window = parent
         self._data = data
+        self.class_list_boxes: List[Tuple[MultiSelectComboBox, Constant]] = []
 
         label = QLabel(_('Combat Experience Equation:'), self)
         label.setAlignment(Qt.AlignBottom)
@@ -212,7 +214,16 @@ class MainExpEquation(QWidget):
         box.setCurrentTexts(constant.value.split(','))
         box.updated.connect(lambda: constant.set_value(','.join(box.currentText())))
         box.setMinimumWidth(200)
+        self.class_list_boxes.append((box, constant))
         return box
+
+    def fill_class_lists(self):
+        for box, constant in self.class_list_boxes:
+            box.blockSignals(True)  # Clearing it would write an empty choice
+            box.clear()
+            box.addItems(DB.classes.keys())
+            box.setCurrentTexts(constant.value.split(','))
+            box.blockSignals(False)
 
     def create_classic_exp_frame(self):
         thief_bonus = self._data.get('cexp_thief_bonus')
@@ -688,7 +699,10 @@ class ConstantDatabase(DatabaseTab):
         pass
 
     def reset(self):
-        pass
+        # Constants hold their own values, which only this tab edits, but the
+        # class lists choose from the classes as they are now
+        for equation in self.findChildren(MainExpEquation):
+            equation.fill_class_lists()
 
     # Now we get to the new stuff
     def __init__(self, data, title, parent=None):

@@ -38,7 +38,7 @@ class WeaponRankMultiModel(MultiAttrListModel):
         others = Data([rank for rank in DB.weapon_ranks if rank is not element])
         with HISTORY.change_set('Delete %s' % element.rank):
             if reference_dialogs.check_delete(DType.WEAPON_RANKS, element.rank, 'Weapon Rank', self.window,
-                                              lambda: ObjBox("Rank", reference_dialogs.NidListModel, others, self.window),
+                                              lambda: ObjBox("Rank", reference_dialogs.NidListModel, lambda: others, self.window),
                                               extra_tabs=extra_tabs, on_swap=swap_caps):
                 super().delete(idx)
 

@@ -52,14 +52,13 @@ class UnitSpecification(QWidget):
         class_box = ClassBox(self)
         class_box.edit.activated.connect(self.sub_spec_changed)
         self.box2.addWidget(class_box)
-        tag_box = ComboBox(self)
-        tag_box.addItems([tag.nid for tag in DB.tags])
-        tag_box.activated.connect(self.sub_spec_changed)
-        self.box2.addWidget(tag_box)
-        name_box = ComboBox(self)
-        name_box.addItems([unit.name for unit in DB.units])
-        name_box.activated.connect(self.sub_spec_changed)
-        self.box2.addWidget(name_box)
+        self.tag_box = ComboBox(self)
+        self.tag_box.activated.connect(self.sub_spec_changed)
+        self.box2.addWidget(self.tag_box)
+        self.name_box = ComboBox(self)
+        self.name_box.activated.connect(self.sub_spec_changed)
+        self.box2.addWidget(self.name_box)
+        self.fill_lists()
         team_box = TeamBox(self)
         team_box.edit.activated.connect(self.sub_spec_changed)
         self.box2.addWidget(team_box)
@@ -133,7 +132,23 @@ class UnitSpecification(QWidget):
     def check_box_toggled(self, checked):
         self.window.current.invert_targeting = bool(checked)
 
+    def fill_lists(self):
+        """Lists the tags and unit names as they are now, keeping the shown choice.
+        The boxes write only when the user picks from them, so this writes nothing."""
+        for box, choices in ((self.tag_box, [tag.nid for tag in DB.tags]),
+                             (self.name_box, [unit.name for unit in DB.units])):
+            text = box.currentText()
+            box.clear()
+            box.addItems(choices)
+            box.setValue(text)
+
+    def showEvent(self, event):
+        # A target type switches to its own specification without showing it again
+        self.fill_lists()
+        super().showEvent(event)
+
     def set_current(self, target_spec):
+        self.fill_lists()
         self.except_check_box.setChecked(bool(self.window.current.invert_targeting))
         try:
             self.box1.setValue(str(target_spec[0]))

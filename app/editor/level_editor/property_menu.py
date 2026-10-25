@@ -278,7 +278,7 @@ class PropertiesMenu(QWidget):
             self.state_manager.change_and_broadcast('ui_refresh_signal', None)
 
     def access_units(self):
-        unit, ok = new_unit_tab.get(self.current.roam_unit)
+        unit, ok = new_unit_tab.get(self.current.roam_unit, self)
         if unit and ok:
             self.current.roam_unit = unit.nid
             self.unit_box.edit.setValue(self.current.roam_unit)

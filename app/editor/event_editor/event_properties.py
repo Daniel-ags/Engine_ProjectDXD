@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional
+from typing import List, Optional
 
 from enum import Enum
 import functools
@@ -25,11 +25,13 @@ from app.editor.event_editor.event_text_editor import EventTextEditor
 import app.editor.game_actions.game_actions as GAME_ACTIONS
 from app import dark_theme
 from app.data.database.database import DB
+from app.data.database.database_types import DatabaseType as DType
 from app.data.database.levels import LevelPrefab
 from app.data.resources.resources import RESOURCES
 from app.editor import table_model, timer
 from app.editor.base_database_gui import CollectionModel
 from app.editor.custom_widgets import TilemapBox
+from app.editor.edit_history import HISTORY
 from app.editor.event_editor import event_autocompleter, find_and_replace
 from app.editor.event_editor.event_highlighter import EventHighlighter
 from app.editor.event_editor.py_syntax import PythonHighlighter
@@ -71,9 +73,7 @@ class EventCollection(QWidget):
         self.setLayout(grid)
 
         self.level_filter_box = PropertyBox("Level Filter", ComboBox, self)
-        self.level_filter_box.edit.addItem("All")
-        self.level_filter_box.edit.addItem("Global")
-        self.level_filter_box.edit.addItems(DB.levels.keys())
+        self.level_filter_box.edit.set_choices(self.level_filters())
         self.level_filter_box.edit.currentIndexChanged.connect(self.filter_changed)
 
         self.event_name_filter_box = PropertyBox("Filter by name", QLineEdit, self)
@@ -227,18 +227,20 @@ class EventCollection(QWidget):
                 return
             # new_data = curr.internalPointer()  # Internal pointer is way too powerful
             # if not new_data:
-            new_data = self._data[row]
-            if self.display:
-                self.display.set_current(new_data)
-                self.display.setEnabled(True)
+            self.show(self._data[row])
 
     def set_current_index(self, index):
         correct_index = self.name_filtered_model.mapToSource(self.level_filtered_model.mapToSource(index))
         row = correct_index.row()
-        new_data = self._data[row]
+        self.show(self._data[row])
+
+    def show(self, event: EventPrefab):
+        """Shows event in the form, and watches it for edits"""
         if self.display:
-            self.display.set_current(new_data)
+            HISTORY.commit(origin=self.window)
+            self.display.set_current(event)
             self.display.setEnabled(True)
+            HISTORY.bind(event, self._data, self.window)
 
     def set_display(self, disp):
         self.display = disp
@@ -254,6 +256,26 @@ class EventCollection(QWidget):
         self.display.setEnabled(False)
         if self.level_filtered_model.rowCount() > 0:
             self.display.setEnabled(True)
+
+    def filter_to_level_of(self, event: EventPrefab):
+        """Filters on event's level, unless the list shows every level"""
+        edit = self.level_filter_box.edit
+        if edit.currentText() != "All":
+            edit.setValue(event.level_nid or "Global")
+
+    def level_filters(self) -> List[str]:
+        return ["All", "Global"] + DB.levels.keys()
+
+    def fill_level_filter(self):
+        """Lists the levels as they are now, keeping the filter unless its level is gone"""
+        edit = self.level_filter_box.edit
+        level_filter = edit.currentText()
+        edit.set_choices(self.level_filters())
+        edit.blockSignals(True)
+        edit.setValue(level_filter)
+        edit.blockSignals(False)
+        if edit.currentText() != level_filter:
+            self.filter_changed(edit.currentIndex())
 
     def filter_changed(self, idx):
         level = self.level_filter_box.edit.currentText()
@@ -278,7 +300,16 @@ class EventCollection(QWidget):
             self.level_filtered_model.setFilterRegularExpression(search)
         self.view.selectionModel().selectionChanged.connect(self.on_item_changed)
         # Determine if we should reselect something
-        if level and self.display:
+        shown = self.display.current if self.display else None
+        shown_index = None
+        if shown is not None and any(event is shown for event in self._data):
+            shown_index = self.window.view_index_of(shown)
+        if shown_index is not None and shown_index.isValid():
+            # The shown event is still listed, but filtering moved its row
+            self.view.selectionModel().selectionChanged.disconnect(self.on_item_changed)
+            self.view.setCurrentIndex(shown_index)
+            self.view.selectionModel().selectionChanged.connect(self.on_item_changed)
+        elif level and self.display:
             # current_index = self.view.currentIndex()
             # real_index = self.level_filtered_model.mapToSource(current_index)
             # obj = self._data[real_index.row()]
@@ -359,11 +390,9 @@ class EventProperties(QWidget):
         main_section.addWidget(self.text_box)
 
         left_frame = self.window.left_frame
-        self.level_filter_box = left_frame.level_filter_box
         grid = left_frame.layout()
 
         self.name_box = PropertyBox("Name", NoParentheticalLineEdit, self)
-        self.name_box.edit.textChanged.connect(self.name_changed)
         self.name_box.edit.editingFinished.connect(self.name_done_editing)
 
         self.trigger_box = PropertyBox("Trigger", ComboBox, self)
@@ -372,8 +401,7 @@ class EventProperties(QWidget):
         self.trigger_box.edit.activated.connect(self.trigger_changed)
 
         self.level_nid_box = PropertyBox("Level", ComboBox, self)
-        self.level_nid_box.edit.addItem("Global")
-        self.level_nid_box.edit.addItems(DB.levels.keys())
+        self.level_nid_box.edit.set_choices(["Global"] + DB.levels.keys())
         self.level_nid_box.edit.currentIndexChanged.connect(self.level_nid_changed)
 
         self.condition_box = PropertyBox("Condition", CodeLineEdit, self)
@@ -511,20 +539,31 @@ class EventProperties(QWidget):
             GAME_ACTIONS.test_event(self.current, command_pointer)
             timer.get_timer().start()
 
-    def name_changed(self, text):
-        self.current.name = text
+    def name_done_editing(self):
+        self.rename(self.name_box.edit.text(), self.current.level_nid)
         self.window.update_list()
 
-    def name_done_editing(self):
-        # Check validity of nid!
-        other_nids = [d.nid for d in self._data.values() if d is not self.current]
-        other_names = [d.name for d in self._data.values() if d is not self.current and d.level_nid == self.current.level_nid]
-        if self.current.nid in other_nids:
-            QMessageBox.warning(self.window, 'Warning', 'Event ID %s already in use' % self.current.nid)
-            self.current.name = str_utils.get_next_name(self.current.name, other_names)
+    def rename(self, name: str, level_nid: Optional[str]):
+        """Gives the event a name and level, and so a new nid, renaming whatever names
+        it as one undo step. A name another event of that level has gets a number added."""
+        if not name:
             self.name_box.edit.setText(self.current.name)
-        self._data.update_nid(self.current, self.current.nid, set_nid=False)
-        self.window.update_list()
+            return
+        if (name, level_nid) == (self.current.name, self.current.level_nid):
+            return
+        other_names = [d.name for d in self._data.values() if d is not self.current and d.level_nid == level_nid]
+        if name in other_names:
+            QMessageBox.warning(self.window, 'Warning', 'Event name %s already in use' % name)
+            name = str_utils.get_next_name(name, other_names)
+            self.name_box.edit.setText(name)
+        old_nid = self.current.nid
+        with HISTORY.change_set('Rename %s' % old_nid, origin=self.window), \
+                HISTORY.modifying([(self.current, self._data)]):
+            # The nid is made from the name and level
+            self.current.name = name
+            self.current.level_nid = level_nid
+            HISTORY.rewrite(DType.EVENTS, old_nid, self.current.nid)
+            self._data.update_nid(self.current, self.current.nid, set_nid=False)
 
     def trigger_changed(self, idx):
         cur_val = self.trigger_box.edit.currentText()
@@ -537,16 +576,8 @@ class EventProperties(QWidget):
         self.window.update_list()
 
     def level_nid_changed(self, idx):
-        if idx == 0:
-            self.current.level_nid = None
-            self.name_done_editing()
-            if self.level_filter_box.edit.currentText() != "All":
-                self.level_filter_box.edit.setValue("Global")
-        else:
-            self.current.level_nid = DB.levels[idx - 1].nid
-            self.name_done_editing()
-            if self.level_filter_box.edit.currentText() != "All":
-                self.level_filter_box.edit.setValue(self.current.level_nid)
+        self.rename(self.current.name, None if idx == 0 else DB.levels[idx - 1].nid)
+        self.window.left_frame.filter_to_level_of(self.current)
 
         # Update trigger box to match current level
         self.trigger_box.edit.clear()
@@ -595,6 +626,7 @@ class EventProperties(QWidget):
 
     def set_current(self, current: EventPrefab):
         self.current = current
+        self.level_nid_box.edit.set_choices(["Global"] + DB.levels.keys())
         self.name_box.edit.setText(current.name)
         # self.trigger_box.edit.clear()
         if current.level_nid is not None:

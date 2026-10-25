@@ -7,9 +7,10 @@ import json
 from PyQt5.QtWidgets import QLineEdit, QTextEdit, QWidget, QHBoxLayout, QGridLayout, QPushButton, \
     QSizePolicy, QSplitter, QMessageBox, QApplication, QAbstractItemView
 from PyQt5.QtCore import QSize, Qt, pyqtSignal, QModelIndex
-from PyQt5.QtCore import QAbstractListModel
+from PyQt5.QtCore import QAbstractListModel, QAbstractProxyModel
 from app.data.database.components import Component
 from app.editor import timer
+from app.editor.custom_widgets import ObjBox
 
 from app.utilities.data import Prefab
 from app.extensions.custom_gui import RightClickListView
@@ -130,7 +131,7 @@ class Collection(QWidget):
                 elif self.display:
                     self.display.setEnabled(False)
             if self.display:
-                HISTORY.commit()
+                HISTORY.commit(origin=self.window)
                 self.display.set_current(new_data)
                 self.display.setEnabled(True)
                 HISTORY.bind(new_data, self._data, self.window)
@@ -192,27 +193,45 @@ class DatabaseTab(QWidget):
         pass
 
     def reset(self):
-        """
-        Whenever the tab is changed, make sure to update the tab display
-        Makes sure that current is what is being displayed
-        """
-        if self.right_frame.current:
-            self.right_frame.setEnabled(True)
-            self.right_frame.set_current(self.right_frame.current)
-        else:
-            self.right_frame.setEnabled(False)
-
-    def after_history_change(self):
-        """Shows the data again after an undo or redo changed it underneath this tab"""
+        """Shows the database again, as it is now: when the tab comes into view, and
+        after an undo or another tab changed it"""
+        # Filter proxies over the model need warning before the layout changes
+        self.left_frame.model.layoutAboutToBeChanged.emit()
         self.left_frame.model.layoutChanged.emit()
+        for box in self.right_frame.findChildren(ObjBox):
+            box.refresh()
         current = self.right_frame.current
         if current is not None and not any(entry is current for entry in self._data):
             # What was shown was taken away, so show whatever now has its place
-            row = max(min(self.left_frame.view.currentIndex().row(), len(self._data) - 1), 0)
-            index = self.left_frame.model.index(row)
-            self.left_frame.view.setCurrentIndex(index)
+            view = self.left_frame.view
+            row = max(min(view.currentIndex().row(), view.model().rowCount() - 1), 0)
+            index = view.model().index(row, 0)
+            view.setCurrentIndex(index)
             self.left_frame.on_item_changed(index, None)
-        self.reset()
+        elif current is not None:
+            # The list keeps its row, which an undo that brings back a record
+            # above the shown one gives to another record
+            index = self.view_index_of(current)
+            if index.isValid():
+                self.left_frame.view.setCurrentIndex(index)
+            self.right_frame.setEnabled(True)
+            self.right_frame.set_current(current)
+        else:
+            self.right_frame.setEnabled(False)
+
+    def view_index_of(self, record) -> QModelIndex:
+        """Where the list shows record, through any filter proxies between the list and
+        its model; invalid if a filter hides it"""
+        row = next(i for i, entry in enumerate(self._data) if entry is record)
+        proxies = []
+        model = self.left_frame.view.model()
+        while isinstance(model, QAbstractProxyModel):
+            proxies.append(model)
+            model = model.sourceModel()
+        index = model.index(row, 0)
+        for proxy in reversed(proxies):
+            index = proxy.mapFromSource(index)
+        return index
 
     def on_tab_close(self):
         pass

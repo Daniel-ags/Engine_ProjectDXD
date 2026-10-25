@@ -1,33 +1,15 @@
 from PyQt5 import QtGui
 from PyQt5.QtWidgets import QApplication, QDialog, QGridLayout, QDialogButtonBox, QLineEdit, \
     QPlainTextEdit, QTabWidget, QTextEdit, QSizePolicy
-from PyQt5.QtCore import QEvent, Qt
+from PyQt5.QtCore import QEvent, Qt, QTimer
 from PyQt5.QtGui import QKeySequence
 
 from app.data.resources.resources import RESOURCES
-from app.data.database.database import DB
 
 from app.data.serialization.versions import CURRENT_SERIALIZATION_VERSION
 from app.editor.edit_history import HISTORY
 from app.editor.settings import MainSettingsController
 from app.editor.settings.preference_definitions import Preference
-
-def resync_level_editor(main_editor):
-    """Re-broadcasts the selected level after an undo changed the database.
-
-    Undo restores a level's fields in place, which rebuilds the units and regions
-    inside it. The level editor (and its sub-widgets) cache those and only refresh
-    on a 'selected_level' broadcast, so without it unit edits would go to objects
-    the level no longer holds -- the "unit positions revert" bug.
-    """
-    state_manager = main_editor.app_state_manager if main_editor else None
-    if state_manager:
-        current_level_nid = state_manager.state.selected_level
-        # Sometimes the stored current level nid does not exist as a valid
-        # level; check before broadcasting.
-        if current_level_nid in DB.levels:
-            state_manager.change_and_broadcast(
-                'selected_level', current_level_nid)
 
 def handles_own_undo(widget, redo: bool) -> bool:
     """Whether a focused text field has typing of its own to undo or redo"""
@@ -44,15 +26,20 @@ class EditHistoryDialog(QDialog):
     history stood when the dialog opened, or was last applied. With undo_enabled,
     Ctrl+Z and Ctrl+Shift+Z step back and forth through the history, unless the
     focused text field has typing of its own to undo.
+
+    Whenever the history changes, each tab shows the database again, unless the
+    change was the tab's own edit.
     """
     undo_enabled = True
 
     def start_history(self):
         self.history_mark = HISTORY.mark()
         self.history_running = True
+        self.change_origins = []  # Of the changes no tab shows yet
         app = QApplication.instance()
         app.focusChanged.connect(self.on_focus_changed)
         app.installEventFilter(self)
+        HISTORY.listen(self.on_history_changed)
         self.finished.connect(self.stop_history)
 
     def stop_history(self):
@@ -62,6 +49,7 @@ class EditHistoryDialog(QDialog):
         app = QApplication.instance()
         app.focusChanged.disconnect(self.on_focus_changed)
         app.removeEventFilter(self)
+        HISTORY.unlisten(self.on_history_changed)
         for tab in self.history_tabs():
             HISTORY.unbind(tab)
 
@@ -79,19 +67,37 @@ class EditHistoryDialog(QDialog):
         if focused is not None and self.isAncestorOf(focused):
             focused.clearFocus()
 
+    def history_tab_holding(self, widget):
+        return next((tab for tab in self.history_tabs() if widget is not None and tab.isAncestorOf(widget)), None)
+
     def apply_history(self):
         self.history_mark = HISTORY.mark()
 
     def cancel_history(self):
         self.finish_editing()
         HISTORY.undo_to(self.history_mark)
-        resync_level_editor(self.main_editor)
 
     def on_focus_changed(self, old, new):
         # The field losing focus has finished its edit by now: Qt sends it
         # FocusOut before announcing the change
         if new is not None and self.isAncestorOf(new):
-            HISTORY.commit()
+            HISTORY.commit(origin=self.history_tab_holding(old))
+
+    def on_history_changed(self, origin):
+        # The change may still be under way -- a tab's own rename or delete --
+        # so the tabs show it once the event that made it is done
+        if not self.change_origins:
+            QTimer.singleShot(0, self.show_changes)
+        self.change_origins.append(origin)
+
+    def show_changes(self):
+        """Shows the database again in every tab that did not make all the changes"""
+        origins, self.change_origins = self.change_origins, []
+        if not self.history_running:
+            return
+        for tab in self.history_tabs():
+            if not all(origin is tab for origin in origins):
+                tab.reset()
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.KeyPress and self.undo_enabled and self.isActiveWindow():
@@ -114,19 +120,13 @@ class EditHistoryDialog(QDialog):
     def undo(self):
         self.finish_editing()
         # Edits from before the dialog opened are not this dialog's to take back
-        if HISTORY.undo(floor=self.history_mark):
-            self.after_history_change()
+        HISTORY.undo(floor=self.history_mark)
+        self.show_changes()
 
     def redo(self):
         self.finish_editing()
-        if HISTORY.redo():
-            self.after_history_change()
-
-    def after_history_change(self):
-        for tab in self.history_tabs():
-            if tab.supports_undo:
-                tab.after_history_change()
-        resync_level_editor(self.main_editor)
+        HISTORY.redo()
+        self.show_changes()
 
 class SingleDatabaseEditor(EditHistoryDialog):
     def __init__(self, tab, parent=None):

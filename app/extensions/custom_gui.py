@@ -118,6 +118,22 @@ class QVLine(QFrame):
         self.setLineWidth(1)
 
 class ComboBox(QComboBox):
+    def set_choices(self, texts: List[str], icon_for: Optional[Callable[[str], Any]] = None) -> None:
+        """Lists texts, unless the box lists them already, with icon_for(text) beside
+        each when it gives one. Sends no signals, so it writes nothing: set the
+        value afterwards."""
+        if [self.itemText(i) for i in range(self.count())] == texts:
+            return
+        self.blockSignals(True)
+        self.clear()
+        for text in texts:
+            icon = icon_for(text) if icon_for else None
+            if icon:
+                self.addItem(icon, text)
+            else:
+                self.addItem(text)
+        self.blockSignals(False)
+
     def setValue(self, value: Any) -> None:
         for i in range(self.count()):
             if self.itemData(i) == value:

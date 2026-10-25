@@ -100,7 +100,7 @@ class EquationMultiModel(MultiAttrListModel):
         others = Data([eq for eq in DB.equations if eq is not element])
         with HISTORY.change_set('Delete %s' % element.nid):
             if reference_dialogs.check_delete(DType.EQUATIONS, element.nid, 'Equation', self.window,
-                                              lambda: ObjBox("Equation", reference_dialogs.NidListModel, others, self.window)):
+                                              lambda: ObjBox("Equation", reference_dialogs.NidListModel, lambda: others, self.window)):
                 super().delete(idx)
 
     def create_new(self):

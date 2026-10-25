@@ -18,6 +18,10 @@ without being shown, like those a rename cascades into, are recorded by
 running the change inside `modifying`; rewrite and clear here do that for the
 reference cascades.
 
+After every change set it records, undoes or redoes, the history tells its
+listeners, so every open view can show the database again. A change set
+remembers its origin, the view that made it and so already shows it.
+
 Set LT_EDITOR_CHECK=1 to log any record that changed without being recorded.
 """
 from __future__ import annotations
@@ -126,6 +130,7 @@ Delta = Any  # RecordChange | CatalogChange
 @dataclass(eq=False)
 class ChangeSet:
     label: str
+    origin: Any = None  # The view that made these edits, if one did
     deltas: List[Delta] = field(default_factory=list)
 
     def catalogs(self) -> List[Data]:
@@ -159,6 +164,7 @@ class EditHistory:
         self._bound: Dict[int, Dict[int, Tuple[Data, Any, Any]]] = {}
         self._catalogs: Dict[int, Tuple[Data, CatalogState]] = {}
         self._shadow: Dict[int, dict] = {}  # LT_EDITOR_CHECK only
+        self._listeners: List[Callable[[Any], None]] = []
         self.clear()
 
     # === Lifetime ===
@@ -178,6 +184,20 @@ class EditHistory:
     def is_watched(self, data: Data) -> bool:
         return id(data) in self._catalogs
 
+    # === Listening ===
+    def listen(self, listener: Callable[[Any], None]) -> None:
+        """Calls listener(origin) after each change set is recorded, undone or redone.
+        origin is the view that made the change and already shows it, or None when
+        every view needs to show the database again, as after an undo."""
+        self._listeners.append(listener)
+
+    def unlisten(self, listener: Callable[[Any], None]) -> None:
+        self._listeners.remove(listener)
+
+    def _announce(self, origin) -> None:
+        for listener in self._listeners[:]:
+            listener(origin)
+
     # === Recording ===
     def bind(self, record, data: Data, owner=None) -> None:
         """Starts watching a record an editor shows, in place of the one its owner showed
@@ -189,7 +209,7 @@ class EditHistory:
         watched = record is not None and self.is_watched(data)
         if watched and CHECK_UNRECORDED:
             self._shadow[id(record)] = saved(record)
-        self.commit()
+        self.commit(origin=owner)
         bindings = self._bound.setdefault(id(owner), {})
         if owner is not None:
             bindings.clear()
@@ -198,7 +218,7 @@ class EditHistory:
 
     def bind_all(self, records: Iterable[Any], data: Data, owner) -> None:
         """Watches every one of these records at once"""
-        self.commit()
+        self.commit(origin=owner)
         bindings = self._bound.setdefault(id(owner), {})
         bindings.clear()
         if self.is_watched(data):
@@ -207,7 +227,7 @@ class EditHistory:
 
     def unbind(self, owner) -> None:
         """Stops watching what owner shows, as when its editor closes"""
-        self.commit()
+        self.commit(origin=owner)
         self._bound.pop(id(owner), None)
 
     def _is_bound(self, record) -> bool:
@@ -218,9 +238,9 @@ class EditHistory:
             for key in list(bindings):
                 yield bindings, key
 
-    def begin(self, label: str = 'Edit') -> None:
+    def begin(self, label: str = 'Edit', origin=None) -> None:
         if not self._open:
-            change_set = ChangeSet(label)
+            change_set = ChangeSet(label, origin)
             self._open.append(change_set)
             # Whatever changed since the last commit belongs with this edit
             self._collect(change_set)
@@ -236,16 +256,19 @@ class EditHistory:
             self._push(change_set)
         if CHECK_UNRECORDED:
             self._check_unrecorded(change_set)
+        if change_set.deltas:
+            self._announce(change_set.origin)
 
-    def change_set(self, label: str = 'Edit') -> _ChangeSetContext:
-        """with history.change_set('Delete Iron Sword'): ... records everything inside as one undo step"""
-        return _ChangeSetContext(self, label)
+    def change_set(self, label: str = 'Edit', origin=None) -> _ChangeSetContext:
+        """with history.change_set('Delete Iron Sword'): ... records everything inside as one undo step.
+        origin is the view making the change, when it shows the change by itself."""
+        return _ChangeSetContext(self, label, origin)
 
-    def commit(self, label: str = 'Edit') -> None:
+    def commit(self, label: str = 'Edit', origin=None) -> None:
         """Records whatever changed since the last commit as one undo step"""
         if self._open:
             return  # The open change set picks it up when it ends
-        self.begin(label)
+        self.begin(label, origin)
         self.end()
 
     def modifying(self, records: Iterable[Tuple[Any, Data]]) -> _ModifyingContext:
@@ -301,6 +324,7 @@ class EditHistory:
         change_set.undo()
         self._redo.append(change_set)
         self._rebaseline()
+        self._announce(None)
         return change_set
 
     def redo(self) -> Optional[ChangeSet]:
@@ -311,6 +335,7 @@ class EditHistory:
         change_set.redo()
         self._undo.append(change_set)
         self._rebaseline()
+        self._announce(None)
         return change_set
 
     def mark(self) -> ChangeSet | None:
@@ -323,17 +348,22 @@ class EditHistory:
         A mark that history has since dropped off its end undoes as far as
         history goes."""
         self.commit()
+        changed = False
         if mark is not None and any(change_set is mark for change_set in self._redo):
             # Undone past the mark: redo up to it
             while self._undo[-1:] != [mark]:
                 change_set = self._redo.pop()
                 change_set.redo()
                 self._undo.append(change_set)
+                changed = True
         else:
             while self._undo and self._undo[-1] is not mark:
                 self._undo.pop().undo()
+                changed = True
         self._redo.clear()
         self._rebaseline()
+        if changed:
+            self._announce(None)
 
     # === Internals ===
     def _push(self, change_set: ChangeSet) -> None:
@@ -382,11 +412,11 @@ class EditHistory:
 
 
 class _ChangeSetContext:
-    def __init__(self, history: EditHistory, label: str):
-        self.history, self.label = history, label
+    def __init__(self, history: EditHistory, label: str, origin):
+        self.history, self.label, self.origin = history, label, origin
 
     def __enter__(self):
-        self.history.begin(self.label)
+        self.history.begin(self.label, self.origin)
         return self
 
     def __exit__(self, *exc):

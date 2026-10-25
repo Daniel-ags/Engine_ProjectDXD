@@ -28,6 +28,7 @@ class NodePropertiesMenu(QWidget):
         self.state_manager.subscribe_to_key(NodePropertiesMenu.__name__, 'selected_node', self.select_node)
 
     def select_node(self, node_nid):
+        same_node = self.current_node is not None and self.current_node.nid == node_nid
         current_overworld = DB.overworlds.get(self.state_manager.state.selected_overworld)
         if(current_overworld):
             self.current_node = current_overworld.overworld_nodes.get(node_nid)
@@ -39,7 +40,7 @@ class NodePropertiesMenu(QWidget):
 
             self.set_components_active(True)
             self.event_box.show()
-            self.event_box.on_node_changed()
+            self.event_box.on_node_changed(same_node)
             self.nid_box.edit.setText(self.current_node.nid)
             self.title_box.edit.setText(self.current_node.name)
             self.map_icon_selector.set_map_icon_object(RESOURCES.map_icons.get(self.current_node.icon))
@@ -104,6 +105,7 @@ class NodePropertiesMenu(QWidget):
         self.layout.addWidget(self.title_box)
 
         self.level_box = PropertyBox("Level", QComboBox, self)
+        self.level_box.edit.activated.connect(self.level_changed)
         self.layout.addWidget(self.level_box)
 
         self.map_icon_selector = NodeIconSelector(self.node_icon_changed)
@@ -116,7 +118,6 @@ class NodePropertiesMenu(QWidget):
         level_combo_box.clear()
         for level in DB.levels.values():
             level_combo_box.addItem(level.name, level.nid)
-        level_combo_box.activated.connect(self.level_changed)
         return level_combo_box
 
 class NodeIconSelector(QWidget):
