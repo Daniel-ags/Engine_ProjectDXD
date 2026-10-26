@@ -23,8 +23,7 @@ class NewMapSpriteDatabase(NewEditorTab):
 
     @classmethod
     def edit(cls, parent=None):
-        window = SingleResourceEditor(NewMapSpriteDatabase, ['map_sprites'], parent)
-        window.exec_()
+        return SingleResourceEditor(NewMapSpriteDatabase, ['map_sprites'], parent)
 
     @property
     def data(self):

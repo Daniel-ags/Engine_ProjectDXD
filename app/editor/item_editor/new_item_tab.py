@@ -34,8 +34,7 @@ class NewItemDatabase(NewEditorTab):
 
     @classmethod
     def edit(cls, parent=None):
-        window = SingleDatabaseEditor(NewItemDatabase, parent)
-        window.exec_()
+        return SingleDatabaseEditor(NewItemDatabase, parent)
 
     @property
     def data(self):

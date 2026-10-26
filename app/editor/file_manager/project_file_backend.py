@@ -385,6 +385,8 @@ class ProjectFileBackend():
             elif ret == QMessageBox.Cancel:
                 return False
 
+        # The editor windows show the project being replaced
+        self.parent.editor_windows.close_all()
         RESOURCES.load(self.current_proj, self.metadata.serialization_version)
         DB.load(curr_proj_path, self.metadata.serialization_version)
         # Undo never reaches back into another project

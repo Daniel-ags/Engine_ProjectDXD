@@ -7,8 +7,9 @@ own lib/fonts folder, which the PyQt5 wheels leave out, and warns
 point it at the system fonts instead.
 
 It also warns that it "does not support propagateSizeHints()" whenever a test
-shows a widget, which says nothing about the widget, so that one message is
-dropped. Every other Qt message still reaches stderr
+shows a widget, and "does not support raise()" whenever one is raised, which say
+nothing about the widget, so those messages are dropped. Every other Qt message
+still reaches stderr
 '''
 import os
 import sys
@@ -19,7 +20,8 @@ os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 if sys.platform == 'win32':
     os.environ.setdefault('QT_QPA_FONTDIR', os.path.join(os.environ.get('WINDIR', r'C:\Windows'), 'Fonts'))
 
-IGNORED_MESSAGES = {'This plugin does not support propagateSizeHints()'}
+IGNORED_MESSAGES = {'This plugin does not support propagateSizeHints()',
+                    'This plugin does not support raise()'}
 
 def _message_handler(mode, context, message):
     if message not in IGNORED_MESSAGES:

@@ -34,8 +34,7 @@ class NewSkillDatabase(NewEditorTab):
 
     @classmethod
     def edit(cls, parent=None):
-        window = SingleDatabaseEditor(NewSkillDatabase, parent)
-        window.exec_()
+        return SingleDatabaseEditor(NewSkillDatabase, parent)
 
     @property
     def data(self):

@@ -26,8 +26,7 @@ class NewPortraitDatabase(NewEditorTab):
 
     @classmethod
     def edit(cls, parent=None):
-        window = SingleResourceEditor(NewPortraitDatabase, ['portraits'], parent)
-        window.exec_()
+        return SingleResourceEditor(NewPortraitDatabase, ['portraits'], parent)
 
     @property
     def data(self):

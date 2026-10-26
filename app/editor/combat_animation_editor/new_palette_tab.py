@@ -32,8 +32,7 @@ class NewPaletteDatabase(NewEditorTab):
 
     @classmethod
     def edit(cls, parent=None):
-        window = SingleResourceEditor(NewPaletteDatabase, ['combat_palettes'], parent)
-        window.exec_()
+        return SingleResourceEditor(NewPaletteDatabase, ['combat_palettes'], parent)
 
     @property
     def data(self):

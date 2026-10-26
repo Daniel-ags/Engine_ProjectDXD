@@ -96,9 +96,8 @@ class NewEditorTab(QWidget, Generic[T]):
 
     @classmethod
     def edit(cls, parent=None):
-        window = SingleDatabaseEditor(cls, parent)
-        window.exec_()
-        return window
+        """This tab's editor window, not yet shown"""
+        return SingleDatabaseEditor(cls, parent)
 
     def reset(self):
         """Shows the database again, as it is now. The properties widget draws on data

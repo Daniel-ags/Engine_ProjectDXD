@@ -237,8 +237,8 @@ class DatabaseTab(QWidget):
 
     @classmethod
     def edit(cls, parent=None):
-        window = SingleDatabaseEditor(cls, parent)
-        window.exec_()
+        """This tab's editor window, not yet shown"""
+        return SingleDatabaseEditor(cls, parent)
 
     def copy_data(self):
         clipboard = QApplication.clipboard()

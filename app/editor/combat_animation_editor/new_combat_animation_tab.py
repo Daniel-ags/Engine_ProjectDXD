@@ -52,8 +52,7 @@ class NewCombatAnimDatabase(NewEditorTab):
 
     @classmethod
     def edit(cls, parent=None):
-        window = SingleResourceEditor(NewCombatAnimDatabase, ['combat_anims'], parent)
-        window.exec_()
+        return SingleResourceEditor(NewCombatAnimDatabase, ['combat_anims'], parent)
 
     @property
     def data(self):
@@ -78,8 +77,7 @@ class NewSimpleCombatAnimDatabase(NewCombatAnimDatabase):
 
     @classmethod
     def edit(cls, parent=None):
-        window = SingleResourceEditor(NewSimpleCombatAnimDatabase, ['combat_anims'], parent)
-        window.exec_()
+        return SingleResourceEditor(NewSimpleCombatAnimDatabase, ['combat_anims'], parent)
 
 class NewCombatEffectDatabase(NewEditorTab):
     catalog_type = CombatEffectCatalog
@@ -97,8 +95,7 @@ class NewCombatEffectDatabase(NewEditorTab):
 
     @classmethod
     def edit(cls, parent=None):
-        window = SingleResourceEditor(NewCombatEffectDatabase, ['combat_effects'], parent)
-        window.exec_()
+        return SingleResourceEditor(NewCombatEffectDatabase, ['combat_effects'], parent)
 
     @property
     def data(self):

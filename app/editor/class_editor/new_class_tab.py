@@ -29,8 +29,7 @@ class NewClassDatabase(NewEditorTab):
 
     @classmethod
     def edit(cls, parent=None):
-        window = SingleDatabaseEditor(cls, parent)
-        window.exec_()
+        return SingleDatabaseEditor(cls, parent)
 
     def get_icon(self, class_nid: NID) -> Optional[QIcon]:
         if not self.data.get(class_nid):
