@@ -100,7 +100,7 @@ class ResourceHistoryTests(unittest.TestCase):
         self.assertIs(portrait, RESOURCES.portraits.get('Moulder'))
         self.assertEqual(full_path, portrait.full_path)
 
-    def test_cancel_takes_back_an_import_without_reloading_the_resources(self):
+    def test_undo_takes_back_an_import_without_reloading_the_resources(self):
         from app.data.resources.portraits import PortraitPrefab
         dialog = self.portraits()
         imported = PortraitPrefab('Imported', RESOURCES.portraits.get('Seth').full_path)
@@ -108,7 +108,7 @@ class ResourceHistoryTests(unittest.TestCase):
         self.history.commit()
 
         with patch.object(RESOURCES, 'load') as load:
-            dialog.reject()
+            dialog.undo()
 
         self.assertNotIn('Imported', RESOURCES.portraits.keys())
         load.assert_not_called()

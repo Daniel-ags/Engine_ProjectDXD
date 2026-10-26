@@ -73,6 +73,51 @@ class EditorWindowTests(StagingEditorCase):
             reopened.close()
             self.settle()
 
+    def portraits(self):
+        from app.editor.portrait_editor.new_portrait_tab import NewPortraitDatabase
+        return self.windows.open(NewPortraitDatabase.edit, None)
+
+    def test_an_editor_window_has_only_close_and_a_picker_ok_and_cancel(self):
+        from PyQt5.QtWidgets import QDialogButtonBox
+        from app.editor.data_editor import SingleDatabaseEditor, SingleResourceEditor
+        from app.editor.portrait_editor.new_portrait_tab import NewPortraitDatabase
+        from app.editor.unit_editor.new_unit_tab import NewUnitDatabase
+        for window in (self.units(), self.portraits()):
+            self.assertEqual(QDialogButtonBox.Close, window.buttonbox.standardButtons())
+        for picker in (SingleDatabaseEditor(NewUnitDatabase, picker=True),
+                       SingleResourceEditor(NewPortraitDatabase, ['portraits'], picker=True)):
+            self.addCleanup(picker.stop_history)
+            self.assertEqual(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, picker.buttonbox.standardButtons())
+
+    def test_closing_an_editor_window_keeps_its_edits(self):
+        from app.data.database.database import DB
+        from app.data.resources.resources import RESOURCES
+        units, portraits = self.units(), self.portraits()
+        unit, portrait = DB.units.get('Eirika'), RESOURCES.portraits.get('Eirika')
+        units.tab.rename('Eirika', 'Lady')
+        portraits.tab.rename('Eirika', 'Lady')
+
+        units.close()
+        portraits.close()
+        self.settle()
+
+        self.assertIs(unit, DB.units.get('Lady'))
+        self.assertIs(portrait, RESOURCES.portraits.get('Lady'))
+
+    def test_undo_in_one_window_takes_back_an_edit_made_in_another_before_it_opened(self):
+        from app.data.database.database import DB
+        units = self.units()
+        unit = DB.units.get('Eirika')
+        units.tab.tree_list.select_item('Eirika')
+        units.tab.rename('Eirika', 'Lady')
+        items = self.items()
+
+        items.undo()
+        self.settle()
+
+        self.assertIs(unit, DB.units.get('Eirika'))
+        self.assertEqual('Eirika', units.tab.right_frame.current.nid)
+
     def test_close_all_closes_every_editor(self):
         units, items = self.units(), self.items()
 

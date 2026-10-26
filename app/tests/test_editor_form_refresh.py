@@ -131,7 +131,7 @@ class FormRefreshTests(unittest.TestCase):
         form.name_box.edit.setText(name)
         form.name_box.edit.editingFinished.emit()  # As leaving the box does
 
-    def test_event_edits_are_recorded_so_cancel_takes_them_back(self):
+    def test_event_edits_are_recorded_so_undo_takes_them_back(self):
         from app.editor.edit_history import HISTORY
         check = patch('app.editor.edit_history.CHECK_UNRECORDED', True)
         check.start()
@@ -147,6 +147,9 @@ class FormRefreshTests(unittest.TestCase):
             HISTORY.commit()
             dialog.reject()
             self.app.processEvents()
+            self.assertEqual((name + 'X', 'False'), (event.name, event.condition))  # Closing keeps them
+            while HISTORY.can_undo():
+                HISTORY.undo()
 
         self.assertEqual([], [c for c in warning.call_args_list if 'LT_EDITOR_CHECK' in c.args[0]])
         self.assertEqual((name, condition), (event.name, event.condition))

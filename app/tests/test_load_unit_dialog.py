@@ -107,16 +107,20 @@ class LoadUnitDialogTests(unittest.TestCase):
         self.assertIn(dialog.current.nid, DB.units)
         self.assertEqual(dialog.current.nid, dialog.unit_box.edit.currentText())
 
-    def test_deleting_the_chosen_unit_then_cancel_keeps_it(self):
+    def test_deleting_the_chosen_unit_then_cancel_keeps_the_deletion_and_ok_refuses_the_unit(self):
+        from PyQt5.QtWidgets import QDialog
         dialog = self.load_unit_dialog()
         dialog.unit_box.edit.setValue(self.free_unit)
 
         with self.open_unit_editor(lambda editor: self.delete_in(editor, self.free_unit)):
             dialog.access_units()
         self.app.processEvents()
+        self.assertNotIn(self.free_unit, DB.units)
 
-        self.assertEqual(self.free_unit, dialog.current.nid)
-        self.assertIn(self.free_unit, DB.units)
+        dialog.accept()
+
+        self.assertNotEqual(QDialog.Accepted, dialog.result())
+        self.assertEqual(['Unit %s no longer exists. Choose another unit.' % self.free_unit], self.messages)
 
     def test_ok_refuses_a_unit_that_no_longer_exists(self):
         from PyQt5.QtWidgets import QDialog
@@ -144,12 +148,16 @@ class LoadUnitDialogTests(unittest.TestCase):
         reject.assert_called_once()
         self.assertEqual(['Unit Eirika is no longer in the level.'], self.messages)
 
-    def test_a_level_unit_is_found_again_after_cancel_rebuilds_the_level(self):
+    def test_a_level_unit_is_found_again_after_an_undo_rebuilds_the_level(self):
         level_unit = self.painter.current_level.units.get('Eirika')
         other = next(unit.nid for unit in self.painter.current_level.units if unit is not level_unit and not unit.generic)
         dialog = self.load_unit_dialog(level_unit)
 
-        with self.open_unit_editor(lambda editor: self.delete_in(editor, other)):
+        def delete_and_undo(editor):
+            self.delete_in(editor, other)
+            editor.undo()
+            return False
+        with self.open_unit_editor(delete_and_undo):
             dialog.access_units()
 
         self.assertIsNot(level_unit, dialog.current)

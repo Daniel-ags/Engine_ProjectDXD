@@ -64,16 +64,33 @@ class ItemEditorUndoTests(EditorUndoTestCase):
         self.dialog.redo()
         self.assertEqual('Renamed Sword', self.item.name)
 
-    def test_cancel_takes_back_everything_since_opening(self):
+    def test_closing_keeps_the_edits_and_undo_still_takes_them_back(self):
         old_name = self.item.name
         self.type_name('Renamed Sword')
         self.tab.rename(ITEM, 'Sword_Two')
 
         self.dialog.reject()
+        self.assertIs(self.item, DB.items.get('Sword_Two'))
+        self.assertEqual('Renamed Sword', self.item.name)
+        self.history.undo()
+        self.history.undo()
 
         self.assertIs(self.item, DB.items.get(ITEM))
         self.assertEqual(old_name, self.item.name)
         self.assertNotIn('Sword_Two', DB.items)
+
+    def test_undo_reaches_edits_from_before_the_dialog_opened(self):
+        old_name = DB.units.get(UNIT).name
+        with self.history.modifying([(DB.units.get(UNIT), DB.units)]):
+            DB.units.get(UNIT).name = 'Lady'
+        self.history.commit()
+        from app.editor.data_editor import SingleDatabaseEditor
+        from app.editor.item_editor.new_item_tab import NewItemDatabase
+        dialog = self.open(SingleDatabaseEditor, NewItemDatabase)
+
+        dialog.undo()
+
+        self.assertEqual(old_name, DB.units.get(UNIT).name)
 
     def test_renaming_from_the_list_is_one_undo_step(self):
         DB.units.get(UNIT).starting_items = [[ITEM, False]]
@@ -178,12 +195,16 @@ class IdBoxTests(EditorUndoTestCase):
 
         self.assertNamed(self.OLD)
 
-    def test_cancel_mid_typing_leaves_the_old_id(self):
+    def test_closing_mid_typing_renames_with_the_cascade(self):
         self.dialog.reject()
         self.app.processEvents()
+        self.assertNamed(self.NEW)
+
+        self.history.undo()
+
         self.assertNamed(self.OLD)
 
-    def test_cancel_after_enter_leaves_the_old_id(self):
+    def test_closing_after_enter_keeps_the_new_id(self):
         from PyQt5.QtCore import Qt
         from PyQt5.QtTest import QTest
         QTest.keyClick(self.box, Qt.Key_Return)
@@ -192,7 +213,7 @@ class IdBoxTests(EditorUndoTestCase):
         self.dialog.reject()
         self.app.processEvents()
 
-        self.assertNamed(self.OLD)
+        self.assertNamed(self.NEW)
 
     def test_redo_mid_typing_renames_with_the_cascade(self):
         from PyQt5.QtCore import Qt

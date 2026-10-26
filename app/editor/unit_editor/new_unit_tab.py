@@ -97,7 +97,7 @@ class NewUnitDatabase(NewEditorTab):
 
 def get(unit_nid: Optional[NID] = None, parent=None):
     """Opens the unit editor on unit_nid. Returns the unit it shows when closed with OK."""
-    window = SingleDatabaseEditor(NewUnitDatabase, parent)
+    window = SingleDatabaseEditor(NewUnitDatabase, parent, picker=True)
     if unit_nid in DB.units:
         window.tab.tree_list.select_item(unit_nid)
     result = window.exec_()

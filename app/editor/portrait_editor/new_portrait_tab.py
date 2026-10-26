@@ -60,7 +60,7 @@ class NewPortraitDatabase(NewEditorTab):
         return reference_dialogs.check_delete(RType.PORTRAITS, nid, 'Portrait', self)
 
 def get():
-    window = SingleResourceEditor(NewPortraitDatabase, ['portraits'])
+    window = SingleResourceEditor(NewPortraitDatabase, ['portraits'], picker=True)
     result = window.exec_()
     if result == QDialog.Accepted:
         selected_portrait = window.tab.right_frame.current

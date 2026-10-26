@@ -347,11 +347,10 @@ class EditHistory:
     def can_redo(self) -> bool:
         return bool(self._redo)
 
-    def undo(self, floor: Optional[ChangeSet] = None) -> Optional[ChangeSet]:
-        """Undoes the last change set, unless that is floor (a mark): an editor
-        steps back through its own edits only"""
+    def undo(self) -> Optional[ChangeSet]:
+        """Undoes the last change set, whichever window made it"""
         self.commit()
-        if not self._undo or self._undo[-1] is floor:
+        if not self._undo:
             return None
         change_set = self._undo.pop()
         change_set.undo()

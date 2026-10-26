@@ -135,7 +135,7 @@ class MusicDatabase(SoundTab):
         self.model.autofill()
 
 def get_sfx():
-    window = SingleResourceEditor(SFXDatabase, ['sfx'])
+    window = SingleResourceEditor(SFXDatabase, ['sfx'], picker=True)
     result = window.exec_()
     if result == QDialog.Accepted:
         selected_sfx = window.tab.get_selected()
@@ -144,7 +144,7 @@ def get_sfx():
         return None, False
 
 def get_music():
-    window = SingleResourceEditor(MusicDatabase, ['music'])
+    window = SingleResourceEditor(MusicDatabase, ['music'], picker=True)
     result = window.exec_()
     if result == QDialog.Accepted:
         selected_music = window.tab.get_selected()

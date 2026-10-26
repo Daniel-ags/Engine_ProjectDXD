@@ -489,7 +489,7 @@ class LoadUnitDialog(Dialog):
         named = DB.units.get(self.current.nid)
         unit, ok = new_unit_tab.get(self.current.nid, self)
         if not self.is_new_unit and not any(level_unit is self.current for level_unit in self.window.current_level.units):
-            # Deleting the unit took it out of the level, or an undo or Cancel rebuilt
+            # Deleting the unit took it out of the level, or an undo rebuilt
             # the level's units, perhaps under the unit's name from before a rename
             level_unit = None
             if named and DB.units.get(named.nid) is named:

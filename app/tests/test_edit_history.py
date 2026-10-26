@@ -167,15 +167,6 @@ class MarkTests(HistoryTestCase):
         self.assertNotIn('New_Item', DB.items)
         self.assertFalse(HISTORY.can_redo())
 
-    def test_undo_stops_at_a_floor(self):
-        self.unit.name = 'Before'
-        mark = HISTORY.mark()
-        self.unit.name = 'After'
-        HISTORY.commit()
-        self.assertTrue(HISTORY.undo(floor=mark))
-        self.assertIsNone(HISTORY.undo(floor=mark))
-        self.assertEqual('Before', self.unit.name)
-
     def test_undo_to_a_mark_already_undone_redoes_up_to_it(self):
         self.unit.name = 'Before'
         mark = HISTORY.mark()

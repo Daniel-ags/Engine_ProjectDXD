@@ -54,7 +54,7 @@ class NewPaletteDatabase(NewEditorTab):
         return palette_model.check_delete(nid, self)
 
 def get():
-    window = SingleResourceEditor(NewPaletteDatabase, ['combat_palettes'])
+    window = SingleResourceEditor(NewPaletteDatabase, ['combat_palettes'], picker=True)
     result = window.exec_()
     if result == QDialog.Accepted:
         selected_palette = window.tab.right_frame.current

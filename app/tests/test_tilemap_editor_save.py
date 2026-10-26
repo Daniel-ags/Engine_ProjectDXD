@@ -85,7 +85,7 @@ class TilemapEditorSaveTests(unittest.TestCase):
         self.assertEqual(MARKER, self.terrain())
 
     @patch('app.editor.tilemap_editor.QMessageBox')
-    def test_save_survives_cancelling_the_tilemap_dialog(self, _message_box):
+    def test_save_survives_closing_the_tilemap_dialog(self, _message_box):
         from app.editor.data_editor import SingleResourceEditor
         from app.editor.tile_editor.tile_tab import TileMapDatabase
         from app.editor.tilemap_editor import MapEditor
@@ -104,7 +104,7 @@ class TilemapEditorSaveTests(unittest.TestCase):
         self.assertEqual(MARKER, self.terrain())
 
     @patch('app.editor.tilemap_editor.QMessageBox')
-    def test_an_unsaved_edit_goes_with_the_tilemap_dialogs_cancel(self, _message_box):
+    def test_an_unsaved_edit_goes_with_an_undo_in_the_tilemap_dialog(self, _message_box):
         from app.editor.data_editor import SingleResourceEditor
         from app.editor.tile_editor.tile_tab import TileMapDatabase
         from app.editor.tilemap_editor import MapEditor
@@ -119,7 +119,8 @@ class TilemapEditorSaveTests(unittest.TestCase):
             editor.accept()
         with patch.object(MapEditor, 'exec_', edit_and_ok):
             tab.edit_current()
-        dialog.reject()
+        self.assertEqual(MARKER, self.terrain())
+        dialog.undo()
 
         self.assertEqual(before, self.terrain())
 

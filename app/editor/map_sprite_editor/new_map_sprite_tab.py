@@ -55,7 +55,7 @@ class NewMapSpriteDatabase(NewEditorTab):
         return reference_dialogs.check_delete(RType.MAP_SPRITES, nid, 'Map Sprite', self)
 
 def get():
-    window = SingleResourceEditor(NewMapSpriteDatabase, ['map_sprites'])
+    window = SingleResourceEditor(NewMapSpriteDatabase, ['map_sprites'], picker=True)
     result = window.exec_()
     if result == QDialog.Accepted:
         selected_map_sprite = window.tab.right_frame.current

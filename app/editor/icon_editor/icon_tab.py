@@ -230,7 +230,7 @@ class MapIconDatabase(IconTab):
 
 def get_map_icon_editor():
     database = MapIconDatabase
-    window = SingleResourceEditor(database, ['map_icons'])
+    window = SingleResourceEditor(database, ['map_icons'], picker=True)
     result = window.exec_()
     if result == QDialog.Accepted:
         selected_icon = window.tab.current
@@ -250,7 +250,7 @@ def get(width, icon_nid=None):
         database = Icon80Database
     else:
         return None, False
-    window = SingleResourceEditor(database, [resource_type], selected_icon_nid=icon_nid)
+    window = SingleResourceEditor(database, [resource_type], picker=True, selected_icon_nid=icon_nid)
     result = window.exec_()
     if result == QDialog.Accepted:
         selected_icon = window.tab.current

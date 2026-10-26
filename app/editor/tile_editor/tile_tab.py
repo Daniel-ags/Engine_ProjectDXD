@@ -175,13 +175,10 @@ class TileMapDatabase(TileTab):
                     HISTORY.modifying([(current_tilemap, self._data)] +
                                       [(tileset, RESOURCES.tilesets) for tileset in RESOURCES.tilesets]):
                 map_editor.exec_()
-            if map_editor.saved:
-                # So this dialog's Cancel keeps what the map editor saved
-                self.window.apply_history()
             tilemap_editor.get_tilemap_pixmap(current_tilemap)
 
 def get_tilesets() -> tuple:
-    window = SingleResourceEditor(TileSetDatabase, ["tilesets"])
+    window = SingleResourceEditor(TileSetDatabase, ["tilesets"], picker=True)
     result = window.exec_()
     if result == QDialog.Accepted:
         selected_tileset = window.tab.current
@@ -190,7 +187,7 @@ def get_tilesets() -> tuple:
         return None, False
 
 def get_tilemaps() -> tuple:
-    window = SingleResourceEditor(TileMapDatabase, ["tilemaps"])
+    window = SingleResourceEditor(TileMapDatabase, ["tilemaps"], picker=True)
     result = window.exec_()
     if result == QDialog.Accepted:
         selected_tilemap = window.tab.current

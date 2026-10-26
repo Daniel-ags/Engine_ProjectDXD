@@ -19,10 +19,13 @@ def handles_own_undo(widget, redo: bool) -> bool:
 
 class EditHistoryDialog(QDialog):
     """
-    A dialog whose edits go into the edit history. Cancel undoes back to where the
-    history stood when the dialog opened, or was last applied. With undo_enabled,
-    Ctrl+Z and Ctrl+Shift+Z step back and forth through the history, unless the
-    focused text field has typing of its own to undo.
+    A dialog whose edits go into the edit history. Closing it keeps them all: undo is
+    the way back. With undo_enabled, Ctrl+Z and Ctrl+Shift+Z step back and forth
+    through the history, whichever window made the edit, unless the focused text
+    field has typing of its own to undo.
+
+    A picker, run modal to choose a record, has OK to choose the record it shows and
+    Cancel to choose nothing in place of Close. Its edits stay either way.
 
     Whenever the history changes, each tab shows the database again, unless the
     change was the tab's own edit.
@@ -30,7 +33,6 @@ class EditHistoryDialog(QDialog):
     undo_enabled = True
 
     def start_history(self):
-        self.history_mark = HISTORY.mark()
         self.history_running = True
         self.change_origins = []  # Of the changes no tab shows yet
         app = QApplication.instance()
@@ -82,12 +84,15 @@ class EditHistoryDialog(QDialog):
     def history_tab_holding(self, widget):
         return next((tab for tab in self.history_tabs() if widget is not None and tab.isAncestorOf(widget)), None)
 
-    def apply_history(self):
-        self.history_mark = HISTORY.mark()
-
-    def cancel_history(self):
-        self.finish_editing()
-        HISTORY.undo_to(self.history_mark)
+    def button_box(self, picker: bool) -> QDialogButtonBox:
+        if picker:
+            buttons = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        else:
+            buttons = QDialogButtonBox.Close
+        box = QDialogButtonBox(buttons, Qt.Horizontal, self)
+        box.accepted.connect(self.accept)
+        box.rejected.connect(self.reject)
+        return box
 
     def on_focus_changed(self, old, new):
         self.watch_keys(new)
@@ -132,8 +137,7 @@ class EditHistoryDialog(QDialog):
 
     def undo(self):
         self.finish_editing()
-        # Edits from before the dialog opened are not this dialog's to take back
-        HISTORY.undo(floor=self.history_mark)
+        HISTORY.undo()
         self.show_changes()
 
     def redo(self):
@@ -142,12 +146,12 @@ class EditHistoryDialog(QDialog):
         self.show_changes()
 
 class SingleDatabaseEditor(EditHistoryDialog):
-    def __init__(self, tab, parent=None):
+    def __init__(self, tab, parent=None, picker=False):
         super().__init__(parent)
         self.window = parent
         self.main_editor = self.window
 
-        self.set_up()
+        self.set_up(picker)
 
         self.tab = tab.create(self)
         self.grid.addWidget(self.tab, 0, 0, 1, 2)
@@ -169,7 +173,7 @@ class SingleDatabaseEditor(EditHistoryDialog):
         else:
             pass
 
-    def set_up(self):
+    def set_up(self, picker: bool):
         self.setStyleSheet("font: 10pt;")
         self.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
         self.setWindowFlag(Qt.WindowMinMaxButtonsHint, True)
@@ -179,11 +183,8 @@ class SingleDatabaseEditor(EditHistoryDialog):
         self.grid = QGridLayout(self)
         self.setLayout(self.grid)
 
-        self.buttonbox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel | QDialogButtonBox.Apply, Qt.Horizontal, self)
+        self.buttonbox = self.button_box(picker)
         self.grid.addWidget(self.buttonbox, 1, 1)
-        self.buttonbox.accepted.connect(self.accept)
-        self.buttonbox.rejected.connect(self.reject)
-        self.buttonbox.button(QDialogButtonBox.Apply).clicked.connect(self.apply)
 
     def history_tabs(self) -> list:
         return [self.tab]
@@ -194,21 +195,13 @@ class SingleDatabaseEditor(EditHistoryDialog):
     def on_tab_close(self):
         self.tab.on_tab_close()
 
-    def accept(self):
+    def done(self, result):
+        # Whichever button closed it, the edits stay
         self.finish_editing()
         self.save_geometry()
         self.on_tab_close()
         HISTORY.commit()
-        super().accept()
-
-    def reject(self):
-        self.cancel_history()
-        self.save_geometry()
-        self.on_tab_close()
-        super().reject()
-
-    def apply(self):
-        self.apply_history()
+        super().done(result)
 
     def closeEvent(self, event):
         self.save_geometry()
@@ -228,7 +221,7 @@ class MultiDatabaseEditor(SingleDatabaseEditor):
         self.window = parent
         self.main_editor = self.window
 
-        self.set_up()
+        self.set_up(picker=False)
 
         self.tab_bar = QTabWidget(self)
         self.grid.addWidget(self.tab_bar, 0, 0, 1, 2)
@@ -309,7 +302,7 @@ class SingleResourceEditor(EditHistoryDialog):
     Resources are recorded like the database, and reach the project when it is
     saved.
     """
-    def __init__(self, tab, resource_types=None, parent=None, *args, **kwargs):
+    def __init__(self, tab, resource_types=None, parent=None, *args, picker=False, **kwargs):
         super().__init__(parent)
         self.window = parent
         self.main_editor = parent
@@ -323,11 +316,8 @@ class SingleResourceEditor(EditHistoryDialog):
         self.grid = QGridLayout(self)
         self.setLayout(self.grid)
 
-        self.buttonbox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel | QDialogButtonBox.Apply, Qt.Horizontal, self)
+        self.buttonbox = self.button_box(picker)
         self.grid.addWidget(self.buttonbox, 1, 1)
-        self.buttonbox.accepted.connect(self.accept)
-        self.buttonbox.rejected.connect(self.reject)
-        self.buttonbox.button(QDialogButtonBox.Apply).clicked.connect(self.apply)
 
         self.tab = tab.create(self, *args, **kwargs)
         self.grid.addWidget(self.tab, 0, 0, 1, 2)
@@ -349,22 +339,13 @@ class SingleResourceEditor(EditHistoryDialog):
     def current_history_tab(self):
         return self.tab
 
-    def accept(self):
+    def done(self, result):
+        # Whichever button closed it, the edits stay
         self.finish_editing()
         self.save_geometry()
         HISTORY.commit()
-        super().accept()
+        super().done(result)
         self.close()
-
-    def reject(self):
-        self.cancel_history()
-        self.save_geometry()
-        super().reject()
-        self.close()
-
-    def apply(self):
-        self.apply_history()
-        self.save_geometry()
 
     def closeEvent(self, event):
         self.save_geometry()
@@ -394,11 +375,8 @@ class MultiResourceEditor(SingleResourceEditor):
         self.grid = QGridLayout(self)
         self.setLayout(self.grid)
 
-        self.buttonbox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel | QDialogButtonBox.Apply, Qt.Horizontal, self)
+        self.buttonbox = self.button_box(picker=False)
         self.grid.addWidget(self.buttonbox, 1, 1)
-        self.buttonbox.accepted.connect(self.accept)
-        self.buttonbox.rejected.connect(self.reject)
-        self.buttonbox.button(QDialogButtonBox.Apply).clicked.connect(self.apply)
 
         self.tab_bar = QTabWidget(self)
         self.grid.addWidget(self.tab_bar, 0, 0, 1, 2)

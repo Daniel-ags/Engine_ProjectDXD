@@ -128,7 +128,7 @@ def get_full_editor(parent=None) -> NewMultiResourceEditor:
     return editor
 
 def get_animations() -> tuple:
-    window = SingleResourceEditor(NewSimpleCombatAnimDatabase, ['combat_anims'])
+    window = SingleResourceEditor(NewSimpleCombatAnimDatabase, ['combat_anims'], picker=True)
     result = window.exec_()
     if result == QDialog.Accepted:
         selected_combat_anim = window.tab.right_frame.current

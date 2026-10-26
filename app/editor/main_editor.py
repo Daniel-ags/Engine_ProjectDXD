@@ -7,7 +7,7 @@ from typing import Optional
 from PyQt5.QtWidgets import QMainWindow, QAction, QMenu, QMessageBox, QApplication, \
     QDesktopWidget, \
     QToolButton, QWidget, QWidgetAction, QStackedWidget
-from PyQt5.QtGui import QIcon
+from PyQt5.QtGui import QIcon, QKeySequence
 from PyQt5.QtCore import QTimer
 
 from app import autoupdate, dark_theme
@@ -258,6 +258,10 @@ class MainEditor(QMainWindow):
         self.quit_act = QAction(
             _("&Quit"), self, shortcut="Ctrl+Q", triggered=self.close)
 
+        # One history for every window: these undo the last change anywhere
+        self.undo_act = QAction(_("Undo"), self, shortcut=QKeySequence.Undo, triggered=self.undo)
+        self.redo_act = QAction(_("Redo"), self, shortcut=QKeySequence.Redo, triggered=self.redo)
+
         self.dump_csv = QAction(
             "Dump CSV data", self, triggered=lambda: self.project_save_load_handler.dump_csv(DB))
         self.dump_script = QAction(
@@ -342,6 +346,21 @@ class MainEditor(QMainWindow):
         self.modify_events_act = QAction(
             "Edit Events", self, triggered=functools.partial(windows(EventDatabase.edit), self))
 
+    def finish_editing(self):
+        """Ends the edit in the focused field of this window, which some fields apply
+        only when they lose focus"""
+        focused = QApplication.focusWidget()
+        if focused is not None and QWidget.window(focused) is self:
+            focused.clearFocus()
+
+    def undo(self):
+        self.finish_editing()
+        HISTORY.undo()
+
+    def redo(self):
+        self.finish_editing()
+        HISTORY.redo()
+
     def edit_level(self):
         self.app_state_manager.change_and_broadcast(
             'main_editor_mode', MainEditorScreenStates.LEVEL_EDITOR)
@@ -370,6 +389,9 @@ class MainEditor(QMainWindow):
         file_menu.addAction(self.quit_act)
 
         edit_menu = QMenu(_("Edit"), self)
+        edit_menu.addAction(self.undo_act)
+        edit_menu.addAction(self.redo_act)
+        edit_menu.addSeparator()
         for action in self.database_actions.values():
             edit_menu.addAction(action)
         edit_menu.addSeparator()
