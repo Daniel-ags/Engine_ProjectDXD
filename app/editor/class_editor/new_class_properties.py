@@ -205,10 +205,15 @@ class NewClassProperties(QWidget):
         # final_section.addWidget(QVLine())
         # final_section.addLayout(right_section)
 
-        timer.get_timer().tick_elapsed.connect(self.tick)
+        self.icon_frame = None
+        timer.connect_tick(self, self.tick)
 
     def tick(self):
-        self.on_icon_change()
+        # The list's map sprites move only when the passive counter's frame does
+        frame = timer.get_timer().passive_counter.count
+        if frame != self.icon_frame:
+            self.icon_frame = frame
+            self.on_icon_change()
 
     def on_icon_changed(self, nid):
         if self.current:

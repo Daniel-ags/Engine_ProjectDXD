@@ -37,7 +37,7 @@ class GlobalEditor(QMainWindow):
         self.create_actions()
         self.set_icons()
 
-        timer.get_timer().tick_elapsed.connect(self.map_view.update_view)
+        timer.connect_tick(self, self.map_view.update_view)
         QtWidgets.qApp.focusChanged.connect(self.update_overworld_widget)
 
     def update_overworld_widget(self):

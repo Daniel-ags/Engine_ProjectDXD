@@ -74,7 +74,7 @@ class UnitPainterMenu(QWidget):
         self.display = None
         self.state_manager.subscribe_to_key(
             UnitPainterMenu.__name__, 'selected_level', self.set_current_level)
-        timer.get_timer().tick_elapsed.connect(self.tick)
+        timer.connect_tick(self, self.tick)
 
     def on_visibility_changed(self, state):
         pass
@@ -677,7 +677,7 @@ class GenericUnitDialog(Dialog):
 
         self.set_current(self.current)
 
-        timer.get_timer().tick_elapsed.connect(self.tick)
+        timer.connect_tick(self, self.tick)
 
     def tick(self):
         self.class_box.model.dataChanged.emit(self.class_box.model.index(

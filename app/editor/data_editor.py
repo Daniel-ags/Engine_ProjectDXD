@@ -1,4 +1,4 @@
-from PyQt5 import QtGui
+from PyQt5 import QtGui, sip
 from PyQt5.QtWidgets import QApplication, QDialog, QGridLayout, QDialogButtonBox, QLineEdit, \
     QPlainTextEdit, QTabWidget, QTextEdit, QSizePolicy
 from PyQt5.QtCore import QEvent, Qt, QTimer
@@ -35,7 +35,12 @@ class EditHistoryDialog(QDialog):
         self.change_origins = []  # Of the changes no tab shows yet
         app = QApplication.instance()
         app.focusChanged.connect(self.on_focus_changed)
-        app.installEventFilter(self)
+        # A key press goes to the focused widget, or to the dialog when nothing in it
+        # has focus, so only those are watched for the undo keys. Filtering every
+        # event the application sends slowed every click and redraw
+        self.installEventFilter(self)
+        self.key_widget = None
+        self.watch_keys(QApplication.focusWidget())
         HISTORY.listen(self.on_history_changed)
         self.finished.connect(self.stop_history)
 
@@ -45,10 +50,20 @@ class EditHistoryDialog(QDialog):
         self.history_running = False
         app = QApplication.instance()
         app.focusChanged.disconnect(self.on_focus_changed)
-        app.removeEventFilter(self)
+        self.watch_keys(None)
+        self.removeEventFilter(self)
         HISTORY.unlisten(self.on_history_changed)
         for tab in self.history_tabs():
             HISTORY.unbind(tab)
+
+    def watch_keys(self, widget):
+        """Watches widget for the undo keys in place of the one watched before, if it
+        is in this dialog"""
+        if self.key_widget is not None and not sip.isdeleted(self.key_widget):
+            self.key_widget.removeEventFilter(self)
+        self.key_widget = widget if widget is not None and self.isAncestorOf(widget) else None
+        if self.key_widget is not None:
+            self.key_widget.installEventFilter(self)
 
     def history_tabs(self) -> list:
         raise NotImplementedError
@@ -75,6 +90,7 @@ class EditHistoryDialog(QDialog):
         HISTORY.undo_to(self.history_mark)
 
     def on_focus_changed(self, old, new):
+        self.watch_keys(new)
         # The field losing focus has finished its edit by now: Qt sends it
         # FocusOut before announcing the change
         if new is not None and self.isAncestorOf(new):

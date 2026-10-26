@@ -17,7 +17,6 @@ from app.editor.new_editor_tab import NewEditorTab
 from app.editor.portrait_editor import portrait_model, new_portrait_properties
 from app.utilities.typing import NID
 
-from app.editor import timer
 
 class NewPortraitDatabase(NewEditorTab):
     catalog_type = PortraitCatalog
@@ -62,10 +61,8 @@ class NewPortraitDatabase(NewEditorTab):
         return reference_dialogs.check_delete(RType.PORTRAITS, nid, 'Portrait', self)
 
 def get():
-    timer.get_timer().start_for_editor()
     window = SingleResourceEditor(NewPortraitDatabase, ['portraits'])
     result = window.exec_()
-    timer.get_timer().stop_for_editor()
     if result == QDialog.Accepted:
         selected_portrait = window.tab.right_frame.current
         return selected_portrait, True

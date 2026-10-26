@@ -171,7 +171,7 @@ class GroupWidget(QWidget):
 
         self.layout.addWidget(self.view, 2, 0, 1, 3)
 
-        timer.get_timer().tick_elapsed.connect(self.tick)
+        timer.connect_tick(self, self.tick)
 
         self.set_current(self.current)
 

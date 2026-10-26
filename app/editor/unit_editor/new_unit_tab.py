@@ -10,7 +10,7 @@ from app.editor.edit_history import HISTORY
 from app.data.database.database import DB
 from app.data.database.database_types import DatabaseType as DType
 from app.data.database.units import UnitCatalog
-from app.editor import reference_dialogs, timer
+from app.editor import reference_dialogs
 from app.editor.data_editor import SingleDatabaseEditor
 from app.editor.unit_editor import unit_import, new_unit_properties
 from app.editor.portrait_editor import portrait_model
@@ -97,12 +97,10 @@ class NewUnitDatabase(NewEditorTab):
 
 def get(unit_nid: Optional[NID] = None, parent=None):
     """Opens the unit editor on unit_nid. Returns the unit it shows when closed with OK."""
-    timer.get_timer().stop_for_editor()  # Don't need these while running game
     window = SingleDatabaseEditor(NewUnitDatabase, parent)
     if unit_nid in DB.units:
         window.tab.tree_list.select_item(unit_nid)
     result = window.exec_()
-    timer.get_timer().start_for_editor()
     selected_unit = window.tab.right_frame.current
     if result == QDialog.Accepted and selected_unit:
         return selected_unit, True

@@ -134,7 +134,7 @@ class EaselWidget(QGraphicsView):
 
         self.working_image = None
 
-        timer.get_timer().tick_elapsed.connect(self.tick)
+        timer.connect_tick(self, self.tick)
 
     def tick(self):
         if self.current_palette:

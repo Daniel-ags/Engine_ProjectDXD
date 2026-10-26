@@ -13,7 +13,6 @@ from app.data.database.database import DB, Database
 from app.data.resources.resources import RESOURCES, Resources
 from app.data.resources.base_catalog import ManifestCatalog
 from app.data.category import Categories, CategorizedCatalog
-from app.editor import timer
 from app.editor.custom_widgets import ObjBox
 from app.editor.data_editor import SingleDatabaseEditor
 from app.editor.edit_history import HISTORY
@@ -97,10 +96,8 @@ class NewEditorTab(QWidget, Generic[T]):
 
     @classmethod
     def edit(cls, parent=None):
-        timer.get_timer().stop_for_editor()  # Don't need these while running game
         window = SingleDatabaseEditor(cls, parent)
         window.exec_()
-        timer.get_timer().start_for_editor()
         return window
 
     def reset(self):

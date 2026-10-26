@@ -162,7 +162,7 @@ class PropertiesMenu(QWidget):
         self.state_manager.subscribe_to_key(
             PropertiesMenu.__name__, 'selected_level', self.set_current)
 
-        timer.get_timer().tick_elapsed.connect(self.tick)
+        timer.connect_tick(self, self.tick)
 
     def tick(self):
         if DB.constants.value('overworld'):

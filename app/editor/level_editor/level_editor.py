@@ -42,7 +42,7 @@ class LevelEditor(QMainWindow):
         self.create_actions()
         self.set_icons()
 
-        timer.get_timer().tick_elapsed.connect(self.map_view.update_view)
+        timer.connect_tick(self, self.map_view.update_view)
 
     def on_property_tab_select(self, visible):
         if visible:

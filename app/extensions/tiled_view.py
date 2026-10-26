@@ -22,7 +22,7 @@ class DraggableTileImageView(QGraphicsView):
         self.setStyleSheet("background-color:rgb(128, 128, 128);")
         self.screen_scale = 1
         self.drag_origin = None
-        timer.get_timer().tick_elapsed.connect(self.tick)
+        timer.connect_tick(self, self.tick)
 
     def update_view(self):
         """Redraw the view in its entirety."""

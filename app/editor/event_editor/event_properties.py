@@ -697,7 +697,7 @@ class ShowMapDialog(QDialog):
         layout.addWidget(self.map_view)
         layout.addWidget(self.position_edit, Qt.AlignRight)
 
-        timer.get_timer().tick_elapsed.connect(self.map_view.update_view)
+        timer.connect_tick(self, self.map_view.update_view)
 
     def select_current(self):
         tilemap_nid = self.map_selector.edit.currentText()

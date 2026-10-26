@@ -11,7 +11,7 @@ import app.engine.skill_component_access as SCA
 from app.data.database.skills import SkillCatalog, SkillPrefab
 from app.editor.edit_history import HISTORY
 from app.data.database.database_types import DatabaseType as DType
-from app.editor import reference_dialogs, timer
+from app.editor import reference_dialogs
 from app.editor.new_editor_tab import NewEditorTab
 from app.editor.data_editor import SingleDatabaseEditor
 from app.editor.component_editor_properties import NewComponentProperties, component_search_text
@@ -34,10 +34,8 @@ class NewSkillDatabase(NewEditorTab):
 
     @classmethod
     def edit(cls, parent=None):
-        timer.get_timer().stop_for_editor()  # Don't need these while running game
         window = SingleDatabaseEditor(NewSkillDatabase, parent)
         window.exec_()
-        timer.get_timer().start_for_editor()
 
     @property
     def data(self):

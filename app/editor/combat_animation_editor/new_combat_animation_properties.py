@@ -278,7 +278,7 @@ class NewCombatAnimProperties(QWidget):
         self.setLayout(final_section)
         final_section.addWidget(self.main_splitter)
 
-        timer.get_timer().tick_elapsed.connect(self.tick)
+        timer.connect_tick(self, self.tick)
 
     def tick(self):
         self.draw_frame()

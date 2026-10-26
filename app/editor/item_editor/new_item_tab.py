@@ -10,7 +10,7 @@ import app.engine.item_component_access as ICA
 from app.editor.edit_history import HISTORY
 from app.data.database.database_types import DatabaseType as DType
 from app.data.database.items import ItemCatalog, ItemPrefab
-from app.editor import reference_dialogs, timer
+from app.editor import reference_dialogs
 from app.editor.data_editor import SingleDatabaseEditor
 from app.editor.item_editor import item_import, item_model
 from app.editor.component_editor_properties import NewComponentProperties, component_search_text
@@ -34,10 +34,8 @@ class NewItemDatabase(NewEditorTab):
 
     @classmethod
     def edit(cls, parent=None):
-        timer.get_timer().stop_for_editor()  # Don't need these while running game
         window = SingleDatabaseEditor(NewItemDatabase, parent)
         window.exec_()
-        timer.get_timer().start_for_editor()
 
     @property
     def data(self):

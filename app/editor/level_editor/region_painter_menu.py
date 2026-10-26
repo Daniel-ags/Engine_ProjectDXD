@@ -59,7 +59,7 @@ class RegionMenu(QWidget):
             RegionMenu.__name__, 'selected_level', self.set_current_level)
         self.state_manager.subscribe_to_key(
             RegionMenu.__name__, 'ui_refresh_signal', self._refresh_view)
-        timer.get_timer().tick_elapsed.connect(self.tick)
+        timer.connect_tick(self, self.tick)
 
     def tick(self):
         status_box = self.modify_region_widget.status_box

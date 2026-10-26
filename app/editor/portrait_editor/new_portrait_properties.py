@@ -151,7 +151,7 @@ class NewPortraitProperties(QWidget):
         self.setLayout(final_section)
         final_section.addWidget(final_splitter)
 
-        timer.get_timer().tick_elapsed.connect(self.tick)
+        timer.connect_tick(self, self.tick)
 
         msg = "Auto-guessing Offsets..."
         self.progress_dialog = QProgressDialog(msg, "Cancel", 0, 100, self)

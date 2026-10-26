@@ -47,12 +47,16 @@ MAX_CHANGE_SETS = 100
 CHECK_UNRECORDED = bool(os.environ.get('LT_EDITOR_CHECK'))
 
 
-def saved(record) -> Any:
-    """A record's saved form, sharing nothing with the record"""
+def saved_form(record) -> Any:
+    """A record's saved form, which may share lists and dicts with the record"""
     if isinstance(record, WithResources):
         # With where its files are, which a resource's saved form leaves out
-        return copy.deepcopy({'record': record.save(), 'files': record.file_paths()})
-    return copy.deepcopy(record.save())
+        return {'record': record.save(), 'files': record.file_paths()}
+    return record.save()
+
+def saved(record) -> Any:
+    """A record's saved form, sharing nothing with the record"""
+    return copy.deepcopy(saved_form(record))
 
 def slot_names(cls) -> Iterator[str]:
     for klass in cls.__mro__:
@@ -296,7 +300,8 @@ class EditHistory:
         """Records whatever changed since the last commit as one undo step"""
         if self._open:
             return  # The open change set picks it up when it ends
-        self.begin(label, origin)
+        # Nothing changes between its start and end, so it collects once, as it ends
+        self._open.append(ChangeSet(label, origin))
         self.end()
 
     def modifying(self, records: Iterable[Tuple[Any, Data]]) -> _ModifyingContext:
@@ -466,8 +471,10 @@ class EditHistory:
         recorded = set()
         for bindings, key in self._all_bound():
             data, record, baseline = bindings[key]
-            now = saved(record)
-            if now != baseline:
+            # Copied only once it differs: most records are unchanged, and a level is big
+            form = saved_form(record)
+            if form != baseline:
+                now = copy.deepcopy(form)
                 if key not in recorded:  # Two owners may show the same record
                     change_set.deltas.append(RecordChange(data, record, baseline, now))
                     recorded.add(key)
