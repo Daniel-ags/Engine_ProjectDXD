@@ -231,7 +231,10 @@ class ProjectFileBackend():
             error_msg.setWindowTitle("Serialization Error")
             error_msg.exec_()
 
+        HISTORY.commit()
         success = RESOURCES.save(self.current_proj, progress=self.save_progress)
+        # Saving points each resource at its file in the project, which is not an edit to undo
+        HISTORY.rebaseline()
         if not success:
             display_error("resources")
             return False

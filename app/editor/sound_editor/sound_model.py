@@ -6,6 +6,7 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from app.utilities import str_utils
 from app.data.resources.sounds import SFXPrefab, SongPrefab
 from app.data.resources.resources import RESOURCES
+from app.editor.edit_history import HISTORY
 from app.editor.settings import MainSettingsController
 from app.editor.table_model import TableModel
 from app.editor.sound_editor.sound_dialog import ModifySFXDialog, ModifyMusicDialog
@@ -89,16 +90,8 @@ class SFXModel(SoundModel):
     def modify(self, indices):
         idxs = {i.row() for i in indices}
         current = [self._data[idx] for idx in idxs]
-        saved_d = [c.save() for c in current]
         dialog = ModifySFXDialog(self._data, current, self.window)
-        result = dialog.exec_()
-        if result == QDialog.Accepted:
-            pass
-        else:
-            for idx, c in enumerate(current):
-                c.tag = saved_d[idx][1]
-                c.nid = saved_d[idx][0]
-                self._data.update_nid(c, c.nid)
+        modify_recorded(self._data, current, dialog)
 
     def flags(self, index):
         main_flags = Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemNeverHasChildren
@@ -137,35 +130,39 @@ class MusicModel(SoundModel):
             return
         # Only the last index
         current = [self._data[idx] for idx in idxs]
-        saved_d = [c.full_save() for c in current]
         dialog = ModifyMusicDialog(self._data, current, self.window)
-        result = dialog.exec_()
-        if result == QDialog.Accepted:
-            pass
-        else:
-            for idx, c in enumerate(current):
-                c.nid = saved_d[idx][0]
-                c.intro_full_path = saved_d[idx][1]
-                c.battle_full_path = saved_d[idx][2]
-                c.soundroom_idx = saved_d[idx][3]
-                c.display_name = saved_d[idx][4]
-                self._data.update_nid(c, c.nid)
+        modify_recorded(self._data, current, dialog)
 
     def autofill(self):
         curr_idx = max(song_prefab.soundroom_idx for song_prefab in self._data)
-        for song_prefab in self._data:
-            if song_prefab.soundroom_idx == 0:
-                curr_idx += 1
-                song_prefab.soundroom_idx = curr_idx
+        with HISTORY.change_set('Number songs', origin=self.window), \
+                HISTORY.modifying([(song_prefab, self._data) for song_prefab in self._data]):
+            for song_prefab in self._data:
+                if song_prefab.soundroom_idx == 0:
+                    curr_idx += 1
+                    song_prefab.soundroom_idx = curr_idx
         self.dataChanged.emit(self.index(0, 2), self.index(self.rowCount()-1, 2), [])
 
     def delete(self, index):
-        if idx := self._data[index.row()].soundroom_idx:
-            sorted_db = sorted(self._data, key=lambda x: x.soundroom_idx)
-            max_idx = sorted_db[-1].soundroom_idx
-            soundroom = sorted_db[-max_idx:]
+        deleted = self._data[index.row()]
+        with HISTORY.change_set('Delete %s' % deleted.nid, origin=self.window), \
+                HISTORY.modifying([(song_prefab, self._data) for song_prefab in self._data]):
+            if idx := deleted.soundroom_idx:
+                sorted_db = sorted(self._data, key=lambda x: x.soundroom_idx)
+                max_idx = sorted_db[-1].soundroom_idx
+                soundroom = sorted_db[-max_idx:]
 
-            for song_prefab in soundroom[idx:]:
-                song_prefab.soundroom_idx -= 1
+                for song_prefab in soundroom[idx:]:
+                    song_prefab.soundroom_idx -= 1
 
-        super().delete(index)
+            super().delete(index)
+
+def modify_recorded(data, current: list, dialog: QDialog):
+    """Runs the dialog that modifies the current sounds, recording what it changes,
+    and takes it all back if the dialog is cancelled"""
+    mark = HISTORY.mark()
+    with HISTORY.change_set('Modify %s' % ', '.join(c.nid for c in current)), \
+            HISTORY.modifying([(c, data) for c in current]):
+        result = dialog.exec_()
+    if result != QDialog.Accepted:
+        HISTORY.undo_to(mark)

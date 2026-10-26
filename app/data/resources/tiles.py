@@ -16,6 +16,8 @@ from app.utilities.typing import NestedPrimitiveDict
 
 
 class TileMapPrefab(WithResources, Prefab):
+    path_fields = ()  # A tilemap is only data, which save() holds
+
     def __init__(self, nid):
         self.nid = nid
         self.width, self.height = int(TILEX), int(TILEY)
@@ -103,6 +105,8 @@ class TileMapPrefab(WithResources, Prefab):
         return self
 
 class TileSet(WithResources, Prefab):
+    path_fields = ('full_path', 'autotile_full_path')
+
     def __init__(self, nid, full_path=None):
         self.nid = nid
         self.width, self.height = 0, 0

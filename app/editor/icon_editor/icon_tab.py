@@ -36,6 +36,8 @@ class IconSheetList(QListWidget):
 
 class IconTab(QWidget):
     side_menu_enabled: bool = False
+    # Whether the tab can show its data again after an undo changes it
+    supports_undo = True
 
     def __init__(self, data, title, model, parent=None, initial_icon_nid=None):
         super().__init__(parent)
@@ -138,7 +140,8 @@ class IconTab(QWidget):
                 self.icon_sheet_list.insertItem(i, icon_sheet.nid)
 
     def reset(self):
-        pass
+        self.full_model.rebuild()
+        self.update_list()
 
     def _type(self):
         return self.__class__.__name__

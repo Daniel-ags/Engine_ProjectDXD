@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import List, Optional, override, Set
+from typing import Any, Dict, List, Optional, override, Set
 
 from app.data.category import CategorizedCatalog
 from app.data.resources.base_catalog import ManifestCatalog
@@ -116,6 +116,16 @@ class CombatAnimation(WithResources, Prefab):
     def used_resources(self) -> List[Optional[Path]]:
         return [Path(weapon_anim.full_path) for weapon_anim in self.weapon_anims]
 
+    @override
+    def file_paths(self) -> Dict[str, Any]:
+        """Each weapon animation's file, by the weapon animation's nid"""
+        return {weapon_anim.nid: weapon_anim.full_path for weapon_anim in self.weapon_anims}
+
+    @override
+    def set_file_paths(self, paths: Dict[str, Any]) -> None:
+        for weapon_anim in self.weapon_anims:
+            weapon_anim.full_path = paths.get(weapon_anim.nid)
+
     @classmethod
     def restore(cls, s_dict):
         self = cls(s_dict['nid'])
@@ -167,6 +177,14 @@ class EffectAnimation(WithResources, Prefab):
             self.palettes.append([palette_name, palette_nid])
         return self
 
+def copy_image(catalog: ManifestCatalog, anim, new_full_path: str):
+    """Writes anim's image to new_full_path, leaving anim pointing where it does. The
+    editors drop full_path from an animation whose frames they changed in memory."""
+    if anim.full_path:
+        catalog.make_copy(anim.full_path, new_full_path)
+    elif anim.pixmap:
+        anim.pixmap.save(new_full_path, "PNG")
+
 class CombatCatalog(ManifestCatalog, CategorizedCatalog):
     manifest = 'combat_anims.json'
     title = 'Combat Animations'
@@ -187,9 +205,13 @@ class CombatCatalog(ManifestCatalog, CategorizedCatalog):
                 self.make_copy(weapon_anim.full_path, new_full_path)
                 weapon_anim.set_full_path(new_full_path)
 
-    def save_resources(self, loc):
+    def save_resources(self, loc, repoint=True):
         for combat_anim in self:
-            self.save_image(loc, combat_anim)
+            if repoint:
+                self.save_image(loc, combat_anim)
+                continue
+            for weapon_anim in combat_anim.weapon_anims:
+                copy_image(self, weapon_anim, os.path.join(loc, "%s-%s.png" % (combat_anim.nid, weapon_anim.nid)))
 
 class CombatEffectCatalog(ManifestCatalog, CategorizedCatalog):
     manifest = 'combat_effects.json'
@@ -210,7 +232,10 @@ class CombatEffectCatalog(ManifestCatalog, CategorizedCatalog):
             self.make_copy(effect_anim.full_path, new_full_path)
             effect_anim.set_full_path(new_full_path)
 
-    def save_resources(self, loc):
+    def save_resources(self, loc, repoint=True):
         for effect_anim in self:
             if effect_anim.pixmap or effect_anim.full_path:  # Possible that no pixmap is associated with a simple control script
-                self.save_image(loc, effect_anim)
+                if repoint:
+                    self.save_image(loc, effect_anim)
+                else:
+                    copy_image(self, effect_anim, os.path.join(loc, '%s.png' % effect_anim.nid))

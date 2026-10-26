@@ -416,11 +416,9 @@ class ResourceCollectionModel(DragDropCollectionModel):
         if role == Qt.EditRole and self.drop_to is None:
             if value:
                 item = self._data[index.row()]
-                old_nid = item.nid
                 nids = [d.nid for d in self._data if d is not item]
                 nid = str_utils.get_next_name(value, nids)
-                self._data.update_nid(item, nid)
-                self.on_nid_changed(old_nid, nid)
+                HISTORY.rename(self._data, item, nid, self.on_nid_changed)
         return True
 
     def flags(self, index):

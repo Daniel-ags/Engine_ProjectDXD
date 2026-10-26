@@ -7,7 +7,7 @@ from PyQt5.QtGui import QKeySequence
 from app.data.resources.resources import RESOURCES
 
 from app.data.serialization.versions import CURRENT_SERIALIZATION_VERSION
-from app.editor.edit_history import HISTORY
+from app.editor.edit_history import HISTORY, LEGACY_RESOURCES
 from app.editor.settings import MainSettingsController
 from app.editor.settings.preference_definitions import Preference
 
@@ -292,15 +292,19 @@ class MultiDatabaseEditor(SingleDatabaseEditor):
         super().closeEvent(event)
 
 class SingleResourceEditor(EditHistoryDialog):
-    # Resources are not recorded yet, so an undo would take back only the
-    # database's half of an edit, like the units a portrait rename reached
-    undo_enabled = False
-
+    """
+    Resources are recorded like the database, and reach the project when it is
+    saved. The legacy combat animation, effect and palette editors keep unsaved
+    frames only in memory, so they write their catalogs to the project on OK and
+    load them from it again on Cancel, without undo.
+    """
     def __init__(self, tab, resource_types=None, parent=None, *args, **kwargs):
         super().__init__(parent)
         self.window = parent
         self.main_editor = parent
         self.resource_types = resource_types
+        self.legacy = any(resource_type in LEGACY_RESOURCES for resource_type in resource_types)
+        self.undo_enabled = not self.legacy
         self.setStyleSheet("font: 10pt;")
         self.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
         self.setWindowFlag(Qt.WindowMinMaxButtonsHint, True)
@@ -338,13 +342,7 @@ class SingleResourceEditor(EditHistoryDialog):
 
     def accept(self):
         self.finish_editing()
-        current_proj = self.settings.get_current_project()
-        # RESOURCES must be saved here because if we grabbed a file from somewhere else
-        # on our computer not under the project tree, we must transfer it under the project
-        # tree. The project does not and should not know the absolute path of every one of its
-        # resources, just where the resources should be.
-        if current_proj and current_proj != 'default.ltproj':
-            RESOURCES.save(current_proj, self.resource_types)
+        self.save_legacy()
         self.save_geometry()
         HISTORY.commit()
         super().accept()
@@ -352,19 +350,22 @@ class SingleResourceEditor(EditHistoryDialog):
 
     def reject(self):
         current_proj = self.settings.get_current_project()
-        if current_proj:
-            RESOURCES.load(current_proj, CURRENT_SERIALIZATION_VERSION)
+        if self.legacy and current_proj:
+            RESOURCES.load(current_proj, CURRENT_SERIALIZATION_VERSION, self.resource_types)
         self.cancel_history()
         self.save_geometry()
         super().reject()
         self.close()
 
     def apply(self):
-        current_proj = self.settings.get_current_project()
-        if current_proj and current_proj != 'default.ltproj':
-            RESOURCES.save(current_proj, self.resource_types)
+        self.save_legacy()
         self.apply_history()
         self.save_geometry()
+
+    def save_legacy(self):
+        current_proj = self.settings.get_current_project()
+        if self.legacy and current_proj and current_proj != 'default.ltproj':
+            RESOURCES.save(current_proj, self.resource_types)
 
     def closeEvent(self, event):
         self.save_geometry()
@@ -384,6 +385,8 @@ class MultiResourceEditor(SingleResourceEditor):
         self.window = parent
         self.main_editor = parent
         self.resource_types = resource_types
+        self.legacy = any(resource_type in LEGACY_RESOURCES for resource_type in resource_types)
+        self.undo_enabled = not self.legacy
         self.setWindowTitle("Resource Editor")
         self.setStyleSheet("font: 10pt;")
         self.setWindowFlag(Qt.WindowContextHelpButtonHint, False)

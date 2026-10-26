@@ -11,11 +11,10 @@ MARKER = 'TEST_MARKER_TERRAIN'
 
 class TilemapEditorSaveTests(unittest.TestCase):
     '''
-    The Save button in the tilemap editor has to leave the project on disk holding
-    the edits. The resource dialog that owns the tilemap editor restores itself on
-    Cancel by reloading the project from disk, so a save that misses the disk -- or
-    hits the wrong project -- silently throws away every map edit the moment the
-    user backs out of that dialog instead of hitting OK.
+    The Save button in the tilemap editor keeps the edits made so far: the tilemap
+    editor's own Cancel rewinds only to the save, and the tilemap dialog that opened
+    it keeps the save through its Cancel. Like every resource edit, the save reaches
+    the project on disk when the project is saved.
     '''
 
     @classmethod
@@ -30,6 +29,7 @@ class TilemapEditorSaveTests(unittest.TestCase):
         from app.data.database.database import DB
         from app.data.resources.resources import RESOURCES
         from app.data.serialization.versions import CURRENT_SERIALIZATION_VERSION
+        from app.editor.edit_history import HISTORY
 
         self.tmp_dir = tempfile.mkdtemp()
         self.proj = os.path.join(self.tmp_dir, 'save_test.ltproj')
@@ -39,6 +39,7 @@ class TilemapEditorSaveTests(unittest.TestCase):
 
         DB.load(self.proj, CURRENT_SERIALIZATION_VERSION)
         RESOURCES.load(self.proj, CURRENT_SERIALIZATION_VERSION)
+        HISTORY.clear()
         self.version = CURRENT_SERIALIZATION_VERSION
 
     def tearDown(self) -> None:
@@ -57,72 +58,80 @@ class TilemapEditorSaveTests(unittest.TestCase):
         RESOURCES.load('testing_proj.ltproj', CURRENT_SERIALIZATION_VERSION)
         DB.load('testing_proj.ltproj', CURRENT_SERIALIZATION_VERSION)
 
-    def make_editor(self, proj_dir):
-        """A tilemap editor on the first tilemap, pointed at proj_dir."""
+    def terrain(self):
         from app.data.resources.resources import RESOURCES
-        from app.editor.tilemap_editor import MapEditor
-
-        editor = MapEditor(None, RESOURCES.tilemaps[0])
-        patcher = patch.object(
-            type(editor.settings), 'get_current_project', return_value=proj_dir)
-        patcher.start()
-        self.addCleanup(patcher.stop)
-        return editor
-
-    def terrain_on_disk(self):
-        """What the project on disk says the first tilemap's origin terrain is.
-
-        This is what the owning resource dialog's Cancel would restore.
-        """
-        from app.data.resources.resources import RESOURCES
-        RESOURCES.load(self.proj, self.version)
         return RESOURCES.tilemaps[0].layers[0].terrain_grid.get((0, 0))
 
-    @patch('app.editor.tilemap_editor.QMessageBox')
-    def test_save_survives_cancelling_the_resource_dialog(self, _message_box):
-        editor = self.make_editor(self.proj)
+    def terrain_on_disk(self):
+        """What the project on disk says the first tilemap's origin terrain is"""
+        from app.data.resources.resources import RESOURCES
+        RESOURCES.load(self.proj, self.version)
+        return self.terrain()
+
+    def edit_and_save(self, editor):
         editor.current.layers[0].terrain_grid[(0, 0)] = MARKER
-
         editor.save_current()
-
-        self.assertEqual(self.terrain_on_disk(), MARKER)
 
     @patch('app.editor.tilemap_editor.QMessageBox')
     def test_save_then_cancel_in_the_tilemap_editor_keeps_the_save(self, _message_box):
-        editor = self.make_editor(self.proj)
-        editor.current.layers[0].terrain_grid[(0, 0)] = MARKER
-
-        editor.save_current()
+        from app.data.resources.resources import RESOURCES
+        from app.editor.tilemap_editor import MapEditor
+        editor = MapEditor(None, RESOURCES.tilemaps[0])
+        self.edit_and_save(editor)
         # Backing out of the tilemap editor rewinds to its snapshot, which the
         # save should have advanced -- otherwise Save then Cancel loses the work.
         editor.restore()
 
-        self.assertEqual(editor.current.layers[0].terrain_grid.get((0, 0)), MARKER)
+        self.assertEqual(MARKER, self.terrain())
 
     @patch('app.editor.tilemap_editor.QMessageBox')
-    def test_save_goes_to_the_current_project_not_a_stale_one(self, _message_box):
-        from app.data.database.database import DB
+    def test_save_survives_cancelling_the_tilemap_dialog(self, _message_box):
+        from app.editor.data_editor import SingleResourceEditor
+        from app.editor.tile_editor.tile_tab import TileMapDatabase
+        from app.editor.tilemap_editor import MapEditor
+        dialog = SingleResourceEditor(TileMapDatabase, ['tilemaps'])
+        self.addCleanup(dialog.stop_history)
+        tab = dialog.tab
+        tab.view.setCurrentIndex(tab.model.index(0))
 
-        # What a Save As leaves behind if nothing resyncs it
-        stale = os.path.join(self.tmp_dir, 'stale.ltproj')
-        shutil.copytree(self.proj, stale)
-        DB.current_proj_dir = stale
+        def edit_save_and_cancel(editor):
+            self.edit_and_save(editor)
+            editor.reject()
+        with patch.object(MapEditor, 'exec_', edit_save_and_cancel):
+            tab.edit_current()
+        dialog.reject()
 
-        editor = self.make_editor(self.proj)
-        editor.current.layers[0].terrain_grid[(0, 0)] = MARKER
-        editor.save_current()
-
-        self.assertEqual(self.terrain_on_disk(), MARKER)
+        self.assertEqual(MARKER, self.terrain())
 
     @patch('app.editor.tilemap_editor.QMessageBox')
-    def test_save_refuses_to_write_to_the_default_project(self, message_box):
-        editor = self.make_editor('some/path/default.ltproj')
-        editor.current.layers[0].terrain_grid[(0, 0)] = MARKER
+    def test_an_unsaved_edit_goes_with_the_tilemap_dialogs_cancel(self, _message_box):
+        from app.editor.data_editor import SingleResourceEditor
+        from app.editor.tile_editor.tile_tab import TileMapDatabase
+        from app.editor.tilemap_editor import MapEditor
+        before = self.terrain()
+        dialog = SingleResourceEditor(TileMapDatabase, ['tilemaps'])
+        self.addCleanup(dialog.stop_history)
+        tab = dialog.tab
+        tab.view.setCurrentIndex(tab.model.index(0))
 
-        editor.save_current()
+        def edit_and_ok(editor):
+            editor.current.layers[0].terrain_grid[(0, 0)] = MARKER
+            editor.accept()
+        with patch.object(MapEditor, 'exec_', edit_and_ok):
+            tab.edit_current()
+        dialog.reject()
 
-        self.assertNotEqual(self.terrain_on_disk(), MARKER)
-        message_box.warning.assert_called_once()
+        self.assertEqual(before, self.terrain())
+
+    @patch('app.editor.tilemap_editor.QMessageBox')
+    def test_save_writes_nothing_to_the_project_until_it_is_saved(self, _message_box):
+        from app.data.resources.resources import RESOURCES
+        from app.editor.tilemap_editor import MapEditor
+        before = self.terrain()
+        editor = MapEditor(None, RESOURCES.tilemaps[0])
+        self.edit_and_save(editor)
+
+        self.assertEqual(before, self.terrain_on_disk())
 
 
 if __name__ == '__main__':

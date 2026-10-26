@@ -100,6 +100,9 @@ class GlobalEditor(QMainWindow):
         self.current_level = overworld
         self.map_view.set_current_level(overworld, overworld=True)
 
+    def shows_overworld(self) -> bool:
+        return self.map_view.overworld_flag
+
     def create_actions(self):
         # menu actions
         self.zoom_in_act = QAction(

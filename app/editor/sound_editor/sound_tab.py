@@ -11,6 +11,9 @@ from app.editor.sound_editor.sound_player import SoundPlayer
 
 
 class SoundTab(QWidget):
+    # Whether the tab can show its data again after an undo changes it
+    supports_undo = True
+
     def __init__(self, data, title, model, view, parent=None):
         super().__init__(parent)
         self.window = parent
@@ -73,7 +76,9 @@ class SoundTab(QWidget):
             self.view.setCurrentIndex(last_index)
 
     def reset(self):
-        pass
+        # The proxy model over the table needs warning before the layout changes
+        self.model.layoutAboutToBeChanged.emit()
+        self.model.layoutChanged.emit()
 
     def update_list(self):
         pass

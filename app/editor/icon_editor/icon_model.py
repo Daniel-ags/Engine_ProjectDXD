@@ -22,10 +22,20 @@ class IconModel(ResourceCollectionModel):
     def __init__(self, data, window):
         super().__init__(data, window)
         self.sub_data = Data()
+        self.slice_sheets()
+
+    def slice_sheets(self):
         for icon in self._data:
             new_icons = icon_view.icon_slice(icon, self.width, self.height)
             for i in new_icons:
                 self.sub_data.append(i)
+
+    def rebuild(self):
+        """Slices the sheets as they are now, as after an undo"""
+        self.layoutAboutToBeChanged.emit()
+        self.sub_data.clear()
+        self.slice_sheets()
+        self.layoutChanged.emit()
 
     def rowCount(self, parent=None):
         return len(self.sub_data)
@@ -53,8 +63,11 @@ class IconModel(ResourceCollectionModel):
             return False
         if role == Qt.EditRole:
             item: Icon = self.sub_data[index.row()]
-            self.sub_data.update_nid(item, value)
-            self._data.get(item.parent_nid).set_alias(item.nid, item.icon_index)
+            sheet = self._data.get(item.parent_nid)
+            with HISTORY.change_set('Rename %s' % item.nid, origin=self.window), \
+                    HISTORY.modifying([(sheet, self._data)]):
+                self.sub_data.update_nid(item, value)
+                sheet.set_alias(item.nid, item.icon_index)
         return True
 
     def flags(self, index):
@@ -186,6 +199,13 @@ class MapIconModel(Icon16Model):
     def __init__(self, data, window):
         super().__init__(data, window)
         self.sub_data = self._data
+
+    def slice_sheets(self):
+        pass  # Map icons are never sliced -- sub_data *is* _data
+
+    def rebuild(self):
+        self.layoutAboutToBeChanged.emit()
+        self.layoutChanged.emit()
 
     def reorder_sub_data(self):
         # Map icons are never sliced -- sub_data *is* _data, so it is already in order

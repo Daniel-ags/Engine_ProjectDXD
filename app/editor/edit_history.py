@@ -37,25 +37,51 @@ from app.data.database import references
 from app.data.database.constants import Constant
 from app.data.database.database import DB
 from app.data.database.teams import TeamCatalog
+from app.data.resources.resource_prefab import WithResources
+from app.data.resources.resources import RESOURCES, Resources
 from app.utilities.data import Data
 from app.utilities.typing import NID
 
 MAX_CHANGE_SETS = 100
 CHECK_UNRECORDED = bool(os.environ.get('LT_EDITOR_CHECK'))
+# The resource catalogs recorded like the database's. The combat animation,
+# effect and palette editors keep unsaved frames only in memory, so they still
+# take back their edits by loading their catalogs from disk
+LEGACY_RESOURCES = ('combat_anims', 'combat_effects', 'combat_palettes')
+RECORDED_RESOURCES = tuple(name for name in Resources.save_data_types if name not in LEGACY_RESOURCES)
 
 
 def saved(record) -> Any:
     """A record's saved form, sharing nothing with the record"""
+    if isinstance(record, WithResources):
+        # With where its files are, which a resource's saved form leaves out
+        return copy.deepcopy({'record': record.save(), 'files': record.file_paths()})
     return copy.deepcopy(record.save())
+
+def slot_names(cls) -> Iterator[str]:
+    for klass in cls.__mro__:
+        slots = klass.__dict__.get('__slots__', ())
+        for name in ((slots,) if isinstance(slots, str) else slots):
+            if not name.startswith('__'):
+                yield name
 
 def restore_in_place(record, saved_form) -> None:
     if isinstance(record, Constant):
         # A constant saves only its value; the rest is fixed by the engine
         record.value = copy.deepcopy(saved_form[1])
         return
+    files = None
+    if isinstance(record, WithResources):
+        saved_form, files = saved_form['record'], saved_form['files']
     fresh = type(record).restore(copy.deepcopy(saved_form))
     record.__dict__.clear()
     record.__dict__.update(fresh.__dict__)
+    # A slots dataclass, like a font, keeps its fields outside __dict__
+    for name in slot_names(type(record)):
+        setattr(record, name, getattr(fresh, name))
+    if files is not None:
+        # Images cached on the record went with the old fields, so they load again from these
+        record.set_file_paths(copy.deepcopy(files))
 
 def rebuild_keys(data: Data) -> None:
     """Re-keys a Data from its members' current nids, keeping their order"""
@@ -154,8 +180,9 @@ class ChangeSet:
 
 
 class EditHistory:
-    def __init__(self, db):
+    def __init__(self, db, resources):
         self.db = db
+        self.resources = resources
         self._undo: List[ChangeSet] = []
         self._redo: List[ChangeSet] = []
         self._open: List[ChangeSet] = []  # Nested change sets merge into the outermost
@@ -179,7 +206,8 @@ class EditHistory:
             self._shadow = self._saved_records()
 
     def watched_catalogs(self) -> List[Data]:
-        return [references.catalog(self.db, dtype) for dtype in references.OWNER_TYPES]
+        return [references.catalog(self.db, dtype) for dtype in references.OWNER_TYPES] + \
+            [getattr(self.resources, name) for name in RECORDED_RESOURCES]
 
     def is_watched(self, data: Data) -> bool:
         return id(data) in self._catalogs
@@ -323,7 +351,7 @@ class EditHistory:
         change_set = self._undo.pop()
         change_set.undo()
         self._redo.append(change_set)
-        self._rebaseline()
+        self.rebaseline()
         self._announce(None)
         return change_set
 
@@ -334,7 +362,7 @@ class EditHistory:
         change_set = self._redo.pop()
         change_set.redo()
         self._undo.append(change_set)
-        self._rebaseline()
+        self.rebaseline()
         self._announce(None)
         return change_set
 
@@ -361,7 +389,7 @@ class EditHistory:
                 self._undo.pop().undo()
                 changed = True
         self._redo.clear()
-        self._rebaseline()
+        self.rebaseline()
         if changed:
             self._announce(None)
 
@@ -387,7 +415,9 @@ class EditHistory:
                 change_set.deltas.append(CatalogChange(data, state, now))
                 self._catalogs[key] = (data, now)
 
-    def _rebaseline(self) -> None:
+    def rebaseline(self) -> None:
+        """Takes everything as it is now as the starting point of the next edit, without
+        recording what changed since the last commit"""
         for bindings, key in self._all_bound():
             data, record, _ = bindings[key]
             bindings[key] = (data, record, saved(record))
@@ -427,7 +457,8 @@ class _ChangeSetContext:
 class _ModifyingContext:
     def __init__(self, history: EditHistory, records: List[Tuple[Any, Data]]):
         self.history = history
-        # Resources are not recorded yet
+        # A list the history doesn't watch, like a legacy combat catalog or a
+        # tilemap's layers, changes along with its watched owner or not at all
         self.records = [(record, data) for record, data in records if history.is_watched(data)]
 
     def __enter__(self):
@@ -448,4 +479,4 @@ class _ModifyingContext:
 
 
 # The editor's one history, of the one database it edits
-HISTORY = EditHistory(DB)
+HISTORY = EditHistory(DB, RESOURCES)

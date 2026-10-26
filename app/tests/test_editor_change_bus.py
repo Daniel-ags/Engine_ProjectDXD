@@ -155,5 +155,50 @@ class ChangeBusTests(unittest.TestCase):
         self.assertEqual(DB.parties.get('Eirika').leader, leader_box.edit.currentText())
 
 
+class MainWindowResyncTests(unittest.TestCase):
+    """The main window broadcasts its selection again after a change"""
+    @classmethod
+    def setUpClass(cls):
+        import sys
+        from app.editor.editor_locale import init_locale
+        init_locale()
+        from PyQt5.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication(sys.argv)
+
+    def setUp(self):
+        from types import SimpleNamespace
+        from app.editor.global_editor.global_editor import GlobalEditor
+        from app.editor.lib.state_editor.editor_state_manager import EditorStateManager
+        DB.load('testing_proj.ltproj', CURRENT_SERIALIZATION_VERSION)
+        RESOURCES.load('testing_proj.ltproj', CURRENT_SERIALIZATION_VERSION)
+        self.state_manager = EditorStateManager()
+        self.global_editor = GlobalEditor(self.state_manager)
+        self.addCleanup(self.global_editor.deleteLater)
+        self.main_editor = SimpleNamespace(app_state_manager=self.state_manager, global_editor=self.global_editor)
+        self.level, self.overworld = DB.levels[-1], DB.overworlds[0]
+
+    def broadcast_selection(self):
+        from app.editor.main_editor import MainEditor
+        MainEditor.broadcast_selection(self.main_editor)
+
+    def test_the_global_map_keeps_showing_the_selected_level(self):
+        self.state_manager.change_and_broadcast('selected_overworld', self.overworld.nid)
+        self.state_manager.change_and_broadcast('selected_level', self.level.nid)
+
+        self.broadcast_selection()
+
+        self.assertIs(self.level, self.global_editor.current_level)
+        self.assertFalse(self.global_editor.shows_overworld())
+
+    def test_the_global_map_keeps_showing_the_selected_overworld(self):
+        self.state_manager.change_and_broadcast('selected_level', self.level.nid)
+        self.state_manager.change_and_broadcast('selected_overworld', self.overworld.nid)
+
+        self.broadcast_selection()
+
+        self.assertIs(self.overworld, self.global_editor.current_level)
+        self.assertTrue(self.global_editor.shows_overworld())
+
+
 if __name__ == '__main__':
     unittest.main()

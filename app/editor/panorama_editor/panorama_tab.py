@@ -10,6 +10,9 @@ from app.editor.panorama_editor import panorama_model
 from app.extensions.delete_list_view import DeleteListView
 
 class PanoramaTab(QWidget):
+    # Whether the tab can show its data again after an undo changes it
+    supports_undo = True
+
     def __init__(self, data, title, model, parent=None):
         super().__init__(parent)
         self.window = parent
@@ -64,7 +67,9 @@ class PanoramaTab(QWidget):
         #         self.model.dataChanged.emit(index, index, [Qt.DecorationRole])
 
     def reset(self):
-        pass
+        # A panorama an undo restored loads its images again as the model draws it
+        self.model.layoutAboutToBeChanged.emit()
+        self.model.layoutChanged.emit()
 
     @property
     def current(self):

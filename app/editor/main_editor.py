@@ -181,18 +181,30 @@ class MainEditor(QMainWindow):
         for box in self.findChildren(ObjBox):
             if not isinstance(QWidget.window(box), EditHistoryDialog):
                 box.refresh()
+        self.broadcast_selection()
+        self.app_state_manager.change_and_broadcast('ui_refresh_signal', None)
+
+    def broadcast_selection(self):
+        """Broadcasts the selected level, overworld and node again. The global editor's
+        map shows whichever of the level and overworld is broadcast last, so the one it
+        shows goes last."""
         state = self.app_state_manager.state
+        broadcasts = []
         # Sometimes the stored current level nid does not exist as a valid
         # level; check before broadcasting.
         if state.selected_level in DB.levels:
-            self.app_state_manager.change_and_broadcast('selected_level', state.selected_level)
+            broadcasts.append(('selected_level', state.selected_level))
         # Overworlds hold their nodes the way levels hold their units
         overworld = DB.overworlds.get(state.selected_overworld)
         if overworld:
-            self.app_state_manager.change_and_broadcast('selected_overworld', overworld.nid)
             node_nid = state.selected_node if state.selected_node in overworld.overworld_nodes else None
-            self.app_state_manager.change_and_broadcast('selected_node', node_nid)
-        self.app_state_manager.change_and_broadcast('ui_refresh_signal', None)
+            overworld_broadcasts = [('selected_overworld', overworld.nid), ('selected_node', node_nid)]
+            if self.global_editor.shows_overworld():
+                broadcasts = broadcasts + overworld_broadcasts
+            else:
+                broadcasts = overworld_broadcasts + broadcasts
+        for key, value in broadcasts:
+            self.app_state_manager.change_and_broadcast(key, value)
 
     def on_clean_changed(self, clean):
         # Change Title
@@ -510,10 +522,10 @@ class MainEditor(QMainWindow):
             if not self.mode.GLOBAL_EDITOR:
                 self.app_state_manager.change_and_broadcast(
                     'main_editor_mode', MainEditorScreenStates.GLOBAL_EDITOR)
+            if DB.overworlds:  # Before the level, which the global editor's map then shows
+                self.app_state_manager.change_and_broadcast('selected_overworld', DB.overworlds[0].nid)
             self.app_state_manager.change_and_broadcast(
                 'selected_level', DB.levels[0].nid)  # Needed in order to update map view
-            if DB.overworlds:
-                self.app_state_manager.change_and_broadcast('selected_overworld', DB.overworlds[0].nid)
             self.app_state_manager.change_and_broadcast(
                 'ui_refresh_signal', None)
 
@@ -528,10 +540,12 @@ class MainEditor(QMainWindow):
         if not self.mode.GLOBAL_EDITOR:
             self.app_state_manager.change_and_broadcast(
                 'main_editor_mode', MainEditorScreenStates.GLOBAL_EDITOR)
+        # So the overworld editor shows this project's overworld. Before the level,
+        # which the global editor's map then shows
+        if DB.overworlds:
+            self.app_state_manager.change_and_broadcast('selected_overworld', DB.overworlds[0].nid)
         self.app_state_manager.change_and_broadcast(
             'selected_level', DB.levels[0].nid)  # Needed in order to update map view
-        if DB.overworlds:  # And so the overworld editor shows this project's overworld
-            self.app_state_manager.change_and_broadcast('selected_overworld', DB.overworlds[0].nid)
         self.app_state_manager.change_and_broadcast(
             'ui_refresh_signal', None)
 
