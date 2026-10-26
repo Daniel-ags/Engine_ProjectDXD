@@ -11,6 +11,7 @@ from app.data.database.database import DB
 from app.data.resources.resources import RESOURCES
 from app.data.serialization.versions import CURRENT_SERIALIZATION_VERSION
 from app.editor.file_manager.staging import LOCK_FILE, Staging
+from app.tests.staging_harness import use_temporary_staging
 
 
 def write(path, content: bytes):
@@ -158,8 +159,10 @@ class StagingTests(unittest.TestCase):
 
 
 class StagingEditorCase(unittest.TestCase):
-    """The editor's history and staging on a copy of the test project, with file and
+    """The editor's history and staging on a copy of a project, with file and
     message dialogs patched"""
+    project = 'testing_proj.ltproj'
+
     @classmethod
     def setUpClass(cls):
         import sys
@@ -170,7 +173,7 @@ class StagingEditorCase(unittest.TestCase):
         # Shared, since the tests check that nothing writes into it
         cls.proj_dir = tempfile.mkdtemp()
         cls.proj = os.path.join(cls.proj_dir, 'staging_test.ltproj')
-        shutil.copytree('testing_proj.ltproj', cls.proj)
+        shutil.copytree(cls.project, cls.proj)
 
     @classmethod
     def tearDownClass(cls):
@@ -192,8 +195,6 @@ class StagingEditorCase(unittest.TestCase):
         for patcher in (patch.object(MainSettingsController, 'get_current_project', lambda _: self.proj),
                         patch.object(MainSettingsController, 'get_last_open_path', lambda _: self.sources),
                         patch.object(MainSettingsController, 'set_last_open_path', lambda _, path: None),
-                        patch.object(STAGING, 'root', os.path.join(self.tmp, 'staging')),
-                        patch.object(STAGING, 'fallback_root', lambda: os.path.join(self.tmp, 'fallback')),
                         # A message box would wait forever for someone to close it
                         patch('PyQt5.QtWidgets.QMessageBox.critical'),
                         patch('PyQt5.QtWidgets.QMessageBox.warning'),
@@ -203,8 +204,7 @@ class StagingEditorCase(unittest.TestCase):
         DB.load(self.proj, CURRENT_SERIALIZATION_VERSION)
         RESOURCES.load(self.proj, CURRENT_SERIALIZATION_VERSION)
         HISTORY.clear()
-        STAGING.start(self.proj)
-        self.addCleanup(STAGING.end)
+        use_temporary_staging(self, self.proj)
         self.staging = STAGING
         self.history = HISTORY
         self.project_files = fingerprint(self.proj)
@@ -212,7 +212,7 @@ class StagingEditorCase(unittest.TestCase):
     def own_project(self):
         """A copy of the project for this test alone to write to, loaded"""
         self.proj = os.path.join(self.tmp, 'staging_test.ltproj')
-        shutil.copytree('testing_proj.ltproj', self.proj)
+        shutil.copytree(self.project, self.proj)
         DB.load(self.proj, CURRENT_SERIALIZATION_VERSION)
         RESOURCES.load(self.proj, CURRENT_SERIALIZATION_VERSION)
 

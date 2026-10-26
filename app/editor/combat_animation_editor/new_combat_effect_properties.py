@@ -23,7 +23,7 @@ from app.editor import timer
 
 from app.editor.combat_animation_editor.frame_selector import FrameSelector
 from app.editor.combat_animation_editor.new_combat_animation_properties import NewCombatAnimProperties
-from app.editor.file_manager.project_file_backend import DEFAULT_PROJECT
+from app.editor.file_manager.staging import STAGING
 from app.editor.combat_animation_editor import combat_animation_imports, effect_animation_imports, combat_animation_export
 from app.editor.component_editor_types import T
 
@@ -354,8 +354,7 @@ class NewCombatEffectProperties(NewCombatAnimProperties):
             with open(effect_fn) as load_file:
                 data = json.load(load_file)
             effect = combat_anims.EffectAnimation.restore(data)
-            full_path = os.path.join(fn_dir, effect.nid + '.png')
-            effect.set_full_path(full_path)
+            effect.set_full_path(STAGING.stage_file(os.path.join(fn_dir, effect.nid + '.png')))
             effect.nid = str_utils.get_next_name(effect.nid, RESOURCES.combat_effects.keys())
             # Update any palette references that changed
             for idx, palette in enumerate(effect.palettes[:]):
@@ -476,15 +475,6 @@ class NewCombatEffectProperties(NewCombatAnimProperties):
                 print("Couldn't find a usable weapon anim")
                 return None
     
-            proj_dir = self.settings.get_current_project()
-            if not proj_dir or os.path.basename(proj_dir) == DEFAULT_PROJECT:
-                pass
-            else:
-                # Make sure to save beforehand so that we use the modified effect when testing
-                resource_dir = os.path.join(proj_dir, 'resources')
-                data_dir = os.path.join(resource_dir, 'combat_effects')
-                RESOURCES.combat_effects.save_resources(data_dir)
-
             left_palette_name, left_palette, right_palette_name, right_palette = self.get_test_palettes(combat_anim)
 
             timer.get_timer().stop()

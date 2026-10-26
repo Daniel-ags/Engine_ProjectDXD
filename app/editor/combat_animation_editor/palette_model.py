@@ -67,14 +67,17 @@ def on_nid_changed(old_nid, new_nid):
     swap_in_resources(old_nid, new_nid)
 
 def swap_in_resources(old_nid, new_nid):
-    for combat_anim in RESOURCES.combat_anims:
-        for idx, palette in enumerate(combat_anim.palettes):
-            if old_nid == palette[1]:
-                combat_anim.palettes[idx][1] = new_nid
-    for effect_anim in RESOURCES.combat_effects:
-        for idx, palette in enumerate(effect_anim.palettes):
-            if old_nid == palette[1]:
-                effect_anim.palettes[idx][1] = new_nid
+    users = [(anim, RESOURCES.combat_anims) for anim in RESOURCES.combat_anims if old_nid in [palette[1] for palette in anim.palettes]] + \
+        [(anim, RESOURCES.combat_effects) for anim in RESOURCES.combat_effects if old_nid in [palette[1] for palette in anim.palettes]]
+    with HISTORY.modifying(users):
+        for combat_anim in RESOURCES.combat_anims:
+            for idx, palette in enumerate(combat_anim.palettes):
+                if old_nid == palette[1]:
+                    combat_anim.palettes[idx][1] = new_nid
+        for effect_anim in RESOURCES.combat_effects:
+            for idx, palette in enumerate(effect_anim.palettes):
+                if old_nid == palette[1]:
+                    effect_anim.palettes[idx][1] = new_nid
 
 class PaletteModel(DragDropCollectionModel):
     def data(self, index, role):

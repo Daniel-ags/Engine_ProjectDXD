@@ -297,10 +297,10 @@ class Resources():
         logging.info('Done Resource Serializing!')
         return True
 
-    def save_copies(self, proj_dir, data_types) -> List[Tuple[Path, Path]]:
-        """The (from, to) file copies save(proj_dir) makes for these catalogs"""
+    def save_copies(self, proj_dir) -> List[Tuple[Path, Path]]:
+        """The (from, to) file copies save(proj_dir) makes"""
         resource_dir = os.path.join(proj_dir, 'resources')
-        return [copy for data_type in data_types
+        return [copy for data_type in self.save_data_types
                 for copy in getattr(self, data_type).save_copies(os.path.join(resource_dir, data_type))]
 
     def autosave(self, proj_dir, autosave_dir, progress=None):

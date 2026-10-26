@@ -11,9 +11,7 @@ from app.data.resources.resources import RESOURCES
 from app.data.resources import combat_anims, combat_commands, combat_palettes
 
 from app.editor.combat_animation_editor.animation_import_utils import \
-    convert_gba, simple_crop, split_doubles, find_empty_pixmaps, combine_identical_commands, update_anim_full_image
-from app.editor.settings import MainSettingsController
-from app.editor.file_manager.project_file_backend import DEFAULT_PROJECT
+    convert_gba, simple_crop, split_doubles, find_empty_pixmaps, combine_identical_commands, stage_full_image,     update_anim_full_image
 
 import app.editor.utilities as editor_utilities
 
@@ -103,7 +101,7 @@ def build_full_image(main_pixmap, new_weapon):
         x, y, width, height = frame.rect
         painter.drawPixmap(x, y, frame.pixmap)
     painter.end()
-    new_weapon.pixmap = sprite_sheet
+    stage_full_image(new_weapon, sprite_sheet)
 
 def add_poses(fn, new_weapon):
     # Now add poses to the weapon anim
@@ -234,12 +232,6 @@ def import_effect_from_legacy(fn: str):
     if current.nid in RESOURCES.combat_effects:
         RESOURCES.combat_effects.remove_key(current.nid)
     RESOURCES.combat_effects.append(current)
-
-    # Need to save the full image somewhere
-    settings = MainSettingsController()
-    if os.path.basename(settings.get_current_project()) != DEFAULT_PROJECT:
-        path = os.path.join(settings.get_current_project(), 'resources', 'combat_effects')
-        RESOURCES.combat_effects.save_image(path, current)
 
     return current
 
@@ -449,12 +441,6 @@ def import_from_gba(current, fn):
         # Make sure we only use stand and attack poses
         transform_pose_setup(melee_weapon_anim)
         add_weapon(melee_weapon_anim)
-
-    # Need to save the full image somewhere
-    settings = MainSettingsController()
-    if os.path.basename(settings.get_current_project()) != DEFAULT_PROJECT:
-        path = os.path.join(settings.get_current_project(), 'resources', 'combat_anims')
-        RESOURCES.combat_anims.save_image(path, current)
 
 def parse_gba_script(fn, pixmaps, weapon_type, empty_pixmaps, colorkey):
     # Read script

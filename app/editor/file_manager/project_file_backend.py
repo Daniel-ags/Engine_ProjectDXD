@@ -20,7 +20,7 @@ from app.data.resources.resources import RESOURCES, Resources
 from app.data.serialization.dataclass_serialization import dataclass_from_dict
 from app.data.serialization.versions import CURRENT_SERIALIZATION_VERSION
 from app.data.validation.db_validation import DBChecker
-from app.editor.edit_history import HISTORY, RECORDED_RESOURCES
+from app.editor.edit_history import HISTORY
 from app.editor.file_manager.staging import STAGING
 from app.editor import timer
 from app.editor.error_viewer import show_error_report
@@ -210,7 +210,7 @@ class ProjectFileBackend():
         # a backup save moves the project away before it copies a renamed resource's
         # file, so whatever project files it copies or overwrites are staged first
         resource_dir = os.path.normcase(os.path.abspath(os.path.join(self.current_proj, 'resources')))
-        HISTORY.keep_files(path for copy in RESOURCES.save_copies(self.current_proj, RECORDED_RESOURCES) for path in copy
+        HISTORY.keep_files(path for copy in RESOURCES.save_copies(self.current_proj) for path in copy
                            if os.path.normcase(os.path.abspath(path)).startswith(resource_dir + os.sep))
 
         # Make directory for saving if it doesn't already exist

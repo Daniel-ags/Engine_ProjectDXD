@@ -45,11 +45,6 @@ from app.utilities.typing import NID
 
 MAX_CHANGE_SETS = 100
 CHECK_UNRECORDED = bool(os.environ.get('LT_EDITOR_CHECK'))
-# The resource catalogs recorded like the database's. The combat animation,
-# effect and palette editors keep unsaved frames only in memory, so they still
-# take back their edits by loading their catalogs from disk
-LEGACY_RESOURCES = ('combat_anims', 'combat_effects', 'combat_palettes')
-RECORDED_RESOURCES = tuple(name for name in Resources.save_data_types if name not in LEGACY_RESOURCES)
 
 
 def saved(record) -> Any:
@@ -212,7 +207,7 @@ class EditHistory:
 
     def watched_catalogs(self) -> List[Data]:
         return [references.catalog(self.db, dtype) for dtype in references.OWNER_TYPES] + \
-            [getattr(self.resources, name) for name in RECORDED_RESOURCES]
+            [getattr(self.resources, name) for name in Resources.save_data_types]
 
     def is_watched(self, data: Data) -> bool:
         return id(data) in self._catalogs
@@ -525,8 +520,8 @@ class _ChangeSetContext:
 class _ModifyingContext:
     def __init__(self, history: EditHistory, records: List[Tuple[Any, Data]]):
         self.history = history
-        # A list the history doesn't watch, like a legacy combat catalog or a
-        # tilemap's layers, changes along with its watched owner or not at all
+        # A list the history doesn't watch, like a tilemap's layers, changes
+        # along with its watched owner or not at all
         self.records = [(record, data) for record, data in records if history.is_watched(data)]
 
     def __enter__(self):
