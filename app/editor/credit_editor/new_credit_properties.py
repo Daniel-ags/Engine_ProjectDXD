@@ -161,10 +161,7 @@ class PanoramaDesc(QWidget):
         self.header_box.edit.textChanged.connect(self.header_changed)
 
         self.panorama_box = PropertyBox("Contribution", ComboBox, self)
-        self.panorama_box.edit.addItem(QIcon(), 'None')
-        for panorama in RESOURCES.panoramas:
-            icon = QIcon(panorama.get_all_paths()[0])
-            self.panorama_box.edit.addItem(icon, panorama.nid)
+        self.list_panoramas()
         self.panorama_box.edit.setIconSize(QSize(240, 160))
         self.panorama_box.edit.currentIndexChanged.connect(self.panorama_changed)
 
@@ -184,6 +181,12 @@ class PanoramaDesc(QWidget):
         self.layout.addWidget(self.header_box)
         self.layout.addLayout(centered_layout)
         self.setLayout(self.layout)
+
+    def list_panoramas(self):
+        def icon_for(nid):
+            panorama = RESOURCES.panoramas.get(nid)
+            return QIcon(panorama.get_all_paths()[0]) if panorama else None
+        self.panorama_box.edit.set_choices(['None'] + RESOURCES.panoramas.keys(), icon_for)
 
     def panorama_changed(self, index):
         contrib = self.window.current.contrib
@@ -217,6 +220,7 @@ class PanoramaDesc(QWidget):
     def set_current(self, current):
         self.header_box.edit.setText(current.custom_header or current.header())
         
+        self.list_panoramas()
         try:
             self.panorama_box.edit.setValue(current.sub_nid)
         except: # spec isn't compatible

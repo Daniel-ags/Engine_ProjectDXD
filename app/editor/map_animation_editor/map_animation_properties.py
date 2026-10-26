@@ -13,7 +13,7 @@ from PyQt5.QtGui import QPixmap, QPainter, QImage, QColor, QPen, QBrush
 
 from app.constants import TILEWIDTH, TILEHEIGHT
 from app.data.resources.resources import RESOURCES
-from app.extensions.custom_gui import PropertyBox
+from app.extensions.custom_gui import ComboBox, PropertyBox
 from app.extensions.spinbox_xy import SpinBoxXY
 
 from app.utilities import utils
@@ -115,16 +115,22 @@ class PreviewSpecification(QWidget):
         unit_section = QHBoxLayout()
         self.unit_check = QCheckBox("Show Unit", self)
         self.unit_check.stateChanged.connect(self.unit_toggled)
-        self.unit_box = QComboBox(self)
+        self.unit_box = ComboBox(self)
         self.unit_box.setEnabled(False)
-        for map_sprite in RESOURCES.map_sprites:
-            self.unit_box.addItem(map_sprite.nid)
+        self.list_units()
         self.unit_box.currentIndexChanged.connect(lambda val: self.preview_changed.emit())
         unit_section.addWidget(self.unit_check)
         unit_section.addWidget(self.unit_box, Qt.AlignLeft)
         layout.addLayout(unit_section)
 
         self.setLayout(layout)
+
+    def list_units(self):
+        """Lists the map sprites as they are now, keeping the one chosen if it is still there"""
+        chosen = self.unit_box.currentText()
+        self.unit_box.set_choices(RESOURCES.map_sprites.keys())
+        if chosen in RESOURCES.map_sprites:
+            self.unit_box.setValue(chosen)
 
     def unit_toggled(self, val):
         self.unit_box.setEnabled(self.show_unit())
@@ -347,6 +353,7 @@ class MapAnimationProperties(QWidget):
     def set_current(self, current):
         self.reset()
         self.current = current
+        self.preview_box.edit.list_units()
         old_num_frames = self.current.num_frames
         self.frame_box.edit.set_current(current.frame_x, current.frame_y)
         self.total_num_box.edit.setValue(old_num_frames)

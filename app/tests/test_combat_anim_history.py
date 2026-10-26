@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from app.tests import qt_headless  # noqa: F401 -- before any QApplication
 
+from app.data.database.database import DB
 from app.data.resources.resources import RESOURCES
 from app.tests.test_staging import StagingEditorCase
 
@@ -52,6 +53,21 @@ class CombatEditorHistoryTests(StagingEditorCase):
 
         self.assertNotIn('Taunt', self.assassin.weapon_anims.get('Sword').poses)
 
+    def test_an_undo_keeps_the_weapon_and_pose_shown(self):
+        form = self.show_anim()
+        weapon_anim = self.assassin.weapon_anims[1]
+        pose_nid = weapon_anim.poses[-1].nid
+        form.weapon_box.setValue(weapon_anim.nid)
+        self.add_pose(form, 'Taunt')
+        form.pose_box.setValue(pose_nid)
+
+        self.dialog.undo()
+
+        self.assertNotIn('Taunt', self.assassin.weapon_anims.get(weapon_anim.nid).poses)
+        self.assertEqual(weapon_anim.nid, form.weapon_box.currentText())
+        self.assertEqual(pose_nid, form.pose_box.currentText())
+        self.assertEqual(pose_nid, form.timeline_menu.current_pose.nid)
+
     def test_ok_writes_nothing_into_the_project(self):
         form = self.show_anim()
         form.weapon_box.setValue('Sword')
@@ -83,6 +99,107 @@ class CombatEditorHistoryTests(StagingEditorCase):
         self.assertEqual(sheet, self.assassin.weapon_anims[0].full_path)
         self.dialog.redo()
         self.assertEqual(moved, self.assassin.weapon_anims[0].full_path)
+
+    def test_the_palette_editor_lets_go_of_a_frame_whose_animation_was_deleted(self):
+        from PyQt5.QtWidgets import QApplication
+        form = self.show_palette('Assassin0_GenericBlue')
+        form.autoselect_frame()
+        self.assertIsNotNone(form.current_frame)
+
+        with self.history.change_set('Delete Assassin'):
+            RESOURCES.combat_anims.remove_key('Assassin')
+        QApplication.processEvents()
+
+        self.assertIsNone(form.current_frame)
+
+    def test_renaming_a_sound_renames_it_in_combat_timelines_as_one_undo_step(self):
+        from app.editor.sound_editor.sound_dialog import ModifySFXDialog
+        def plays(poses, nid):
+            return any(command.nid == 'sound' and command.value[0] == nid
+                       for pose in poses for command in pose.timeline)
+        def assassin_plays(nid):
+            return any(plays(weapon_anim.poses, nid) for weapon_anim in RESOURCES.combat_anims.get('Assassin').weapon_anims)
+        arrow = RESOURCES.combat_effects.get('Arrow')
+        dialog = ModifySFXDialog(RESOURCES.sfx, [RESOURCES.sfx.get('Bow')], None)
+        self.addCleanup(dialog.deleteLater)
+
+        dialog.nid_box.edit.setText('Longbow')
+        dialog.nid_done_editing()
+        effect_dialog = ModifySFXDialog(RESOURCES.sfx, [RESOURCES.sfx.get('Bow Miss')], None)
+        self.addCleanup(effect_dialog.deleteLater)
+        effect_dialog.nid_box.edit.setText('Longbow Miss')
+        effect_dialog.nid_done_editing()
+
+        self.assertTrue(assassin_plays('Longbow'))
+        self.assertFalse(assassin_plays('Bow'))
+        self.assertTrue(plays(arrow.poses, 'Longbow Miss'))
+        self.history.undo()
+        self.history.undo()
+        self.assertTrue(assassin_plays('Bow'))
+        self.assertFalse(assassin_plays('Longbow'))
+        self.assertTrue(plays(arrow.poses, 'Bow Miss'))
+
+    def sound_editor(self):
+        from app.editor.sound_editor.sound_tab import get_full_editor
+        dialog = get_full_editor()
+        self.addCleanup(dialog.stop_history)
+        music_tab, sfx_tab = dialog.tabs
+        return dialog, music_tab, sfx_tab
+
+    def delete_row(self, tab, nid, answer):
+        """Deletes the sound named nid from the tab, answering the deletion dialog, and
+        returns the titles of the tabs it showed"""
+        from app.editor.reference_dialogs import DeletionDialog
+        shown = []
+        def inform(tabs, parent):
+            shown.extend(tab.label for tab in tabs)
+            return answer
+        row = [sound.nid for sound in tab._data].index(nid)
+        index = tab.proxy_model.mapFromSource(tab.model.index(row, 0))
+        tab.view.selectRow(index.row())  # The view deletes the rows selected
+        with patch.object(DeletionDialog, 'inform', staticmethod(inform)):
+            tab.view.delete(index)
+        return shown
+
+    def assassin_plays(self, nid) -> bool:
+        return any(command.has_sound() and command.value[0] == nid
+                   for weapon_anim in RESOURCES.combat_anims.get('Assassin').weapon_anims
+                   for pose in weapon_anim.poses for command in pose.timeline)
+
+    def test_deleting_a_sound_removes_what_plays_it_as_one_undo_step(self):
+        dialog, _, sfx_tab = self.sound_editor()
+
+        shown = self.delete_row(sfx_tab, 'Bow', True)
+
+        self.assertIn('Combat Animations', shown)
+        self.assertNotIn('Bow', RESOURCES.sfx)
+        self.assertFalse(self.assassin_plays('Bow'))
+        dialog.undo()
+        self.assertIn('Bow', RESOURCES.sfx)
+        self.assertTrue(self.assassin_plays('Bow'))
+
+    def test_a_sound_deletion_declined_changes_nothing(self):
+        _, _, sfx_tab = self.sound_editor()
+
+        self.delete_row(sfx_tab, 'Bow', False)
+
+        self.assertIn('Bow', RESOURCES.sfx)
+        self.assertTrue(self.assassin_plays('Bow'))
+
+    def test_deleting_a_song_clears_what_names_it_as_one_undo_step(self):
+        from app.data.database import references
+        from app.data.resources.resource_types import ResourceType
+        dialog, music_tab, _ = self.sound_editor()
+        users = len(references.find_referrers(DB, ResourceType.MUSIC, 'Distant Roads'))
+
+        shown = self.delete_row(music_tab, 'Distant Roads', True)
+
+        self.assertTrue(shown)
+        self.assertNotIn('Distant Roads', RESOURCES.music)
+        self.assertEqual([], references.find_referrers(DB, ResourceType.MUSIC, 'Distant Roads'))
+        dialog.undo()
+        self.assertIn('Distant Roads', RESOURCES.music)
+        self.assertEqual(users, len(references.find_referrers(DB, ResourceType.MUSIC, 'Distant Roads')))
 
     def test_undo_takes_back_a_palette_color(self):
         form = self.show_palette('Assassin0_GenericBlue')

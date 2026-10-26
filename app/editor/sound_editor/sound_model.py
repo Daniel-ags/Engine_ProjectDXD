@@ -4,8 +4,11 @@ from PyQt5.QtWidgets import QFileDialog, QMessageBox, QDialog
 from PyQt5.QtCore import Qt, pyqtSignal
 
 from app.utilities import str_utils
+from app.data.resources.resource_types import ResourceType as RType
 from app.data.resources.sounds import SFXPrefab, SongPrefab
 from app.data.resources.resources import RESOURCES
+from app.editor import reference_dialogs
+from app.editor.combat_animation_editor import combat_animation_model
 from app.editor.edit_history import HISTORY
 from app.editor.file_manager.staging import STAGING
 from app.editor.settings import MainSettingsController
@@ -94,6 +97,15 @@ class SFXModel(SoundModel):
         dialog = ModifySFXDialog(self._data, current, self.window)
         modify_recorded(self._data, current, dialog)
 
+    def delete(self, index):
+        deleted = self._data[index.row()]
+        with HISTORY.change_set('Delete %s' % deleted.nid, origin=self.window):
+            if not reference_dialogs.check_delete(RType.SFX, deleted.nid, 'Sound Effect', self.window,
+                                                  extra_tabs=combat_animation_model.sound_deletion_tabs(deleted.nid)):
+                return
+            combat_animation_model.remove_sound(deleted.nid)
+            super().delete(index)
+
     def flags(self, index):
         main_flags = Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemNeverHasChildren
         if index.column() in (0, 2):
@@ -148,6 +160,8 @@ class MusicModel(SoundModel):
         deleted = self._data[index.row()]
         with HISTORY.change_set('Delete %s' % deleted.nid, origin=self.window), \
                 HISTORY.modifying([(song_prefab, self._data) for song_prefab in self._data]):
+            if not reference_dialogs.check_delete(RType.MUSIC, deleted.nid, 'Song', self.window):
+                return
             if idx := deleted.soundroom_idx:
                 sorted_db = sorted(self._data, key=lambda x: x.soundroom_idx)
                 max_idx = sorted_db[-1].soundroom_idx

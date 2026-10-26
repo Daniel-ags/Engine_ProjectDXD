@@ -515,6 +515,9 @@ class NewPaletteProperties(QWidget):
             self.current_palette = current
             self.cached_nid = self.current_palette.nid
             self.current_palette = current
+            if self.frame_owner is not None and not any(record is self.frame_owner for record in self.frame_owner_data):
+                # Its animation, effect or map sprite was deleted
+                self.frame_owner = self.frame_owner_data = None
             self.nid_box.edit.setText(self.current_palette.nid)
             self.easel_widget.set_current(current, self.current_frame)
             self.draw_frame()

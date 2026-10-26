@@ -4,12 +4,19 @@ import os
 from PyQt5.QtWidgets import QLineEdit, QMessageBox, QVBoxLayout, \
     QFileDialog, QPushButton, QSpinBox
 
+from app.editor.combat_animation_editor import combat_animation_model
 from app.editor.edit_history import HISTORY
 from app.editor.file_manager.staging import STAGING
 from app.data.resources.resource_types import ResourceType as RType
 from app.utilities import str_utils
+from app.utilities.typing import NID
 from app.extensions.custom_gui import ComboBox, PropertyBox, Dialog
 from app.editor.settings import MainSettingsController
+
+def rename_sound_references(old_nid: NID, new_nid: NID):
+    """Renames a sound in the database and in the combat timelines that play it"""
+    HISTORY.rewrite(RType.SFX, old_nid, new_nid)
+    combat_animation_model.rename_sound(old_nid, new_nid)
 
 class ModifySFXDialog(Dialog):
     def __init__(self, data, current, parent=None):
@@ -52,8 +59,7 @@ class ModifySFXDialog(Dialog):
             QMessageBox.warning(self.window, 'Warning', 'SFX ID %s already in use' % new_nid)
             new_nid = str_utils.get_next_name(new_nid, other_nids)
             self.nid_box.edit.setText(new_nid)
-        HISTORY.rename(self._data, current, new_nid,
-                       lambda old_nid, new_nid: HISTORY.rewrite(RType.SFX, old_nid, new_nid))
+        HISTORY.rename(self._data, current, new_nid, rename_sound_references)
 
     def tag_changed(self, text):
         for d in self.current:

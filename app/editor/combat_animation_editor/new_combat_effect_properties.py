@@ -288,6 +288,8 @@ class NewCombatEffectProperties(NewCombatAnimProperties):
 
     def set_current(self, current):
         self.stop()
+        # Shown again after an undo or another tab's change, it keeps its pose
+        shown_pose = self.pose_box.currentText() if current is self.current else None
         if not current:
             self.setEnabled(False)
         else:
@@ -306,6 +308,9 @@ class NewCombatEffectProperties(NewCombatAnimProperties):
                 self.timeline_menu.set_current_pose(current_pose)
             else:
                 self.timeline_menu.clear_pose()
+
+            if shown_pose in self.current.poses:
+                self.pose_box.setValue(shown_pose)
 
     def draw_frame(self):
         self.update()

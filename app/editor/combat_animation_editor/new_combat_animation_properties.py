@@ -660,6 +660,8 @@ class NewCombatAnimProperties(QWidget):
 
     def set_current(self, current):
         self.stop()
+        # Shown again after an undo or another tab's change, it keeps its weapon and pose
+        shown = (self.weapon_box.currentText(), self.pose_box.currentText()) if current is self.current else None
         if not current:
             self.setEnabled(False)
         else:
@@ -693,6 +695,13 @@ class NewCombatAnimProperties(QWidget):
             else:
                 self.has_pose(False)
                 self.timeline_menu.clear_pose()
+
+            if shown:
+                weapon_nid, pose_nid = shown
+                if weapon_nid in self.current.weapon_anims:
+                    self.weapon_box.setValue(weapon_nid)
+                    if pose_nid in self.current.weapon_anims.get(weapon_nid).poses:
+                        self.pose_box.setValue(pose_nid)
 
     def get_current_palette(self):
         return self.palette_menu.get_palette()
