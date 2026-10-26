@@ -14,6 +14,7 @@ from app.editor.edit_history import HISTORY
 from app.data.resources.resource_types import ResourceType as RType
 from app.editor import reference_dialogs
 from app.editor.base_database_gui import ResourceCollectionModel
+from app.editor.file_manager.staging import STAGING
 
 from app.editor.settings import MainSettingsController
 from app.editor.icon_editor import icon_view
@@ -147,7 +148,7 @@ class Icon16Model(IconModel):
                     pix = QPixmap(fn)
                     if pix.width() % self.width == 0 and pix.height() % self.height == 0:
                         nid = str_utils.get_next_name(nid, [d.nid for d in self.database])
-                        icon = IconSheet(nid, fn)
+                        icon = IconSheet(nid, STAGING.stage_file(fn))
                         icon.pixmap = pix
                         self.do_add(icon)
                     else:
@@ -233,8 +234,7 @@ class MapIconModel(Icon16Model):
                             QMessageBox.critical(self.window, "File Size Error!", "Map icon width and height for file " + fn + " must be either 16x16, 32x32, or 48x48")
                             continue
                         nid = str_utils.get_next_name(nid, [d.nid for d in self.database])
-                        icon = MapIcon(nid, os.path.basename(fn))
-                        icon.full_path = fn
+                        icon = MapIcon(nid, STAGING.stage_file(fn))
                         icon.pixmap = pix
                         self._data.append(icon)
                     else:

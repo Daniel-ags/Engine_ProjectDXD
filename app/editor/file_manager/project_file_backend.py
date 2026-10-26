@@ -21,6 +21,7 @@ from app.data.serialization.dataclass_serialization import dataclass_from_dict
 from app.data.serialization.versions import CURRENT_SERIALIZATION_VERSION
 from app.data.validation.db_validation import DBChecker
 from app.editor.edit_history import HISTORY
+from app.editor.file_manager.staging import STAGING
 from app.editor import timer
 from app.editor.error_viewer import show_error_report
 from app.editor.settings.preference_definitions import Preference
@@ -381,6 +382,7 @@ class ProjectFileBackend():
         DB.load(curr_proj_path, self.metadata.serialization_version)
         # Undo never reaches back into another project
         HISTORY.clear()
+        STAGING.start(self.current_proj)
         # A field added to a record but not to the reference schema is one
         # renames and deletions would silently skip
         for problem in references.check_schema(DB):

@@ -15,6 +15,7 @@ from app.editor import reference_dialogs
 
 from app.editor.settings import MainSettingsController
 from app.editor.base_database_gui import ResourceCollectionModel
+from app.editor.file_manager.staging import STAGING
 
 class PanoramaModel(ResourceCollectionModel):
     def data(self, index, role):
@@ -49,9 +50,8 @@ class PanoramaModel(ResourceCollectionModel):
                     nid = os.path.split(fn)[-1][:-4]
                     nid = str_utils.get_next_name(nid, [d.nid for d in RESOURCES.panoramas])
                     pixmap = QPixmap(fn)
-                    full_path = fn
                     if pixmap.width() >= WINWIDTH and pixmap.height() >= WINHEIGHT:
-                        new_panorama = Panorama(nid, full_path, 1)
+                        new_panorama = Panorama(nid, STAGING.stage_file(fn), 1)
                         RESOURCES.panoramas.append(new_panorama)
                     else:
                         QMessageBox.critical(self.window, "Error", "Image must be at least %dx%d pixels in size" % (WINWIDTH, WINHEIGHT))
@@ -72,17 +72,19 @@ class PanoramaModel(ResourceCollectionModel):
                     nid = os.path.split(fn)[-1][:-4]
                     last_number = str_utils.find_last_number(nid)
                     if last_number == 0:
-                        movie_prefix = str_utils.get_prefix(fn)
-                        ims = glob.glob(movie_prefix + '*' + '.png')
+                        movie_dir, movie_name = os.path.split(fn)
+                        movie_prefix = str_utils.get_prefix(movie_name)
+                        ims = glob.glob(os.path.join(glob.escape(movie_dir), movie_prefix + '*' + '.png'))
                         ims = sorted(ims, key=lambda x: str_utils.find_last_number(x[:-4]))
-                        full_path = movie_prefix + '.png'
                     else:
                         QMessageBox.critical(self.window, "Warning!", "Select first image of movie only (image0.png)!")
                         return
                     pixs = [QPixmap(im) for im in ims]
-                    movie_prefix = str_utils.get_next_name(movie_prefix, [d.nid for d in RESOURCES.panoramas])
+                    nid = str_utils.get_next_name(movie_prefix, [d.nid for d in RESOURCES.panoramas])
                     if all(pix.width() >= WINWIDTH and pix.height() >= WINHEIGHT for pix in pixs):
-                        new_panorama = Panorama(movie_prefix, full_path, len(pixs))
+                        # Its frames' paths come from the first one's, so they stay together
+                        full_path = os.path.join(STAGING.stage_files(ims), movie_prefix + '.png')
+                        new_panorama = Panorama(nid, full_path, len(pixs))
                         RESOURCES.panoramas.append(new_panorama)
                     else:
                         QMessageBox.critical(self.window, "Error", "Images must be at least %dx%d pixels in size" % (WINWIDTH, WINHEIGHT))

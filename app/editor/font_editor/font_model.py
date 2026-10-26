@@ -10,6 +10,7 @@ from app.data.resources.fonts import Font
 from app.data.resources.fonts import FontIndex
 from app.data.resources.resources import RESOURCES
 from app.editor.base_database_gui import ResourceCollectionModel
+from app.editor.file_manager.staging import STAGING
 from app.editor.settings import MainSettingsController
 from app.utilities import str_utils
 from app.utilities.typing import Color4
@@ -188,7 +189,8 @@ class FontModel(ResourceCollectionModel):
         nid = os.path.splitext(os.path.basename(fn))[0]
         nid = str_utils.get_next_name(nid, [d.nid for d in RESOURCES.fonts])
         new_font = Font(nid=nid)
-        new_font.set_full_path(file_name_no_ext)
+        version_dir = STAGING.stage_files([fn, idx_path])
+        new_font.set_full_path(os.path.join(version_dir, os.path.basename(file_name_no_ext)))
         seed_default_palette(new_font)
         RESOURCES.fonts.append(new_font)
         settings.set_last_open_path(os.path.dirname(fn))

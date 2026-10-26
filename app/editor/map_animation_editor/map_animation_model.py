@@ -14,6 +14,7 @@ from app.editor import reference_dialogs
 
 from app.editor.settings import MainSettingsController
 from app.editor.base_database_gui import ResourceCollectionModel
+from app.editor.file_manager.staging import STAGING
 
 from app.utilities import str_utils
 
@@ -51,7 +52,7 @@ class MapAnimationModel(ResourceCollectionModel):
                     nid = os.path.split(fn)[-1][:-4]
                     pix = QPixmap(fn)
                     nid = str_utils.get_next_name(nid, [d.nid for d in RESOURCES.animations])
-                    new_animation = MapAnimation(nid, fn, pix)
+                    new_animation = MapAnimation(nid, STAGING.stage_file(fn), pix)
                     RESOURCES.animations.append(new_animation)
                 else:
                     QMessageBox.critical(self.window, "File Type Error!", "Map Animation must be PNG format!")

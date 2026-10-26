@@ -15,6 +15,7 @@ from app.data.resources.resource_types import ResourceType as RType
 from app.editor import reference_dialogs
 
 from app.editor.base_database_gui import ResourceCollectionModel
+from app.editor.file_manager.staging import STAGING
 from app.extensions.custom_gui import DeletionTab, DeletionDialog
 from app.editor.tilemap_editor import MapEditor
 from app.editor.settings import MainSettingsController
@@ -127,11 +128,6 @@ class TileSetModel(ResourceCollectionModel):
                         nid = os.path.split(mapchip_config)[-1][:-15]
                         nid = str_utils.get_next_name(nid, RESOURCES.tilesets.keys())
 
-                        current_proj = settings.get_current_project()
-                        if not current_proj:
-                            QMessageBox.critical(self.window, "Error!", "Cannot load new tilesets without having saved the project")
-                            return
-
                         mapchip = read_mapchip_file(mapchip_config)
                         if not mapchip:
                             QMessageBox.critical(self.window, "Error!", "Mapchip files must not be empty!")
@@ -144,9 +140,7 @@ class TileSetModel(ResourceCollectionModel):
 
                         palette_image = QImage(object_palette)
                         pix = draw_tileset_from_mapchip(mapchip, palette, palette_image)
-                        full_path = os.path.join(current_proj, 'resources', 'tilesets', '%s.png' % nid)
-                        pix.save(full_path)
-                        new_tileset = TileSet(nid, full_path)
+                        new_tileset = TileSet(nid, STAGING.write_file('%s.png' % nid, pix.save))
                         new_tileset.set_pixmap(pix)
                         RESOURCES.tilesets.append(new_tileset)
                     else:
@@ -166,7 +160,7 @@ class TileSetModel(ResourceCollectionModel):
                     elif pix.height() % TILEHEIGHT != 0:
                         QMessageBox.critical(self.window, 'Error', "Image height must be exactly divisible by %d pixels!" % TILEHEIGHT)
                         continue
-                    new_tileset = TileSet(nid, fn)
+                    new_tileset = TileSet(nid, STAGING.stage_file(fn))
                     new_tileset.set_pixmap(pix)
                     RESOURCES.tilesets.append(new_tileset)
                 else:

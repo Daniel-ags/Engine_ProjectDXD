@@ -1,5 +1,4 @@
 import os
-import shutil
 
 from PyQt5.QtWidgets import QFileDialog, QMessageBox, QProgressDialog
 from PyQt5.QtCore import Qt
@@ -11,6 +10,7 @@ from app.data.resources.resources import RESOURCES
 from app.utilities.data import Data
 
 from app.editor.base_database_gui import ResourceCollectionModel
+from app.editor.file_manager.staging import STAGING
 from app.editor.settings import MainSettingsController
 from app.utilities import str_utils, utils
 
@@ -87,20 +87,9 @@ def auto_colorkey(portrait: PortraitPrefab):
     im = portrait.pixmap.toImage()
     if im.pixel(0, 0) != editor_utilities.qCOLORKEY:
         im = editor_utilities.color_convert(im, {im.pixel(0, 0): editor_utilities.qCOLORKEY})
-        # since we're messing with data, let's try to be atomic
-        try:
-            shutil.copyfile(portrait.full_path, portrait.full_path + '.bak')
-        except:
-            raise IOError("failed to create backup, aborting auto-colorkey")
-        os.remove(portrait.full_path)
-        try:
-            im.save(portrait.full_path)
-            portrait.pixmap = QPixmap(portrait.full_path)
-            portrait.image = None # reset this so the engine will know to reload
-        except:
-            shutil.move(portrait.full_path + '.bak', portrait.full_path)
-            raise IOError("some file operation failed, aborting auto-colorkey")
-        os.remove(portrait.full_path + '.bak')
+        portrait.full_path = STAGING.write_file(os.path.basename(portrait.full_path), im.save)
+        portrait.pixmap = QPixmap(portrait.full_path)
+        portrait.image = None # reset this so the engine will know to reload
 
 def import_gba_portrait(portrait: PortraitPrefab) -> None:
     if not portrait.pixmap:
@@ -121,15 +110,10 @@ def import_gba_portrait(portrait: PortraitPrefab) -> None:
     painter.drawPixmap( 32,  0, face_frame)
     painter.end()
 
-    try:
-        tokens = portrait.full_path.split('.')
-        new_path = '%s_lt.%s' % ('.'.join(tokens[:-1]), tokens[-1])
-        new_pix.save(new_path)
-        portrait.pixmap = QPixmap(new_path)
-        portrait.full_path = new_path
-        portrait.image = None # reset this so the engine will know to reload
-    except:
-        raise IOError("some file operation failed, aborted")
+    name = '%s_lt.png' % os.path.splitext(os.path.basename(portrait.full_path))[0]
+    portrait.full_path = STAGING.write_file(name, new_pix.save)
+    portrait.pixmap = QPixmap(portrait.full_path)
+    portrait.image = None # reset this so the engine will know to reload
 
 def create_new(window):
     settings = MainSettingsController()
@@ -144,7 +128,7 @@ def create_new(window):
                 existing_nids = [d.nid for d in RESOURCES.portraits] + [p.nid for p in new_portraits]
                 nid = str_utils.get_next_name(nid, existing_nids)
                 if pix.width() >= GBA_PORTRAIT_WIDTH and pix.height() >= GBA_PORTRAIT_HEIGHT:
-                    new_portrait = PortraitPrefab(nid, fn, pix)
+                    new_portrait = PortraitPrefab(nid, STAGING.stage_file(fn), pix)
                     if pix.width() == GBA_PORTRAIT_WIDTH and pix.height() == GBA_PORTRAIT_HEIGHT:   # must be GBA format then
                         # Swap to use colorkey color if it's not
                         auto_colorkey(new_portrait)

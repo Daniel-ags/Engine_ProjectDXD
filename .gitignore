@@ -14,6 +14,8 @@ saves/progress_log.txt
 saves/debug_commands.txt
 debug.log.*
 autosave*
+# The editor's resource files waiting for a project save
+.project_staging/
 
 screenshots/
 

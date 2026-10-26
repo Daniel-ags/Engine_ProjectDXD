@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import QLineEdit, QMessageBox, QVBoxLayout, \
     QFileDialog, QPushButton, QSpinBox
 
 from app.editor.edit_history import HISTORY
+from app.editor.file_manager.staging import STAGING
 from app.data.resources.resource_types import ResourceType as RType
 from app.utilities import str_utils
 from app.extensions.custom_gui import ComboBox, PropertyBox, Dialog
@@ -171,7 +172,7 @@ class ModifyMusicDialog(Dialog):
         fn, ok = QFileDialog.getOpenFileName(self.window, "Select Music File", starting_path, "OGG Files (*.ogg);;All FIles (*)")
         if ok:
             if fn.endswith('.ogg'):
-                self.current.set_battle_full_path(fn)
+                self.current.set_battle_full_path(STAGING.stage_file(fn))
                 name = os.path.split(fn[:-4])[-1]
                 self.battle_box.edit.setText("%s" % name)
                 print(self.current.battle_full_path)
@@ -186,7 +187,7 @@ class ModifyMusicDialog(Dialog):
         fn, ok = QFileDialog.getOpenFileName(self.window, "Select Music File", starting_path, "OGG Files (*.ogg);;All FIles (*)")
         if ok:
             if fn.endswith('.ogg'):
-                self.current.set_intro_full_path(fn)
+                self.current.set_intro_full_path(STAGING.stage_file(fn))
                 name = os.path.split(fn[:-4])[-1]
                 self.intro_box.edit.setText("%s" % name)
                 print(self.current.intro_full_path)

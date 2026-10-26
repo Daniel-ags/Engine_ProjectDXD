@@ -1,7 +1,7 @@
 import os
 
 from PyQt5.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QCheckBox, \
-    QGridLayout, QPushButton, QSizePolicy, QFrame, QSplitter, QButtonGroup, QMessageBox
+    QGridLayout, QPushButton, QSizePolicy, QFrame, QSplitter, QButtonGroup
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPixmap, QPainter, QImage, QColor
 
@@ -11,6 +11,7 @@ from app.extensions.custom_gui import PropertyBox, PropertyCheckBox
 from app.editor.custom_widgets import TeamBox
 
 from app.editor import timer
+from app.editor.file_manager.staging import STAGING
 from app.editor.icon_editor.icon_view import IconView
 from app.engine.unit_sprite import MapSprite
 from app.editor.map_sprite_editor import map_sprite_model
@@ -282,14 +283,8 @@ class NewMapSpriteProperties(QWidget):
         if not self.current:
             return
 
-        ret = QMessageBox.warning(self, "Irreversible edits", "The engine will modify your %s file directly.\n"
-                                  "Do you want to continue?" % self.current.stand_full_path,
-                                  QMessageBox.Ok | QMessageBox.Cancel)
-        if ret == QMessageBox.Ok:
-            new_standing_pix = map_sprite_model.generate_exhausted_sprite(self.current.standing_pixmap)
-            new_standing_pix.save(self.current.stand_full_path)
-            self.current.standing_pixmap = new_standing_pix
-            self.set_current(self.current)
-
-        elif ret == QMessageBox.Cancel:
-            pass
+        new_standing_pix = map_sprite_model.generate_exhausted_sprite(self.current.standing_pixmap)
+        self.current.stand_full_path = STAGING.write_file(
+            os.path.basename(self.current.stand_full_path), new_standing_pix.save)
+        self.current.standing_pixmap = new_standing_pix
+        self.set_current(self.current)

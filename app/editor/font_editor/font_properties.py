@@ -1,6 +1,5 @@
 import logging
 import os
-import shutil
 from typing import Optional
 
 from PyQt5.QtWidgets import (
@@ -15,6 +14,7 @@ from app.data.resources.fonts import Font
 from app.engine.bmpfont import BmpFont
 from app.engine import engine
 from app.extensions.custom_gui import ComboBox, PropertyBox, PropertyCheckBox
+from app.editor.file_manager.staging import STAGING
 from app.editor.font_editor.font_model import detect_base_palette, seed_default_palette
 from app.editor.settings import MainSettingsController
 
@@ -473,16 +473,15 @@ class FontProperties(QWidget):
         if not self.current:
             return
         settings = MainSettingsController()
-        font_dir = (os.path.dirname(self.current.file_name)
-                    if self.current.file_name else settings.get_last_open_path())
         fn, ok = QFileDialog.getOpenFileName(
-            self, "Select Fallback TTF", font_dir,
+            self, "Select Fallback TTF", settings.get_last_open_path(),
             "TrueType Font Files (*.ttf);;All Files(*)")
         if ok and fn:
+            settings.set_last_open_path(os.path.dirname(fn))
             basename = os.path.basename(fn)
-            dest = os.path.join(font_dir, basename)
-            if os.path.abspath(fn) != os.path.abspath(dest):
-                shutil.copy2(fn, dest)
+            # The fallback sits beside the font's image, so they go into a new version together
+            version_dir = STAGING.stage_files([self.current.image_path(), self.current.index_path(), fn])
+            self.current.set_full_path(os.path.join(version_dir, os.path.basename(self.current.file_name)))
             self.current.fallback_ttf = basename
             self.fallback_ttf_box.edit.blockSignals(True)
             self.fallback_ttf_box.edit.setText(basename)

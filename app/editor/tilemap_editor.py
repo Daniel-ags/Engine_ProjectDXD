@@ -20,6 +20,7 @@ from app.editor.tile_editor import autotiles
 from app.editor.icon_editor.icon_view import IconView
 from app.editor.terrain_painter_menu import TerrainPainterMenu
 from app.editor.base_database_gui import ResourceCollectionModel
+from app.editor.file_manager.staging import STAGING
 from app.extensions.custom_gui import ResourceListView, Dialog, PropertyBox
 from app.extensions.tiled_view import DraggableTileImageView
 
@@ -1250,14 +1251,9 @@ class TileSetMenu(QWidget):
             if not column_idxs:
                 QMessageBox.warning(self, "Autotile Generation Warning", "No autotiles match the tiles in this tileset!")
                 return
-            # Save companion tileset to file
-            full_path = current_tileset.full_path
-            new_full_path = full_path[:-4] + '_autotiles.png'
-            fn = os.path.abspath(new_full_path)
-            companion_tileset.save(fn)
-
+            name = os.path.basename(current_tileset.full_path)[:-4] + '_autotiles.png'
             current_tileset.autotiles = column_idxs
-            current_tileset.autotile_full_path = fn
+            current_tileset.autotile_full_path = STAGING.write_file(name, companion_tileset.save)
             pix = QPixmap(companion_tileset)
             current_tileset.autotile_pixmap = pix
             QMessageBox.information(self, "Autotile Generation Complete", "Autotile generation process completed for tileset %s" % current_tileset.nid)
