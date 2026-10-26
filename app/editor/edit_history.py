@@ -39,6 +39,7 @@ from app.data.database.database import DB
 from app.data.database.teams import TeamCatalog
 from app.data.resources.resource_prefab import WithResources
 from app.data.resources.resources import RESOURCES, Resources
+from app.editor.file_manager.staging import STAGING
 from app.utilities.data import Data
 from app.utilities.typing import NID
 
@@ -82,6 +83,10 @@ def restore_in_place(record, saved_form) -> None:
     if files is not None:
         # Images cached on the record went with the old fields, so they load again from these
         record.set_file_paths(copy.deepcopy(files))
+
+def _file_key(path) -> str:
+    """The one spelling of a path, for comparing paths"""
+    return os.path.normcase(os.path.abspath(path))
 
 def rebuild_keys(data: Data) -> None:
     """Re-keys a Data from its members' current nids, keeping their order"""
@@ -392,6 +397,69 @@ class EditHistory:
         self.rebaseline()
         if changed:
             self._announce(None)
+
+    # === Files ===
+    def keep_files(self, paths: Iterable[str]) -> None:
+        """Points each resource that uses one of these files, and each version of a
+        resource the history holds, at staged copies of the files, since they are
+        about to be overwritten or deleted. Each folder holding one of them is staged
+        together, so a resource that names several files from one base path keeps
+        them side by side."""
+        at_risk = {_file_key(path) for path in paths}
+        if not at_risk:
+            return
+        self.commit()
+        staged = {}  # A folder's files -> the staged folder holding copies of them
+
+        def kept_paths(resource: WithResources) -> Optional[Dict[str, Any]]:
+            by_folder: Dict[str, List[str]] = {}
+            for path in resource.used_resources():
+                if path:
+                    by_folder.setdefault(_file_key(os.path.dirname(path)), []).append(str(path))
+            moved = {}
+            for folder, files in by_folder.items():
+                if any(_file_key(path) in at_risk for path in files):
+                    key = tuple(files)
+                    if key not in staged:
+                        staged[key] = STAGING.stage_files(files)
+                    moved[folder] = staged[key]
+            if not moved:
+                return None
+            kept = resource.file_paths()
+            for name, path in kept.items():
+                if path and _file_key(os.path.dirname(path)) in moved:
+                    kept[name] = os.path.join(moved[_file_key(os.path.dirname(path))], os.path.basename(path))
+            return kept
+
+        for change_set in self._undo + self._redo:
+            for delta in change_set.deltas:
+                if isinstance(delta, RecordChange) and isinstance(delta.record, WithResources) and delta.record.path_fields:
+                    for saved_form in (delta.before, delta.after):
+                        version = type(delta.record).restore(copy.deepcopy(saved_form['record']))
+                        version.set_file_paths(copy.deepcopy(saved_form['files']))
+                        kept = kept_paths(version)
+                        if kept:
+                            saved_form['files'] = kept
+        for resource in self._resources():
+            kept = kept_paths(resource)
+            if kept:
+                resource.set_file_paths(kept)
+        # The resources' files are the same, in another place, which is not an edit
+        self.rebaseline()
+
+    def _resources(self) -> List[WithResources]:
+        """Every resource in a catalog, or that undo or redo can put back in one"""
+        states = [state for _, state in self._catalogs.values()]
+        for change_set in self._undo + self._redo:
+            for delta in change_set.deltas:
+                if isinstance(delta, CatalogChange):
+                    states += [delta.before, delta.after]
+        resources = {}
+        for state in states:
+            for member in state.members:
+                if isinstance(member, WithResources) and member.path_fields:
+                    resources[id(member)] = member
+        return list(resources.values())
 
     # === Internals ===
     def _push(self, change_set: ChangeSet) -> None:

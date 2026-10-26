@@ -157,9 +157,9 @@ class StagingTests(unittest.TestCase):
             staging.stage_file(self.source('Eirika.png', b'eirika'))
 
 
-class EditorStagingTests(unittest.TestCase):
-    """Imports and editors that change a file's bytes write into staging, never into
-    the project or beside the file the user chose"""
+class StagingEditorCase(unittest.TestCase):
+    """The editor's history and staging on a copy of the test project, with file and
+    message dialogs patched"""
     @classmethod
     def setUpClass(cls):
         import sys
@@ -248,6 +248,10 @@ class EditorStagingTests(unittest.TestCase):
     def choose_file(self, path):
         return patch('PyQt5.QtWidgets.QFileDialog.getOpenFileName', return_value=(path, True))
 
+
+class EditorStagingTests(StagingEditorCase):
+    """Imports and editors that change a file's bytes write into staging, never into
+    the project or beside the file the user chose"""
     def test_an_imported_portrait_points_at_its_staged_copy(self):
         from app.editor.portrait_editor import portrait_model
         source = self.image('Lady.png', 160, 112, '#80a080')
@@ -448,6 +452,99 @@ class EditorStagingTests(unittest.TestCase):
         saved = os.path.join(self.proj, 'resources', 'portraits', 'Lady.png')
         self.assertEqual(os.path.normcase(saved), os.path.normcase(portrait.full_path))
         self.assertEqual(read(source), read(saved))
+
+
+class SaveKeepsUndoableFilesTests(StagingEditorCase):
+    """A project save overwrites, and Remove Unused Resources deletes, files that undo
+    can still point a resource at"""
+    def setUp(self):
+        super().setUp()
+        from app.editor.file_manager.project_file_backend import ProjectFileBackend
+        from app.editor.settings import MainSettingsController
+        self.own_project()
+        self.history.clear()
+        self.preferences = {}
+        for patcher in (patch.object(MainSettingsController, 'set_current_project', lambda _, value: None),
+                        patch.object(MainSettingsController, 'append_or_bump_project', lambda _, name, path: None),
+                        patch.object(MainSettingsController, 'get_preference',
+                                     lambda _, pref: self.preferences.get(pref, pref.definition.default_value)),
+                        patch.object(ProjectFileBackend, 'display_fatal_errors', lambda _: None)):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.backend = ProjectFileBackend(None, None)
+        self.eirika = read(self.portrait_file('Eirika'))
+
+    def portrait_file(self, nid) -> str:
+        return os.path.join(self.proj, 'resources', 'portraits', nid + '.png')
+
+    def save(self):
+        self.assertTrue(self.backend.save())
+
+    def remove_unused(self):
+        self.backend.clean(self.backend.get_unused_files())
+
+    def test_undo_past_a_save_finds_a_replaced_file_as_it_was(self):
+        portrait = RESOURCES.portraits.get('Eirika')
+        with self.history.change_set('Replace'), self.history.modifying([(portrait, RESOURCES.portraits)]):
+            portrait.pixmap = None
+            portrait.full_path = self.staging.stage_file(self.image('Eirika.png', 160, 112, '#ff0000'))
+        red = read(portrait.full_path)
+
+        self.save()
+
+        self.assertEqual(red, read(self.portrait_file('Eirika')))
+        self.history.undo()
+        self.assertEqual(self.eirika, read(portrait.full_path))
+        self.history.redo()
+        self.assertEqual(red, read(portrait.full_path))
+
+    def test_undo_past_remove_unused_finds_a_deleted_resources_file(self):
+        portrait = RESOURCES.portraits.get('Eirika')
+        RESOURCES.portraits.remove_key('Eirika')
+        self.history.commit()
+
+        self.save()
+        self.remove_unused()
+
+        self.assertFalse(os.path.exists(self.portrait_file('Eirika')))
+        self.history.undo()
+        self.assertIs(portrait, RESOURCES.portraits.get('Eirika'))
+        self.assertEqual(self.eirika, read(portrait.full_path))
+
+    def test_undo_past_remove_unused_finds_a_renamed_resources_old_file(self):
+        portrait = RESOURCES.portraits.get('Eirika')
+        self.history.rename(RESOURCES.portraits, portrait, 'Lady')
+
+        self.save()
+        self.remove_unused()
+
+        self.assertEqual(self.eirika, read(self.portrait_file('Lady')))
+        self.assertFalse(os.path.exists(self.portrait_file('Eirika')))
+        self.history.undo()
+        self.assertEqual('Eirika', portrait.nid)
+        self.assertEqual(self.eirika, read(portrait.full_path))
+
+    def test_two_resources_that_swap_names_save_under_each_others_names(self):
+        eirika, seth = RESOURCES.portraits.get('Eirika'), RESOURCES.portraits.get('Seth')
+        seth_bytes = read(self.portrait_file('Seth'))
+        self.history.rename(RESOURCES.portraits, eirika, 'Swap')
+        self.history.rename(RESOURCES.portraits, seth, 'Eirika')
+        self.history.rename(RESOURCES.portraits, eirika, 'Seth')
+
+        self.save()
+
+        self.assertEqual(self.eirika, read(self.portrait_file('Seth')))
+        self.assertEqual(seth_bytes, read(self.portrait_file('Eirika')))
+
+    def test_a_backup_save_keeps_a_renamed_resources_file(self):
+        from app.editor.settings.preference_definitions import Preference
+        self.preferences[Preference.SAVE_BACKUP] = True
+        portrait = RESOURCES.portraits.get('Eirika')
+        self.history.rename(RESOURCES.portraits, portrait, 'Lady')
+
+        self.save()
+
+        self.assertEqual(self.eirika, read(self.portrait_file('Lady')))
 
 
 if __name__ == '__main__':

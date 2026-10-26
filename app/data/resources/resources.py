@@ -6,7 +6,7 @@ import shutil
 import os
 import traceback
 
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from app import sprites
 from app.data.category import Categories, CategorizedCatalog
@@ -296,6 +296,12 @@ class Resources():
         logging.info("Total Time Taken for Resources: %s ms" % (end - start))
         logging.info('Done Resource Serializing!')
         return True
+
+    def save_copies(self, proj_dir, data_types) -> List[Tuple[Path, Path]]:
+        """The (from, to) file copies save(proj_dir) makes for these catalogs"""
+        resource_dir = os.path.join(proj_dir, 'resources')
+        return [copy for data_type in data_types
+                for copy in getattr(self, data_type).save_copies(os.path.join(resource_dir, data_type))]
 
     def autosave(self, proj_dir, autosave_dir, progress=None):
         """Saves the resources as they are in memory, which may not be saved to proj_dir
