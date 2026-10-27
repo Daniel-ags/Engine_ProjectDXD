@@ -16,7 +16,19 @@ from app.tests.test_staging import StagingEditorCase
 
 class EditorWindowTests(StagingEditorCase):
     """The main window's editors open as windows beside it, one of each at a time"""
-    project = 'default.ltproj'  # Its metadata names its serialization version, which a load reads
+    @classmethod
+    def setUpClass(cls):
+        import json
+        from app.data.serialization.versions import CURRENT_SERIALIZATION_VERSION
+        super().setUpClass()
+        # A load reads the serialization version from the metadata, which the
+        # testing project's leaves out
+        path = os.path.join(cls.proj, 'metadata.json')
+        with open(path) as fp:
+            metadata = json.load(fp)
+        metadata['serialization_version'] = CURRENT_SERIALIZATION_VERSION
+        with open(path, 'w') as fp:
+            json.dump(metadata, fp)
 
     def setUp(self):
         super().setUp()

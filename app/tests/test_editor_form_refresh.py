@@ -38,6 +38,57 @@ class FormRefreshTests(unittest.TestCase):
     def choices(self, combo):
         return [combo.itemText(i) for i in range(combo.count())]
 
+    def show_after(self, tab, first, second):
+        """Shows first, then second, in the tab's form"""
+        tab.on_select(first.nid)
+        tab.on_select(second.nid)
+
+    def test_showing_a_unit_writes_nothing_to_it(self):
+        from app.editor.edit_history import saved
+        from app.editor.unit_editor.new_unit_tab import NewUnitDatabase
+        tags = list(DB.tags.keys())
+        first, second = DB.units[0], DB.units[1]
+        first.tags, first.variant, first.affinity = tags[:1], 'Variant', DB.affinities[0].nid
+        # In the reverse of the tags' own order, with one no tag has
+        second.tags, second.variant, second.affinity = tags[1::-1] + ['No_Such_Tag'], None, None
+        before = saved(second)
+        tab = self.open(NewUnitDatabase)
+
+        self.show_after(tab, first, second)
+
+        self.assertEqual(before, saved(second))
+
+    def test_showing_a_class_writes_nothing_to_it(self):
+        from app.editor.edit_history import saved
+        from app.editor.class_editor.new_class_tab import NewClassDatabase
+        tags = list(DB.tags.keys())
+        first, second = DB.classes[0], DB.classes[1]
+        first.tags = tags[:1]
+        second.tags = tags[1::-1] + ['No_Such_Tag']
+        before = saved(second)
+        tab = self.open(NewClassDatabase)
+
+        self.show_after(tab, first, second)
+
+        self.assertEqual(before, saved(second))
+
+    def test_showing_a_portrait_whose_file_is_missing_writes_nothing_to_it(self):
+        from app.data.resources.portraits import PortraitPrefab
+        from app.editor.data_editor import SingleResourceEditor
+        from app.editor.edit_history import saved
+        from app.editor.portrait_editor.new_portrait_tab import NewPortraitDatabase
+        missing = PortraitPrefab('Missing', 'no_such_folder/Missing.png')
+        missing.face_size = (96, 80)
+        RESOURCES.portraits.append(missing)
+        before = saved(missing)
+        dialog = SingleResourceEditor(NewPortraitDatabase, ['portraits'])
+        self.addCleanup(dialog.stop_history)
+        self.addCleanup(dialog.hide)
+
+        dialog.tab.on_select('Missing')
+
+        self.assertEqual(before, saved(missing))
+
     def test_ai_unit_specification_lists_tags_and_names_as_they_are(self):
         from app.editor.ai_editor.ai_properties import UnitSpecification
         from app.editor.ai_editor.ai_tab import AIDatabase

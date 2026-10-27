@@ -306,6 +306,8 @@ class PropertiesMenu(QWidget):
             self.tag_box.edit.clear()
             self.tag_box.edit.addItems(DB.tags.keys())
             self.tag_box.edit.setCurrentTexts(self.current.tags)
+            # Without the tags the dialog deleted
+            self.tags_changed()
         else:
             pass
 

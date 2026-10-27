@@ -272,6 +272,8 @@ class NewClassProperties(QWidget):
             self.tag_box.edit.clear()
             self.tag_box.edit.addItems(DB.tags.keys())
             self.tag_box.edit.setCurrentTexts(self.current.tags)
+            # Without the tags the dialog deleted
+            self.tags_changed()
         else:
             pass
 
@@ -348,8 +350,6 @@ class NewClassProperties(QWidget):
                 self.promotes_from_box.edit.setValue(current.promotes_from)
             else:
                 self.promotes_from_box.edit.setValue("None")
-            # Need to make copies because otherwise ResetSelection calls
-            # self.tag_box.updated which resets the current.tags
             turns_into = current.turns_into[:]
             tags = current.tags[:]
             self.turns_into_box.edit.clear()

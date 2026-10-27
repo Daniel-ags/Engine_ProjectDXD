@@ -153,7 +153,8 @@ class NewUnitProperties(QWidget):
         main_section.addWidget(self.name_box, 0, 2)
 
         self.variant_box = PropertyBox("Animation Variant", QLineEdit, self)
-        self.variant_box.edit.textChanged.connect(self.variant_changed)
+        # Typed only: showing a unit without a variant clears the box, which is not an edit
+        self.variant_box.edit.textEdited.connect(self.variant_changed)
         self.variant_box.edit.setPlaceholderText("No Variant")
         main_section.addWidget(self.variant_box, 1, 2)
 
@@ -224,7 +225,8 @@ class NewUnitProperties(QWidget):
         self.alternate_class_box.edit.updated.connect(self.alternate_class_changed)
 
         self.affinity_box = AffinityBox(self)
-        self.affinity_box.edit.currentIndexChanged.connect(self.affinity_changed)
+        # Chosen only: showing a unit without an affinity sets the box to None, which is not an edit
+        self.affinity_box.edit.activated.connect(self.affinity_changed)
 
         total_section = QVBoxLayout()
         total_section.addLayout(top_section)
@@ -351,6 +353,8 @@ class NewUnitProperties(QWidget):
             self.tag_box.edit.clear()
             self.tag_box.edit.addItems(DB.tags.keys())
             self.tag_box.edit.setCurrentTexts(self.current.tags)
+            # Without the tags the dialog deleted
+            self.tags_changed()
         else:
             pass
 

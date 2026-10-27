@@ -175,8 +175,13 @@ class NewPortraitProperties(QWidget):
             self.info_offset.edit.set_current(*current.info_offset)
 
             self.face_size.edit.set_current(*current.face_size)
+            # Their handlers fit the face to the picture, which showing it should not
+            for box in (self.blink_size, self.mouth_size):
+                box.edit.blockSignals(True)
             self.blink_size.edit.set_current(*current.blink_size)
             self.mouth_size.edit.set_current(*current.mouth_size)
+            for box in (self.blink_size, self.mouth_size):
+                box.edit.blockSignals(False)
             self.chibi_coord.edit.set_current(*current.chibi_coord)
             self.blink_frames.edit.setValue(current.blink_frames)
             self.mouth_frames.edit.setValue(current.mouth_frames)
@@ -284,18 +289,21 @@ class NewPortraitProperties(QWidget):
 
     def blink_size_changed(self, x, y):
         self.current.blink_size = (x, y)
-        self.current.face_size = (min(self.current.pixmap.width() - x,
-                                      self.current.face_size[0]),
-                                  self.current.face_size[1])
-        self.face_size.edit.set_current(*self.current.face_size)
+        # A portrait whose file is missing has no picture to fit the face to
+        if not self.current.pixmap.isNull():
+            self.current.face_size = (min(self.current.pixmap.width() - x,
+                                          self.current.face_size[0]),
+                                      self.current.face_size[1])
+            self.face_size.edit.set_current(*self.current.face_size)
         self.draw_raw_image()
 
     def mouth_size_changed(self, x, y):
         self.current.mouth_size = (x, y)
-        self.current.face_size = (self.current.face_size[0],
-                                  min(self.current.face_size[1],
-                                      self.current.pixmap.height() - y*2))
-        self.face_size.edit.set_current(*self.current.face_size)
+        if not self.current.pixmap.isNull():
+            self.current.face_size = (self.current.face_size[0],
+                                      min(self.current.face_size[1],
+                                          self.current.pixmap.height() - y*2))
+            self.face_size.edit.set_current(*self.current.face_size)
         self.draw_raw_image()
 
     def blink_frames_changed(self, val):
