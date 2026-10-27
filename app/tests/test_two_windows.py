@@ -1,6 +1,7 @@
 import os
 import random
 import shutil
+import unittest
 from unittest.mock import patch
 
 from app.tests import qt_headless  # noqa: F401 -- before any QApplication
@@ -258,6 +259,7 @@ class TwoWindowTests(StagingEditorCase):
         self.assertAllShowDatabase(units, classes)
 
     # === Anything, in any order ===
+    @unittest.skipUnless(os.environ.get('LT_SLOW_TESTS'), "a slow test: set LT_SLOW_TESTS=1, or run_tests_parallel.py --slow")
     def test_any_order_of_edits_in_two_windows_keeps_both_showing_the_database_and_undoes(self):
         for seed in range(3):
             with self.subTest(seed=seed):

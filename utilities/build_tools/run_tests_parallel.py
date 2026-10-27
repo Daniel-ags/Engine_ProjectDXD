@@ -4,6 +4,7 @@ Runs the test suite across several processes.
     python utilities/build_tools/run_tests_parallel.py              # everything
     python utilities/build_tools/run_tests_parallel.py city turn    # only modules whose name contains "city" or "turn"
     python utilities/build_tools/run_tests_parallel.py -j 4         # on four processes
+    python utilities/build_tools/run_tests_parallel.py --slow       # with the slow tests too
 
 Each test module runs whole, in one process, so its tests keep the order and the
 shared state they have in a serial run. Modules are handed out one at a time to
@@ -88,7 +89,12 @@ def main() -> int:
                         help="number of processes (default: %(default)s)")
     parser.add_argument('--slowest', type=int, default=0, metavar='N',
                         help="also list the N slowest modules")
+    parser.add_argument('--slow', action='store_true',
+                        help="also run the tests skipped unless LT_SLOW_TESTS is set")
     args = parser.parse_args()
+    if args.slow:
+        # The worker processes inherit it
+        os.environ['LT_SLOW_TESTS'] = '1'
 
     modules = find_test_modules()
     if args.filters:
