@@ -6,7 +6,7 @@ from app.editor.settings.preference_definitions import Preference
 from app.utilities import str_utils
 from app.data.database.database import DB
 
-from app.extensions.list_dialogs import MultiAttrListDialog
+from app.editor.recorded_list_dialog import RecordedListDialog
 from app.extensions.list_models import MultiAttrListModel
 
 from app.data.database import equations
@@ -119,7 +119,7 @@ class EquationDelegate(QStyledItemDelegate):
     def createEditor(self, parent, option, index):
         return CodeLineEdit(parent)
 
-class EquationDialog(MultiAttrListDialog):
+class EquationDialog(RecordedListDialog):
     locked_vars = {"HIT", "AVOID", "CRIT_HIT", "CRIT_AVOID",
                    "DAMAGE", "DEFENSE", "MAGIC_DAMAGE", "MAGIC_DEFENSE",
                    "HITPOINTS", "MOVEMENT", "THRACIA_CRIT", "CRIT_ADD", "CRIT_MULT",

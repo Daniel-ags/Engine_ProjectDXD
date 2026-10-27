@@ -9,6 +9,9 @@ The history never snapshots the whole database. It records three kinds of delta:
 - CatalogChange: a catalog's members and order (object references, not copies),
   plus its categories and, for teams, the alliances. Creating, deleting,
   duplicating, pasting and reordering are all changes of membership.
+- GridChange: the movement cost grid before and after, restored in place. The
+  grid is one record outside any catalog, compared at every commit like a
+  catalog's members.
 
 Editors bind the record they are showing. At each commit point (a change of
 selection or of focus, a structural edit, closing, undo) the history compares
@@ -36,6 +39,7 @@ from app.data.category import CategorizedCatalog
 from app.data.database import references
 from app.data.database.constants import Constant
 from app.data.database.database import DB
+from app.data.database.mcost import McostGrid
 from app.data.database.teams import TeamCatalog
 from app.data.resources.resource_prefab import WithResources
 from app.data.resources.resources import RESOURCES, Resources
@@ -154,7 +158,21 @@ class CatalogChange:
         self.after.apply_to(self.catalog)
 
 
-Delta = Any  # RecordChange | CatalogChange
+@dataclass(eq=False)
+class GridChange:
+    grid: McostGrid
+    before: Any  # The grid's saved form
+    after: Any
+    catalog = None  # In no catalog, so none to re-key
+
+    def undo(self):
+        self.grid.restore(copy.deepcopy(self.before))
+
+    def redo(self):
+        self.grid.restore(copy.deepcopy(self.after))
+
+
+Delta = Any  # RecordChange | CatalogChange | GridChange
 
 
 @dataclass(eq=False)
@@ -166,7 +184,7 @@ class ChangeSet:
     def catalogs(self) -> List[Data]:
         seen = []
         for delta in self.deltas:
-            if not any(delta.catalog is c for c in seen):
+            if delta.catalog is not None and not any(delta.catalog is c for c in seen):
                 seen.append(delta.catalog)
         return seen
 
@@ -194,6 +212,7 @@ class EditHistory:
         # whatever shows the records, usually an editor tab
         self._bound: Dict[int, Dict[int, Tuple[Data, Any, Any]]] = {}
         self._catalogs: Dict[int, Tuple[Data, CatalogState]] = {}
+        self._grid: Any = None  # The movement cost grid's saved form at the last commit
         self._shadow: Dict[int, dict] = {}  # LT_EDITOR_CHECK only
         self._listeners: List[Callable[[Any], None]] = []
         self.clear()
@@ -206,6 +225,7 @@ class EditHistory:
         self._open.clear()
         self._bound.clear()
         self._catalogs = {id(data): (data, CatalogState.of(data)) for data in self.watched_catalogs()}
+        self._grid = self.db.mcost.save()
         if CHECK_UNRECORDED:
             self._shadow = self._saved_records()
 
@@ -299,7 +319,9 @@ class EditHistory:
     def commit(self, label: str = 'Edit', origin=None) -> None:
         """Records whatever changed since the last commit as one undo step"""
         if self._open:
-            return  # The open change set picks it up when it ends
+            # Into the open change set now, since a bind may follow and take a new baseline
+            self._collect(self._open[0])
+            return
         # Nothing changes between its start and end, so it collects once, as it ends
         self._open.append(ChangeSet(label, origin))
         self.end()
@@ -483,6 +505,10 @@ class EditHistory:
             if not now.same_as(state):
                 change_set.deltas.append(CatalogChange(data, state, now))
                 self._catalogs[key] = (data, now)
+        grid = self.db.mcost.save()
+        if grid != self._grid:
+            change_set.deltas.append(GridChange(self.db.mcost, self._grid, grid))
+            self._grid = grid
 
     def rebaseline(self) -> None:
         """Takes everything as it is now as the starting point of the next edit, without
@@ -492,6 +518,7 @@ class EditHistory:
             bindings[key] = (data, record, saved(record))
         for key, (data, _) in list(self._catalogs.items()):
             self._catalogs[key] = (data, CatalogState.of(data))
+        self._grid = self.db.mcost.save()
         if CHECK_UNRECORDED:
             self._shadow = self._saved_records()
 

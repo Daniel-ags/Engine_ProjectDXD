@@ -74,15 +74,20 @@ class TerrainModel(DragDropCollectionModel):
         self.swap_in_resources(old_nid, new_nid)
 
     def swap_in_resources(self, old_nid, new_nid):
-        for tilemap in RESOURCES.tilemaps:
-            for layer in tilemap.layers:
-                for coord, terrain in layer.terrain_grid.items():
+        tilemaps = [tilemap for tilemap in RESOURCES.tilemaps
+                    if any(old_nid in layer.terrain_grid.values() for layer in tilemap.layers)]
+        tilesets = [tileset for tileset in RESOURCES.tilesets if old_nid in tileset.terrain_grid.values()]
+        with HISTORY.modifying([(tilemap, RESOURCES.tilemaps) for tilemap in tilemaps] +
+                               [(tileset, RESOURCES.tilesets) for tileset in tilesets]):
+            for tilemap in tilemaps:
+                for layer in tilemap.layers:
+                    for coord, terrain in layer.terrain_grid.items():
+                        if terrain == old_nid:
+                            layer.terrain_grid[coord] = new_nid
+            for tileset in tilesets:
+                for coord, terrain in tileset.terrain_grid.items():
                     if terrain == old_nid:
-                        layer.terrain_grid[coord] = new_nid
-        for tileset in RESOURCES.tilesets:
-            for coord, terrain in tileset.terrain_grid.items():
-                if terrain == old_nid:
-                    tileset.terrain_grid[coord] = new_nid
+                        tileset.terrain_grid[coord] = new_nid
 
     def create_new(self):
         new_terrain = DB.terrain.create_new(DB)

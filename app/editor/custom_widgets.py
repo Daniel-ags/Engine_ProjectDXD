@@ -124,9 +124,9 @@ class MovementCostBox(ObjBox):
         super().__init__("Movement Cost", MovementCostModel, lambda: DB.mcost, parent, button)
 
 class MovementClassBox(ObjBox):
-    def __init__(self, parent=None, button=False):
+    def __init__(self, parent=None, button=False, title="Movement Class"):
         from app.editor.mcost_dialog import MovementClassModel
-        super().__init__("Movement Class", MovementClassModel, lambda: DB.mcost, parent, button)
+        super().__init__(title, MovementClassModel, lambda: DB.mcost, parent, button)
 
 class EventBox(ObjBox):
     def __init__(self, parent=None, button=False, exclude=None):

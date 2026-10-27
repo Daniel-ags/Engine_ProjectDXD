@@ -27,6 +27,7 @@ from app.editor.lib.components.validated_line_edit import NidLineEdit
 from app.editor.component_editor_types import T
 
 from app.editor.class_editor import class_model
+from app.editor.custom_widgets import MovementClassBox
 from app.editor.combat_animation_editor import new_combat_animation_tab
 
 from app.editor import timer
@@ -79,9 +80,9 @@ class NewClassProperties(QWidget):
         self.desc_box.edit.setFixedHeight(font_height.lineSpacing() * 3 + 20)
         main_section.addWidget(self.desc_box, 2, 0, 1, 2)
 
-        self.movement_box = PropertyBox(_("Movement Type"), ComboBox, self)
-        self.movement_box.edit.addItems(DB.mcost.unit_types)
-        self.movement_box.edit.currentIndexChanged.connect(self.movement_changed)
+        self.movement_box = MovementClassBox(self, title=_("Movement Type"))
+        # Chosen only: showing a class whose movement type is gone leaves the box blank, which is not an edit
+        self.movement_box.edit.activated.connect(self.movement_changed)
         main_section.addWidget(self.movement_box, 2, 2)
 
         self.tier_box = PropertyBox(_("Tier"), QSpinBox, self)

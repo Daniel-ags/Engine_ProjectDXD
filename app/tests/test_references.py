@@ -231,6 +231,78 @@ class RenameTests(ReferenceTestCase):
 
         self.assertEqual(NEW, DB.units.get(UNIT).portrait_nid)
 
+    def test_renaming_a_faction_reaches_generic_units_and_ai_targets(self):
+        behaviour = DB.ai.get('Attack').behaviours[0]
+        behaviour.target_spec = ['Faction', 'Soldier']
+
+        self.rename(DB.factions, DType.FACTIONS, 'Soldier', NEW)
+
+        self.assertEqual(NEW, self.level.units.get('101').faction)
+        self.assertEqual(['Faction', NEW], behaviour.target_spec)
+        self.assert_no_references(DType.FACTIONS, 'Soldier')
+
+    def test_renaming_an_ai_reaches_level_units_and_components(self):
+        self.level.units.get('101').roam_ai = 'Pursue'
+        self.assertTrue(references.find_referrers(DB, DType.AI, 'Pursue'))
+
+        self.rename(DB.ai, DType.AI, 'Pursue', NEW)
+
+        self.assertEqual(NEW, self.level.units.get('101').roam_ai)
+        self.assert_no_references(DType.AI, 'Pursue')
+
+    def test_renaming_a_weapon_type_rekeys_weapon_experience_in_place_and_reaches_bonuses(self):
+        klass = DB.classes.get('Eirika_Lord')
+        order = list(klass.wexp_gain)
+        gain = klass.wexp_gain['Sword']
+
+        self.rename(DB.weapons, DType.WEAPONS, 'Sword', NEW)
+
+        self.assertEqual([NEW if k == 'Sword' else k for k in order], list(klass.wexp_gain))
+        self.assertIs(gain, klass.wexp_gain[NEW])
+        self.assertEqual([NEW], [bonus.weapon_type for bonus in DB.weapons.get('Lance').advantage])
+        self.assert_no_references(DType.WEAPONS, 'Sword')
+
+    def test_renaming_a_terrain_reaches_ai_targets_and_terrain_regions(self):
+        behaviour = DB.ai.get('Attack').behaviours[1]
+        behaviour.target, behaviour.target_spec = 'Terrain', '1'
+        region = Region('Lava')
+        region.region_type = RegionType.TERRAIN
+        region.sub_nid = '1'
+        self.level.regions.append(region)
+
+        self.rename(DB.terrain, DType.TERRAIN, '1', NEW)
+
+        self.assertEqual(NEW, behaviour.target_spec)
+        self.assertEqual(NEW, region.sub_nid)
+        self.assert_no_references(DType.TERRAIN, '1')
+
+    def test_renaming_a_tilemap_reaches_levels_and_overworlds(self):
+        self.level.bg_tilemap = 'Magvel'
+
+        self.rename(RESOURCES.tilemaps, RType.TILEMAPS, 'Magvel', NEW)
+
+        self.assertEqual(NEW, self.level.bg_tilemap)
+        self.assertEqual(NEW, DB.overworlds.get('0').tilemap)
+        self.assert_no_references(RType.TILEMAPS, 'Magvel')
+
+    def test_renaming_a_sound_effect_reaches_teams(self):
+        DB.teams.get('player').phase_change_sound_effect = 'Aircalibur'
+
+        self.rename(RESOURCES.sfx, RType.SFX, 'Aircalibur', NEW)
+
+        self.assertEqual(NEW, DB.teams.get('player').phase_change_sound_effect)
+        self.assert_no_references(RType.SFX, 'Aircalibur')
+
+    def test_renaming_a_song_reaches_level_phases_and_overworlds(self):
+        self.level.music['player_phase'] = 'Distant Roads'
+
+        self.rename(RESOURCES.music, RType.MUSIC, 'Distant Roads', NEW)
+
+        self.assertEqual(NEW, self.level.music['player_phase'])
+        self.assertIsNone(self.level.music['enemy_phase'])
+        self.assertEqual(NEW, DB.overworlds.get('0').music)
+        self.assert_no_references(RType.MUSIC, 'Distant Roads')
+
     def test_rewrite_returns_what_it_changed(self):
         DB.units.get(UNIT).starting_items = [[ITEM, False]]
         sites = references.rewrite(DB, DType.ITEMS, ITEM, NEW)
@@ -247,6 +319,53 @@ class SwapTests(ReferenceTestCase):
 
         self.assertNotIn(stats[0], klass.bases)
         self.assertEqual(7, klass.bases[stats[1]])
+
+    def test_swapping_a_faction_moves_its_generic_units(self):
+        references.rewrite(DB, DType.FACTIONS, 'Soldier', 'Bandit')
+
+        self.assertEqual('Bandit', self.level.units.get('101').faction)
+        self.assertEqual('Bandit', self.level.units.get('102').faction)
+
+    def test_swapping_an_ai_moves_the_units_using_it(self):
+        references.rewrite(DB, DType.AI, 'Attack', 'Guard')
+
+        self.assertEqual('Guard', self.level.units.get('101').ai)
+        self.assertEqual('Guard', self.level.units.get("O'Neill").ai)
+
+    def test_swapping_a_weapon_type_onto_one_already_present_keeps_that_entry(self):
+        klass = DB.classes.get('Eirika_Lord')
+        lance = klass.wexp_gain['Lance']
+
+        references.rewrite(DB, DType.WEAPONS, 'Sword', 'Lance')
+
+        self.assertNotIn('Sword', klass.wexp_gain)
+        self.assertIs(lance, klass.wexp_gain['Lance'])
+
+    def test_swapping_a_terrain_moves_its_regions(self):
+        region = Region('Lava')
+        region.region_type = RegionType.TERRAIN
+        region.sub_nid = '1'
+        self.level.regions.append(region)
+
+        references.rewrite(DB, DType.TERRAIN, '1', '2')
+
+        self.assertEqual('2', region.sub_nid)
+
+    def test_swapping_a_tilemap_moves_the_levels_using_it(self):
+        references.rewrite(DB, RType.TILEMAPS, 'Prologue', 'Test')
+
+        self.assertEqual('Test', self.level.tilemap)
+        self.assertEqual('Test', DB.levels.get('1').tilemap)
+
+    def test_swapping_a_song_moves_every_phase_playing_it(self):
+        self.level.music['player_phase'] = 'Distant Roads'
+        self.level.music['enemy_phase'] = 'Distant Roads'
+
+        references.rewrite(DB, RType.MUSIC, 'Distant Roads', 'Other Song')
+
+        self.assertEqual('Other Song', self.level.music['player_phase'])
+        self.assertEqual('Other Song', self.level.music['enemy_phase'])
+        self.assertEqual('Other Song', DB.overworlds.get('0').music)
 
 
 class ClearTests(ReferenceTestCase):

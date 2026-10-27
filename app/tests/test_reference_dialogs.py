@@ -98,6 +98,49 @@ class EditorTabTests(DialogTestCase):
         tab.rename(ITEM, 'Renamed')
         self.assertEqual([['Renamed', False]], DB.units.get(UNIT).starting_items)
 
+    def terrain_model(self):
+        from PyQt5.QtWidgets import QListView, QWidget
+        from app.editor.terrain_editor.terrain_model import TerrainModel
+        window = QWidget()
+        self.addCleanup(window.deleteLater)
+        window.view = QListView(window)
+        return TerrainModel(DB.terrain, window)
+
+    def test_renaming_a_terrain_renames_it_in_tilemaps_and_tilesets_as_one_undo_step(self):
+        from app.editor.edit_history import HISTORY
+        HISTORY.clear()
+        layer = RESOURCES.tilemaps.get('Prologue').layers[0]
+        tileset = RESOURCES.tilesets.get('Prologue')
+        tileset.terrain_grid[(0, 0)] = '21'
+        HISTORY.rebaseline()
+        self.assertEqual('21', layer.terrain_grid[(7, 4)])
+
+        HISTORY.rename(DB.terrain, DB.terrain.get('21'), 'Renamed', self.terrain_model().on_nid_changed)
+
+        self.assertEqual('Renamed', layer.terrain_grid[(7, 4)])
+        self.assertEqual('Renamed', tileset.terrain_grid[(0, 0)])
+        HISTORY.undo()
+        self.assertFalse(HISTORY.can_undo())
+        self.assertEqual('21', RESOURCES.tilemaps.get('Prologue').layers[0].terrain_grid[(7, 4)])
+        self.assertEqual('21', RESOURCES.tilesets.get('Prologue').terrain_grid[(0, 0)])
+
+    def test_deleting_a_terrain_swaps_it_in_tilemaps_as_one_undo_step(self):
+        from app.editor.edit_history import HISTORY
+        HISTORY.clear()
+        get_swap = self.patch_dialog('get_swap', (DB.terrain.get('1'), True))
+        model = self.terrain_model()
+        layer = RESOURCES.tilemaps.get('Prologue').layers[0]
+
+        model.delete(DB.terrain.keys().index('21'))
+
+        self.assertIn('Tilemaps', [tab.label for tab in get_swap.call_args[0][0]])
+        self.assertNotIn('21', DB.terrain.keys())
+        self.assertEqual('1', layer.terrain_grid[(7, 4)])
+        HISTORY.undo()
+        self.assertFalse(HISTORY.can_undo())
+        self.assertIn('21', DB.terrain.keys())
+        self.assertEqual('21', RESOURCES.tilemaps.get('Prologue').layers[0].terrain_grid[(7, 4)])
+
     def test_deleting_in_the_unit_tab_removes_it_from_levels(self):
         from app.editor.unit_editor.new_unit_tab import NewUnitDatabase
         self.patch_dialog('inform', True)

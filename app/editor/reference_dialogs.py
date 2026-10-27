@@ -7,12 +7,14 @@ only shows the user what a deletion would touch and carries out their choice.
 from __future__ import annotations
 
 import importlib
+from types import SimpleNamespace
 from typing import Any, Callable, List, Optional
 
 from PyQt5.QtCore import QAbstractListModel, Qt
 
 from app.data.database import references
 from app.data.database.database_types import DatabaseType as DType
+from app.editor.custom_widgets import ObjBox
 from app.editor.edit_history import HISTORY
 from app.extensions.custom_gui import ComboBox, DeletionDialog, DeletionTab
 from app.utilities.typing import NID
@@ -47,6 +49,12 @@ class NidListModel(QAbstractListModel):
         if index.isValid() and role == Qt.DisplayRole:
             return str(self._data[index.row()].nid)
         return None
+
+
+def nid_box(title: str, nids: List[NID], parent) -> ObjBox:
+    """A choice of one of these nids, as a swap for a target whose nids name no
+    records, like the movement types"""
+    return ObjBox(title, NidListModel, lambda: [SimpleNamespace(nid=nid) for nid in nids], parent)
 
 
 def owner_model(owner_type: DType):

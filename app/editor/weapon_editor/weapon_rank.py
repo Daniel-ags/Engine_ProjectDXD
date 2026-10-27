@@ -5,10 +5,10 @@ from app.utilities import str_utils
 from app.data.database.database import DB
 
 from app.extensions.custom_gui import ComboBox, DeletionTab
-from app.extensions.list_dialogs import MultiAttrListDialog
 from app.extensions.list_models import MultiAttrListModel, DefaultMultiAttrListModel
 
 from app.editor.edit_history import HISTORY
+from app.editor.recorded_list_dialog import RecordedListDialog
 from app.data.database.database_types import DatabaseType as DType
 from app.data.database.weapons import WeaponRank
 from app.editor import reference_dialogs
@@ -55,12 +55,14 @@ class WeaponRankMultiModel(MultiAttrListModel):
             HISTORY.rewrite(DType.WEAPON_RANKS, old_value, new_value)
         elif attr == 'requirement':
             with HISTORY.modifying([(klass, DB.classes) for klass in DB.classes]):
+                # With the caps that name it, as one undo step
+                data.requirement = new_value
                 for klass in DB.classes.values():
                     for weapon_type, wexp_gain in klass.wexp_gain.items():
                         if wexp_gain.cap == old_value:
                             wexp_gain.cap = new_value
 
-class RankDialog(MultiAttrListDialog):
+class RankDialog(RecordedListDialog):
     @classmethod
     def create(cls):
         def deletion_func(model, index):

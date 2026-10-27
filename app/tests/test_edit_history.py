@@ -42,6 +42,29 @@ class ModifyTests(HistoryTestCase):
         self.assertEqual('Somebody Else', self.unit.name)
         self.assertEqual(99, self.unit.bases['HP'])
 
+    def test_binding_again_inside_a_change_set_keeps_what_changed_before(self):
+        with HISTORY.change_set():
+            self.unit.name = 'Somebody Else'
+            HISTORY.bind(self.unit, DB.units)
+
+        HISTORY.undo()
+        self.assertEqual(UNIT, self.unit.name)
+
+    def test_the_movement_cost_grid_is_restored_in_place(self):
+        grid = DB.mcost
+        cost = grid.get((0, 0))
+        grid.set((0, 0), 9)
+        grid.add_row('Lava')
+        HISTORY.commit()
+
+        HISTORY.undo()
+        self.assertIs(grid, DB.mcost)
+        self.assertEqual(cost, grid.get((0, 0)))
+        self.assertNotIn('Lava', grid.terrain_types)
+        HISTORY.redo()
+        self.assertEqual(9, grid.get((0, 0)))
+        self.assertIn('Lava', grid.terrain_types)
+
     def test_nothing_changed_records_nothing(self):
         HISTORY.commit()
         self.assertFalse(HISTORY.can_undo())
