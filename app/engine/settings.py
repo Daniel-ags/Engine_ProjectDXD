@@ -1,3 +1,5 @@
+import sys
+
 from app.constants import WINWIDTH, WINHEIGHT
 
 from app.engine import config as cf
@@ -9,6 +11,7 @@ from app.engine.state import State
 from app.engine import engine, background, banner, menus, settings_menu, base_surf, text_funcs, joy_bindings
 from app.engine.game_state import game
 from app.engine.fluid_scroll import FluidScroll
+from app.utilities.utils import frames2ms
 
 controls = {'key_SELECT': engine.subsurface(SPRITES.get('buttons'), (0, 66, 14, 13)),
             'key_BACK': engine.subsurface(SPRITES.get('buttons'), (0, 82, 14, 13)),
@@ -18,14 +21,17 @@ controls = {'key_SELECT': engine.subsurface(SPRITES.get('buttons'), (0, 66, 14, 
             'key_LEFT': engine.subsurface(SPRITES.get('buttons'), (1, 4, 13, 12)),
             'key_RIGHT': engine.subsurface(SPRITES.get('buttons'), (1, 19, 13, 12)),
             'key_DOWN': engine.subsurface(SPRITES.get('buttons'), (1, 34, 12, 13)),
-            'key_UP': engine.subsurface(SPRITES.get('buttons'), (1, 50, 12, 13))}
-control_order = ('key_SELECT', 'key_BACK', 'key_INFO', 'key_AUX', 'key_LEFT', 'key_RIGHT', 'key_UP', 'key_DOWN', 'key_START')
+            'key_UP': engine.subsurface(SPRITES.get('buttons'), (1, 50, 12, 13)),
+            'key_SPEED': engine.subsurface(SPRITES.get('buttons'), (1, 210, 14, 13))}
+control_order = ('key_SELECT', 'key_BACK', 'key_INFO', 'key_AUX', 'key_LEFT', 'key_RIGHT', 'key_UP', 'key_DOWN', 'key_START', 'key_SPEED')
 
 config = [('animation', ['Always', 'Your Turn', 'Combat Only', 'Never'], 0),
           ('screen_size', [1, 2, 3, 4, 5, 6], 18),
           ('display_fps', bool, 2),
           ('battle_bg', bool, 17),
-          ('unit_speed', list(reversed(range(15, 180, 15))), 1),
+          # How long a unit takes to cross a tile, a whole number of frames from 10 to 1.
+          # The GBA takes 8, or 4 at its fast game speed
+          ('unit_speed', [frames2ms(frames) for frames in range(10, 0, -1)], 1),
           ('text_speed', cf.text_speed_options, 2),
           # ('cursor_speed', list(reversed(range(32, 160, 16))), 8),
           ('mouse', bool, 19),
@@ -44,6 +50,10 @@ config = [('animation', ['Always', 'Your Turn', 'Combat Only', 'Never'], 0),
           ('confirm_end', bool, 14),
           ('display_hints', bool, 3),
           ('rumble', bool, 15)]
+if sys.platform == 'emscripten':
+    # The browser build's page scales the game to the window itself
+    # (app/web/page.js), and its display stays the game's own size
+    config = [c for c in config if c[0] != 'screen_size']
 
 config_icons = [engine.subsurface(SPRITES.get('settings_icons'), (0, c[2] * 16, 16, 16)) for c in config]
 

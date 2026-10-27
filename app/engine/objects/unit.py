@@ -7,7 +7,7 @@ from app.data.database.database import DB
 from app.data.database.level_units import GenericUnit, UniqueUnit
 from app.data.database.units import UnitPrefab
 from app.engine import (combat_calcs, equations, item_funcs, item_system,
-                        skill_system, unit_funcs)
+                        skill_system, stale_save, unit_funcs)
 from app.engine.objects.difficulty_mode import DifficultyModeObject
 from app.engine.objects.item import ItemObject
 from app.engine.objects.skill import SkillObject
@@ -111,7 +111,9 @@ class UnitObject(Prefab):
     class_skills: List[NID] = field(default_factory=list)    #: Skills que pertencem à classe atual
     max_skills: int = 12                                     #: Max de class_skill ativas
 
-    _visible_skills_cache: List[SkillObject] = field(default_factory=list)
+    # What skills returns, or None until it is next asked for. Changing the skills
+    # sets it back to None rather than emptying it, as a caller may still hold the list
+    _visible_skills_cache: Optional[List[SkillObject]] = None
 
     has_rescued: bool = False  #: Has the unit *rescued* someone this phase?
     has_taken: bool = False  #: Has the unit *taken* someone this phase?
@@ -283,7 +285,7 @@ class UnitObject(Prefab):
             for s in all_skills:
                 skill_system.before_add(self, s.get())
                 self._skills.append(s)
-            self._visible_skills_cache.clear()
+            self._visible_skills_cache = None
 
             # Identifica as skills que possuem o componente 'class_skill'
             self.class_skills = [s.nid for s in class_skills if 'class_skill' in s.components]
@@ -342,7 +344,7 @@ class UnitObject(Prefab):
         # equip items and skill after initialization
         for s in self._skills:
             skill_system.after_add(self, s.get())
-        self._visible_skills_cache.clear()
+        self._visible_skills_cache = None
 
         # -- Equipped Items
         self.autoequip()
@@ -552,7 +554,7 @@ class UnitObject(Prefab):
                     self.class_skills.append(skill.nid)
 
             self._skills.append(UnitSkill(skill, source, source_type))
-            self._visible_skills_cache.clear()
+            self._visible_skills_cache = None
         return popped_skill
 
     def remove_skill(self, skill, source, source_type=SourceType.DEFAULT, test=False):
@@ -571,7 +573,7 @@ class UnitObject(Prefab):
                 to_remove = s
         if not test and to_remove:
             self._skills.remove(to_remove)
-            self._visible_skills_cache.clear()
+            self._visible_skills_cache = None
         return removed_skill_info
 
     
@@ -591,7 +593,7 @@ class UnitObject(Prefab):
         Returns:
             A List of SkillObjects
         """
-        if self._visible_skills_cache:
+        if self._visible_skills_cache is not None:
             return self._visible_skills_cache
 
         skills = []
@@ -833,10 +835,13 @@ class UnitObject(Prefab):
         # keep accessories sorted after items
         self.items = sorted(self.items, key=lambda item: item_system.is_accessory(self, item))
 
+    def has_equipped(self, item) -> bool:
+        """Whether item is equipped already, so that equipping it does nothing"""
+        return (item_system.is_accessory(self, item) and item is self.equipped_accessory) or \
+            item is self.equipped_weapon
+
     def equip(self, item):
-        if item_system.is_accessory(self, item) and item is self.equipped_accessory:
-            return  # Don't need to do anything
-        elif item is self.equipped_weapon:
+        if self.has_equipped(item):
             return  # Don't need to do anything
         logging.debug("Equipping %s" % item)
         if item_system.is_accessory(self, item):
@@ -1063,6 +1068,7 @@ class UnitObject(Prefab):
         self.team = s_dict['team']
         self.party = s_dict['party']
         self.klass = s_dict['klass']
+        stale_save.require(self.klass, DB.classes, 'class', "Unit '%s'" % self.nid)
         self.variant = s_dict['variant']
         self.level = s_dict['level']
         self.exp = s_dict['exp']
@@ -1070,6 +1076,8 @@ class UnitObject(Prefab):
         self.persistent = s_dict.get('persistent', not s_dict.get('generic'))
 
         self.ai = s_dict['ai']
+        if self.ai:
+            stale_save.require(self.ai, DB.ai, 'AI', "Unit '%s'" % self.nid)
         self.roam_ai = s_dict.get('roam_ai', None)
         self.ai_group = s_dict.get('ai_group', None)
 
@@ -1154,7 +1162,7 @@ class UnitObject(Prefab):
 
         for s in self._skills:
             skill_system.after_add_from_restore(self, s.get())
-        self._visible_skills_cache.clear()
+        self._visible_skills_cache = None
 
         return self
 

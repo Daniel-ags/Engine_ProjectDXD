@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Any, Dict
-from app.engine.codegen.codegen_utils import get_codegen_header
+from app.engine.codegen.codegen_utils import GeneratedSource, get_codegen_header
 from app.engine.component_system.utils import ARG_TYPE_MAP, HookInfo, ResolvePolicy
 
 SKILL_HOOKS: Dict[str, HookInfo] = {
@@ -165,15 +165,25 @@ def generate_skill_hook_str(hook_name: str, hook_info: HookInfo):
 
     conditional_check = "condition(skill, unit)" if 'item' not in args else 'condition(skill, unit, item)'
     default_handling = "return result"
-    unconditional_handling = ""
     cache_handling = ""
     if hook_info.has_default_value:
         default_handling = "return result if values else Defaults.{hook_name}({args})".format(hook_name=hook_name, args=', '.join(args))
     if hook_info.has_unconditional:
-        unconditional_handling = """
+        # The components with either kind of hook, in the order the skill has
+        # them, each asked which kind it has
+        component_loop = """
+        for component in skill.components.with_hook('{hook_name}', '{hook_name}_unconditional'):
+            if component.defines('{hook_name}'):
+                if component.ignore_conditional or {conditional_check}:
+                    values.append(component.{hook_name}({args}))
             if component.defines('{hook_name}_unconditional'):
-                values.append(component.{hook_name}_unconditional({args}))
-""".format(hook_name=hook_name, args=', '.join(args))
+                values.append(component.{hook_name}_unconditional({args}))"""
+    else:
+        component_loop = """
+        for component in skill.components.with_hook('{hook_name}'):
+            if component.ignore_conditional or {conditional_check}:
+                values.append(component.{hook_name}({args}))"""
+    component_loop = component_loop.format(hook_name=hook_name, conditional_check=conditional_check, args=', '.join(args))
     if hook_info.is_cached:
         cache_handling = """
 @ltcached"""
@@ -181,21 +191,15 @@ def generate_skill_hook_str(hook_name: str, hook_info: HookInfo):
     func_text = """{cache_handling}
 def {hook_name}({func_signature}):
     values = []
-    for skill in unit.skills[:]:
-        for component in skill.components:
-            if component.defines('{hook_name}'):
-                if component.ignore_conditional or {conditional_check}:
-                    values.append(component.{hook_name}({args}))
-{unconditional_handling}
+    for skill in unit.skills[:]:{component_loop}
+
     result = utils.{policy_resolution}(values)
     {default_handling}
 """.format(hook_name=hook_name,
            func_signature=', '.join(func_signature),
-           conditional_check=conditional_check,
-           args=', '.join(args),
+           component_loop=component_loop,
            policy_resolution=hook_info.policy.value,
            default_handling=default_handling,
-           unconditional_handling=unconditional_handling,
            cache_handling=cache_handling)
 
     return func_text
@@ -203,8 +207,8 @@ def {hook_name}({func_signature}):
 def compile_skill_system():
     import os
     dir_path = os.path.dirname(os.path.realpath(__file__))
-    compiled_skill_system = open(os.path.join(
-        dir_path, '..', 'skill_system.py'), 'w')
+    compiled_skill_system = GeneratedSource(os.path.join(
+        dir_path, '..', 'skill_system.py'))
     skill_system_base = open(os.path.join(
         dir_path, 'skill_system_base.py'), 'r')
 

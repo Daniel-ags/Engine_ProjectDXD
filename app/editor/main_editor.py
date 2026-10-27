@@ -13,6 +13,7 @@ from app import autoupdate, dark_theme
 from app.utilities import file_utils
 
 from app.editor.file_manager.project_builder.project_builder import LTProjectBuilder
+from app.editor.file_manager.project_builder.web_exporter import WebExporter
 from app.editor.font_editor.font_tab import FontDatabase
 from app.editor.settings.preferences_tabbed import TabbedPreferencesDialog
 from app.editor.settings import MainSettingsController
@@ -63,7 +64,7 @@ from app.editor.mcost_dialog import McostDialog
 from app.editor.translation_widget import TranslationDialog
 from app.editor.equation_widget import EquationDialog
 from app.editor.event_editor.event_tab import EventDatabase
-from app.editor.lore_editor.lore_tab import LoreDatabase
+from app.editor.lore_editor.new_lore_tab import NewLoreDatabase
 from app.editor.raw_editor.raw_data_tab import RawDataDatabase
 from app.editor.credit_editor.new_credit_tab import NewCreditDatabase
 
@@ -116,6 +117,7 @@ class MainEditor(QMainWindow):
             self.app_state_manager)
 
         self.project_builder = LTProjectBuilder(self.project_save_load_handler)
+        self.web_exporter = WebExporter(self.project_save_load_handler)
 
         # initialize possible editors and put them in the stack
         self.global_editor = GlobalEditor(self.app_state_manager)
@@ -211,6 +213,8 @@ class MainEditor(QMainWindow):
         if not file_utils.Pltfm.windows():
             self.build_project.setEnabled(False)
             self.build_project.setToolTip("Building is only supported on Windows.")
+        self.export_web_act = QAction(
+            "Export for Web...", self, triggered=self.web_exporter.export)
 
         self.preferences_act = QAction(
             _("&Preferences..."), self, triggered=self.edit_preferences)
@@ -255,7 +259,7 @@ class MainEditor(QMainWindow):
                             _("Constants"): ConstantDatabase.edit,
                             _("Difficulty Modes"): DifficultyModeDatabase.edit,
                             _("Supports"): self.edit_supports,
-                            _("Lore"): LoreDatabase.edit,
+                            _("Lore"): NewLoreDatabase.edit,
                             _("Raw Data"): RawDataDatabase.edit,
                             _("Translations"): self.edit_translations,
                             _("Credit"): NewCreditDatabase.edit
@@ -307,6 +311,7 @@ class MainEditor(QMainWindow):
         file_menu.addAction(self.dump_script)
         if not is_editor_engine_built_version():
             file_menu.addAction(self.build_project)
+        file_menu.addAction(self.export_web_act)
         file_menu.addSeparator()
         file_menu.addAction(self.quit_act)
 
@@ -611,7 +616,7 @@ class MainEditor(QMainWindow):
                           "<p>Check out <a href='https://lt-maker.readthedocs.io/'>https://lt-maker.readthedocs.io/</a> "
                           "for more information and helpful tutorials.</p>"
                           "<p>This program has been freely distributed under the MIT License.</p>"
-                          "<p>Copyright 2014-2023 rainlash.</p>")
+                          "<p>Copyright 2014-2026 rainlash.</p>")
 
     def check_for_updates(self):
         # Only check for updates in frozen version

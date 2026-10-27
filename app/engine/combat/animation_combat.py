@@ -109,6 +109,10 @@ class AnimationCombat(BaseCombat, MockCombat):
 
         self.viewbox_time = 250
         self.viewbox = None
+        # For leaving the battle
+        self.exit_start = 0
+        self.bars_out_start = None
+        self.bars_out_delay = 0
         self.battle_background = None
 
         self.setup_dark()
@@ -256,17 +260,21 @@ class AnimationCombat(BaseCombat, MockCombat):
             self.start_combat()
             # The cursor must be on the combat's view position before the attacker's
             # sprite state changes, since that's where it takes its facing from
-            game.cursor.combat_show()
+            if self.ai_combat and not self._skip:
+                # As on the GBA, the cursor is shown only on what the AI is about to
+                # strike, counted from once the camera has got there
+                game.cursor.combat_show()
             game.cursor.set_pos(self.view_pos)
             self.attacker.sprite.change_state('combat_attacker')
             self.defender.sprite.change_state('combat_defender')
             self.state = 'red_cursor'
+            self.target_cursor_start = None
             if not self._skip:
                 game.state.change('move_camera')
             self._set_stats(self.playback)  # For start combat changes
 
         elif self.state == 'red_cursor':
-            if self._skip or current_time > 400:
+            if self._skip or not self.ai_combat or self.target_cursor_done():
                 game.cursor.hide()
                 game.highlight.remove_highlights()
                 self.state = 'fade_in'
@@ -290,7 +298,8 @@ class AnimationCombat(BaseCombat, MockCombat):
                     self.name_offset = 1
                 self.platform_offset = 1
                 if self.battle_background:
-                    self.battle_background.fade_in(utils.frames2ms(25))
+                    # As on the GBA: the map goes to black over 8 frames, then the background comes in over 8
+                    self.battle_background.fade_in(utils.frames2ms(16))
                 self.state = 'init_pause'
 
         elif self.state == 'arena_init':
@@ -311,7 +320,8 @@ class AnimationCombat(BaseCombat, MockCombat):
                 self.state = 'init_pause'
 
         elif self.state == 'init_pause':
-            if self._skip or current_time > utils.frames2ms(25):
+            # As on the GBA, the first round starts 31 frames after everything has come in
+            if self._skip or current_time > utils.frames2ms(31):
                 if self.battle_background:
                     self.battle_background.set_normal()
                 self.start_event(True)
@@ -462,7 +472,8 @@ class AnimationCombat(BaseCombat, MockCombat):
                 
         elif self.state == 'hp_change':
             proceed = self.current_battle_anim.can_proceed()
-            if current_time > utils.frames2ms(27) and self.left_hp_bar.done() and self.right_hp_bar.done() and proceed:
+            # As on the GBA, at least 30 frames from the hit, and longer if the hp bar takes longer
+            if current_time > utils.frames2ms(30) and self.left_hp_bar.done() and self.right_hp_bar.done() and proceed:
                 self.current_battle_anim.resume()
                 if not self._delay_death:
                     if self.left.get_hp() <= 0:
@@ -506,7 +517,8 @@ class AnimationCombat(BaseCombat, MockCombat):
                 self.state = 'exp_pause'
 
         elif self.state == 'exp_pause':
-            if self._skip or current_time > 450:
+            # The GBA waits 30 frames after the fighting before the exp bar
+            if self._skip or current_time > utils.frames2ms(30):
                 self.clean_up1()
                 self.state = 'exp_wait'
 
@@ -556,27 +568,34 @@ class AnimationCombat(BaseCombat, MockCombat):
                     self.right_battle_anim.finish()
                     if self.rp_battle_anim:
                         self.rp_battle_anim.finish()
-                    if self.battle_background:
-                        fade_time = utils.frames2ms(2.5 if self._skip else 10)
-                        self.battle_background.fade_out(fade_time)
+                    # As on the GBA: the name tags leave at once. The hp bars and platforms
+                    # follow 2 frames later, or once a battle background has faded back
+                    # to the map (to black over 9 frames, then the map in over 9)
+                    if self._skip:
+                        self.bars_out_delay = 0
+                    elif self.battle_background:
+                        self.battle_background.fade_out(utils.frames2ms(18))
+                        self.bars_out_delay = utils.frames2ms(19)
+                    else:
+                        self.bars_out_delay = utils.frames2ms(2)
+                    self.exit_start = engine.get_time()
+                    self.bars_out_start = None
                     self.state = 'name_tags_out'
 
         elif self.state == 'name_tags_out':
-            exit_time = utils.frames2ms(2.5 if self._skip else 10)
-            if not self.ui_should_be_hidden():
-                self.name_offset = 1 - current_time / exit_time
-            if current_time > exit_time:
-                self.name_offset = 0
+            self.update_exit_offsets()
+            if current_time >= self.bars_out_delay:
+                self.bars_out_start = engine.get_time()
                 self.state = 'all_out'
 
         elif self.state == 'all_out':
-            exit_time = utils.frames2ms(2.5 if self._skip else 10)
-            if not self.ui_should_be_hidden():
-                self.bar_offset = 1 - current_time / exit_time
-            self.platform_offset = 1 - current_time / exit_time
+            self.update_exit_offsets()
+            # The GBA waits 13 frames from the start of the bars' 11 frame slide
+            exit_time = utils.frames2ms(2.5 if self._skip else 13)
             if current_time > exit_time:
                 self.platform_offset = 0
                 self.bar_offset = 0
+                self.name_offset = 0
                 self.state = 'fade_out'
 
         elif self.state == 'fade_out':
@@ -806,6 +825,23 @@ class AnimationCombat(BaseCombat, MockCombat):
         if self.battle_music:
             # Don't battle fade back when we don't restart battle music
             get_sound_thread().battle_fade_back(self.battle_music, from_start)
+
+    def update_exit_offsets(self):
+        """
+        How far in the name tags, hp bars and platforms still are as they leave. As on
+        the GBA, the name tags take 7 frames and the rest 11, quickly at first
+        """
+        now = engine.get_time()
+        names_time = utils.frames2ms(2.5 if self._skip else 7)
+        names_left = (1 - utils.clamp((now - self.exit_start) / names_time, 0, 1)) ** 2
+        if not self.ui_should_be_hidden():
+            self.name_offset = names_left
+        if self.bars_out_start is not None:
+            bars_time = utils.frames2ms(2.5 if self._skip else 11)
+            bars_left = (1 - utils.clamp((now - self.bars_out_start) / bars_time, 0, 1)) ** 2
+            if not self.ui_should_be_hidden():
+                self.bar_offset = bars_left
+            self.platform_offset = bars_left
 
     def build_viewbox(self, current_time):
         vb_multiplier = utils.clamp(current_time / self.viewbox_time, 0, 1)
@@ -1059,14 +1095,11 @@ class AnimationCombat(BaseCombat, MockCombat):
                         self._shake(3)
                     else:
                         self._shake(1)
-                else:
-                    self._shake(2)  # No damage
+                # No damage: on the GBA, the screen does not shake (see no_damage_sway)
             elif brush.nid == 'damage_crit':
                 damage = brush.damage
                 if damage > 0:
                     self._shake(4)  # Critical
-                else:
-                    self._shake(2)  # No damage
 
     def pan_back(self):
         next_state = self.state_machine.get_next_state()

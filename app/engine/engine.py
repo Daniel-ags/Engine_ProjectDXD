@@ -5,7 +5,12 @@ from enum import Enum
 import pygame
 import pygame.image
 import pygame.time
-from pygame._sdl2 import controller
+try:
+    from pygame._sdl2 import controller
+except ImportError:
+    # The browser build of pygame-ce has no game controller module, so there
+    # every pad is a raw joystick
+    controller = None
 
 from app.constants import WINWIDTH, WINHEIGHT, FPS
 from app.engine import config as cf
@@ -15,6 +20,7 @@ import logging
 
 constants = {'current_time': 0,
              'last_time': 0,
+             'input_time': 0,
              'delta_t': 0,
              'standalone': True,
              'running': True}
@@ -27,7 +33,8 @@ def init():
     pygame.init()
     pygame.font.init()
     # pygame.init does not start the game controller subsystem
-    controller.init()
+    if controller:
+        controller.init()
     logging.info("Engine Init Completed")
 
 def simple_init():
@@ -40,6 +47,10 @@ def set_title(text):
     pygame.display.set_caption(text)
 
 def build_display(size):
+    if sys.platform == 'emscripten':
+        # The page scales the display to the window. Resizable, SDL would keep
+        # resizing it to the size the page shows it at
+        return pygame.display.set_mode(size)
     try:
         if cf.SETTINGS['fullscreen']:
             return pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
@@ -55,6 +66,32 @@ def build_display(size):
 def get_screen_size():
     return pygame.display.get_surface().get_size()
 
+def has_display() -> bool:
+    return pygame.display.get_surface() is not None
+
+def convert_for_display(surf: pygame.Surface) -> pygame.Surface:
+    """
+    A copy of surf in the display's pixel format, keeping its per-pixel alpha
+    or its colorkey. An image loaded from a png has its own format, and blitting
+    it converts every pixel as it goes, many times slower than a converted one
+    """
+    if surf.get_flags() & pygame.SRCALPHA:
+        return surf.convert_alpha()
+    return surf.convert()
+
+def _can_scale_onto(surf: pygame.Surface, dest: pygame.Surface) -> bool:
+    """
+    Whether surf can be scaled straight onto dest. Scaling writes its pixels
+    over dest's, so surf must be opaque, with no alpha (SRCALPHA, which
+    set_alpha sets too) or colorkey to blend by, and in dest's own format, bit
+    depth included: a 24-bit surface has the same masks as a 32-bit one, and
+    scale refuses it
+    """
+    return (not surf.get_flags() & pygame.SRCALPHA
+            and surf.get_colorkey() is None
+            and surf.get_bitsize() == dest.get_bitsize()
+            and surf.get_masks() == dest.get_masks())
+
 def push_display(surf, size, new_surf):
     win_w, win_h = size
     base_w, base_h = surf.get_size()
@@ -66,14 +103,16 @@ def push_display(surf, size, new_surf):
     new_w = int(base_w * scale)
     new_h = int(base_h * scale)
 
-    scaled_surf = pygame.transform.scale(surf, (new_w, new_h))
-
     # Center view
     x = (win_w - new_w) // 2
     y = (win_h - new_h) // 2
 
-    # Render scaled surface
-    new_surf.blit(scaled_surf, (x, y))
+    if (new_w, new_h) == (base_w, base_h):
+        new_surf.blit(surf, (x, y))
+    elif _can_scale_onto(surf, new_surf):
+        pygame.transform.scale(surf, (new_w, new_h), new_surf.subsurface((x, y, new_w, new_h)))
+    else:
+        new_surf.blit(pygame.transform.scale(surf, (new_w, new_h)), (x, y))
 
 def update_display():
     pygame.display.update()
@@ -83,6 +122,8 @@ def remove_display():
 
 def terminate(crash=False):
     on_end(crash)
+    # A rumble with no duration keeps going after the game closes
+    stop_rumble()
     if pygame.mixer.get_init():
         pygame.mixer.music.stop()
         pygame.mixer.quit()
@@ -94,14 +135,32 @@ def on_end(crash=False):
     cf.save_settings()
 
 # === timing functions ===
-def update_time():
-    # All measured in milliseconds
+# Game time moves on one frame each update, however long the computer took
+# over it, so everything timed in milliseconds keeps pace with everything
+# counted in frames. driver.MainLoop decides how many updates a frame of real time gets
+FRAME_MS = 1000 / FPS
+_frames = 0
+
+def update_time(held_buttons_too: bool = True):
+    # All measured in milliseconds. Whole milliseconds, a frame of 16 or 17
+    global _frames
+    _frames += 1
     constants['last_time'] = constants['current_time']
-    constants['current_time'] = pygame.time.get_ticks()
-    constants['delta_t'] = constants['current_time'] - constants['last_time']
+    constants['delta_t'] = round(_frames * FRAME_MS) - round((_frames - 1) * FRAME_MS)
+    constants['current_time'] += constants['delta_t']
+    if held_buttons_too:
+        constants['input_time'] += constants['delta_t']
 
 def get_time() -> int:
     return constants['current_time']
+
+def get_input_time() -> int:
+    """
+    The clock held buttons repeat by. Game time, but for the updates a sped-up
+    game runs on top of one a frame, so a held button repeats on the same frames
+    at any game speed
+    """
+    return constants['input_time']
 
 def get_last_time():
     return constants['last_time']
@@ -116,6 +175,7 @@ def get_delta():
 BLEND_RGB_ADD = pygame.BLEND_RGB_ADD
 BLEND_RGB_SUB = pygame.BLEND_RGB_SUB
 BLEND_RGB_MULT = pygame.BLEND_RGB_MULT
+BLEND_RGB_MIN = pygame.BLEND_RGB_MIN
 BLEND_RGBA_ADD = pygame.BLEND_RGBA_ADD
 BLEND_RGBA_SUB = pygame.BLEND_RGBA_SUB
 BLEND_RGBA_MULT = pygame.BLEND_RGBA_MULT
@@ -194,6 +254,19 @@ def subsurface(surf: Surface, rect: Tuple[int, int, int, int]) -> Surface:
         return empty_surf()
     return surf.subsurface(rect)
 
+def blit_layer_view(dest: Surface, layer: Surface, content: pygame.Rect, view: Tuple[int, int, int, int]):
+    """
+    Blits the part of a map-sized layer that the view (the camera's rect on the
+    map) shows onto dest, but only where the layer has anything drawn: content
+    is layer.get_bounding_rect(), taken when the layer was drawn. A
+    see-through layer costs as much to blit as it is large, however little is
+    in it, and in the browser a full screen of per-pixel alpha takes most of a
+    millisecond
+    """
+    shown = content.clip(pygame.Rect(view))
+    if shown.width and shown.height:
+        dest.blit(layer, (shown.x - view[0], shown.y - view[1]), shown)
+
 def image_load(fn, convert=False, convert_alpha=False):
     image = pygame.image.load(fn)
     if convert:
@@ -207,12 +280,12 @@ def surf_to_raw(surf: pygame.Surface, format: str) -> str:
 
     Args:
         surf (pygame.Surface): surf to convert
-        format (str): any valid format string (https://www.pygame.org/docs/ref/image.html#pygame.image.tostring)
+        format (str): any valid format string (https://www.pygame.org/docs/ref/image.html#pygame.image.tobytes)
 
     Returns:
         str: raw byte buffer version of surf
     """
-    return pygame.image.tostring(surf, format)
+    return pygame.image.tobytes(surf, format)
 
 def raw_to_surf(raw_bytes: str, size: Tuple[int, int], format: str) -> pygame.Surface:
     """converts a raw image string into a surface.
@@ -221,12 +294,12 @@ def raw_to_surf(raw_bytes: str, size: Tuple[int, int], format: str) -> pygame.Su
         raw_bytes (str): raw data
         size (Tuple[int, int]): size of surface to be created
         format (str): the format string that was used to encode the raw data
-            (https://www.pygame.org/docs/ref/image.html#pygame.image.tostring)
+            (https://www.pygame.org/docs/ref/image.html#pygame.image.tobytes)
 
     Returns:
         pygame.Surface: the surface consisting of the raw image
     """
-    return pygame.image.fromstring(raw_bytes, size, format)
+    return pygame.image.frombytes(raw_bytes, size, format)
 
 def fill(surf, color, mask=None, blend=0):
     surf.fill(color, mask, blend)
@@ -280,6 +353,15 @@ key_map = {"enter": pygame.K_RETURN,
            }
 
 events = []
+
+def clear_events():
+    """
+    Forgets the frame's events, for the updates a sped-up game runs after the
+    first, so a key typed once is read once. The list get_events gave keeps them
+    """
+    global events
+    events = []
+
 def get_events():
     global events, fast_quit
     events.clear()
@@ -311,22 +393,27 @@ JOYDEVICEREMOVED = pygame.JOYDEVICEREMOVED
 def get_pressed():
     return pygame.key.get_pressed()
 
-def get_gamepads() -> tuple[list[controller.Controller], list[pygame.joystick.JoystickType]]:
+def get_gamepads() -> tuple[list['controller.Controller'], list[pygame.joystick.JoystickType]]:
     """
     Returns every connected pad, split into those SDL recognizes as
     game controllers and raw joysticks it does not.
     """
     controllers, joysticks = [], []
-    if not pygame.joystick.get_init() or not controller.get_init():
+    if not pygame.joystick.get_init() or (controller and not controller.get_init()):
         return controllers, joysticks
     for idx in range(pygame.joystick.get_count()):
-        if controller.is_controller(idx):
+        if controller and controller.is_controller(idx):
             controllers.append(controller.Controller(idx))
         else:
             joystick = pygame.joystick.Joystick(idx)
             joystick.init()
             joysticks.append(joystick)
     return controllers, joysticks
+
+def stop_rumble():
+    controllers, joysticks = get_gamepads()
+    for pad in controllers + joysticks:
+        pad.stop_rumble()
 
 def get_mouse_pos():
     return pygame.mouse.get_pos()
@@ -349,6 +436,10 @@ class Clock():
 
     def tick(self) -> int:
         return self.clock.tick(FPS)
+
+    def measure(self) -> int:
+        """Milliseconds since the last call, as tick, without waiting for the frame's time to be up"""
+        return self.clock.tick()
 
 # === System Messages
 

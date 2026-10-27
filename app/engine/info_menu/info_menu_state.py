@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+import functools
 import logging
 from typing import List, Optional, Tuple, TYPE_CHECKING
 
@@ -96,7 +97,7 @@ class InfoMenuState(State):
             self.state = 'personal_data'
         self.growth_flag = False
 
-        self.fluid = FluidScroll(200, 1)
+        self.fluid = FluidScroll()
 
         self.build_arrows()
 
@@ -370,27 +371,30 @@ class InfoMenuState(State):
         # Left and Right
         elif self.next_state is not None:
             self.transition_counter += 1
+            # As on the GBA (sPageSlideOffsetLut), the page slides out 4, 7, 10, 12 and 14 tiles,
+            # and the next one in from 13, 9, 7, 5, 3, 2 and 1 tiles away, a step a frame
+            in_offsets = (104, 72, 56, 40, 24, 16, 8)
             # Transition in
             if self.next_state == self.state:
-                idxs = (104, 72, 56, 40, 24, 8)
                 counter = self.transition_counter - 1
-                if 0 <= counter < len(idxs):
-                    self.scroll_offset_x = idxs[counter] if self.transition == 'RIGHT' else -idxs[counter]
+                if 0 <= counter < len(in_offsets):
+                    self.scroll_offset_x = in_offsets[counter] if self.transition == 'RIGHT' else -in_offsets[counter]
                 else:
                     self.transition = None
                     self.scroll_offset_x = 0
                     self.next_state = None
                     self.transition_counter = 0
             else:
-                idxs = (-32, -56, -80, -96, -112)
+                out_offsets = (-32, -56, -80, -96, -112)
                 counter = self.transition_counter - 1
-                if 0 <= counter < len(idxs):
-                    self.scroll_offset_x = idxs[counter] if self.transition == 'RIGHT' else -idxs[counter]
+                if 0 <= counter < len(out_offsets):
+                    self.scroll_offset_x = out_offsets[counter] if self.transition == 'RIGHT' else -out_offsets[counter]
                 else:
-                    self.scroll_offset_x = -140 if self.transition == 'RIGHT' else 140
+                    # The next page comes in on the frame after the last one goes out
                     self.state = self.next_state
                     self.info_graph.set_current_state(self.state)
-                    self.transition_counter = 0
+                    self.transition_counter = 1
+                    self.scroll_offset_x = in_offsets[0] if self.transition == 'RIGHT' else -in_offsets[0]
 
     def draw(self, surf):
         if self.bg:
@@ -410,7 +414,7 @@ class InfoMenuState(State):
         self.draw_portrait(surf)
         self.draw_slide(surf)
 
-        if self.info_graph.current_bb:
+        if self.info_graph.current_bb or self.info_graph.last_bb:  # The last one, as it shrinks away
             self.info_graph.draw(surf)
 
         if not self.transition:
@@ -669,7 +673,7 @@ class InfoMenuState(State):
                 contribution = self.unit.stat_contribution(stat_nid)
                 contribution['Base Value'] = base_value
             desc_text = text_funcs.translate_and_text_evaluate(curr_stat.desc, self=curr_stat, unit=self.unit)
-            help_box = help_menu.StatDialog(desc_text or ('%s_desc' % stat_nid), contribution)
+            help_box = functools.partial(help_menu.StatDialog, desc_text or ('%s_desc' % stat_nid), contribution)
             self.info_graph.register((96 + 8, 16 * idx + 24, 64, 16), help_box, state, first=(idx == 0))
 
         for idx, stat_nid in enumerate(self.right_stats):
@@ -691,7 +695,7 @@ class InfoMenuState(State):
                 contribution = self.unit.stat_contribution(stat_nid)
                 contribution['Base Value'] = base_value
             desc_text = text_funcs.translate_and_text_evaluate(curr_stat.desc, self=curr_stat, unit=self.unit)
-            help_box = help_menu.StatDialog(desc_text or ('%s_desc' % stat_nid), contribution)
+            help_box = functools.partial(help_menu.StatDialog, desc_text or ('%s_desc' % stat_nid), contribution)
             self.info_graph.register((96 + 72, 16 * idx + 24, 64, 16), help_box, state)
 
         other_stats = []
@@ -729,8 +733,22 @@ class InfoMenuState(State):
                 self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
 
             elif stat == 'AID':
+<<<<<<<<< Temporary merge branch 1
+                if growths:
+                    icons.draw_growth(surf, 'HP', self.unit, (111, 16 * true_idx + 24))
+                    color = 'white'
+                    if DB.stats.get('HP').growth_colors and self.unit.team == 'player':
+                        color = self.growth_colors(unit_funcs.growth_rate(self.unit, 'HP'))
+                    render_text(surf, ['text'], [text_funcs.translate('HP')], [color], (72, 16 * true_idx + 24))
+                    desc = text_funcs.translate_and_text_evaluate('HP_desc', unit=self.unit)
+                    self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
+                else:
+                    aid = equations.parser.rescue_aid(self.unit)
+                    render_text(surf, ['text'], [str(aid)], ['white'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
+=========
                 aid = equations.parser.rescue_aid(self.unit)
-                render_text(surf, ['text'], [str(aid)], ['new-white'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
+                render_text(surf, ['text'], [str(aid)], ['blue'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
+>>>>>>>>> Temporary merge branch 2
 
                 # Mount Symbols
                 for tag in self.unit.tags:
@@ -745,11 +763,26 @@ class InfoMenuState(State):
                     elif 'Mounted' in self.unit.tags:
                         aid_surf = engine.subsurface(SPRITES.get('aid_icons'), (0, 16, 16, 16))
                     else:
+<<<<<<<<< Temporary merge branch 1
+                        if 'Dragon' in self.unit.tags:
+                            aid_surf = engine.subsurface(SPRITES.get('aid_icons'), (0, 48, 16, 16))
+                        elif 'Flying' in self.unit.tags:
+                            aid_surf = engine.subsurface(SPRITES.get('aid_icons'), (0, 32, 16, 16))
+                        elif 'Mounted' in self.unit.tags:
+                            aid_surf = engine.subsurface(SPRITES.get('aid_icons'), (0, 16, 16, 16))
+                        else:
+                            aid_surf = engine.subsurface(SPRITES.get('aid_icons'), (0, 0, 16, 16))
+                    surf.blit(aid_surf, (112, 16 * true_idx + 24))
+                    render_text(surf, ['text'], [text_funcs.translate('Aid')], ['white'], (72, 16 * true_idx + 24))
+                    desc = text_funcs.translate_and_text_evaluate('Aid_desc', unit=self.unit)
+                    self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
+=========
                         aid_surf = engine.subsurface(SPRITES.get('aid_icons'), (0, 0, 16, 16))
                 surf.blit(aid_surf, (112, 16 * true_idx + 24))
-                render_text(surf, ['text'], [text_funcs.translate('Aid')], ['new-white'], (72, 16 * true_idx + 24))
+                render_text(surf, ['text'], [text_funcs.translate('Aid')], ['yellow'], (72, 16 * true_idx + 24))
                 desc = text_funcs.translate_and_text_evaluate('Aid_desc', unit=self.unit)
                 self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
+>>>>>>>>> Temporary merge branch 2
 
             elif stat == 'RAT':
                 rat = str(equations.parser.rating(self.unit))
@@ -766,11 +799,29 @@ class InfoMenuState(State):
                 self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
 
             elif stat == 'GAUGE':
+<<<<<<<<< Temporary merge branch 1
+                if growths: #GAUGE replaces AID when pair up is in use.  HP growth will replace one of the two.
+                    #Since AID and GAUGE are mutually exclusive, we shouldn't need to worry about ever displaying the growth twice.
+                    icons.draw_growth(surf, 'HP', self.unit, (111, 16 * true_idx + 24))
+                    color = 'white'
+                    if DB.stats.get('HP').growth_colors and self.unit.team == 'player':
+                        color = self.growth_colors(unit_funcs.growth_rate(self.unit, 'HP'))
+                    render_text(surf, ['text'], [text_funcs.translate('HP')], [color], (72, 16 * true_idx + 24))
+                    desc = text_funcs.translate_and_text_evaluate('HP_desc', unit=self.unit)
+                    self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
+                else:
+                    gge = str(self.unit.get_guard_gauge())
+                    render_text(surf, ['text'], [gge], ['white'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
+                    render_text(surf, ['text'], [text_funcs.translate('GAUGE')], ['white'], (72, 16 * true_idx + 24))
+                    desc = text_funcs.translate_and_text_evaluate('GAUGE_desc', unit=self.unit)
+                    self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
+=========
                 gge = str(self.unit.get_guard_gauge())
-                render_text(surf, ['text'], [gge], ['new-white'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
-                render_text(surf, ['text'], [text_funcs.translate('GAUGE')], ['new-white'], (72, 16 * true_idx + 24))
+                render_text(surf, ['text'], [gge], ['blue'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
+                render_text(surf, ['text'], [text_funcs.translate('GAUGE')], ['yellow'], (72, 16 * true_idx + 24))
                 desc = text_funcs.translate_and_text_evaluate('GAUGE_desc', unit=self.unit)
                 self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
+>>>>>>>>> Temporary merge branch 2
 
             elif stat == 'TALK':
                 if (len([talk for talk in game.talk_options if talk[0] == self.unit.nid and talk not in game.talk_hidden]) != 0):

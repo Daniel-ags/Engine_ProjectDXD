@@ -17,6 +17,7 @@ from app.data.resources.resources import RESOURCES
 from app.engine import (aura_funcs, banner, equations, item_funcs, item_system,
                         particles, skill_system, unit_funcs, animations)
 from app.engine.game_state import game
+from app.engine.movement import movement_funcs
 from app.engine.objects.item import ItemObject
 from app.engine.objects.skill import SkillObject
 from app.engine.objects.unit import UnitObject
@@ -70,7 +71,10 @@ class Action():
 
     @staticmethod
     def save_obj(value: Any) -> Tuple[str, Any]:
-        if isinstance(value, UnitObject):
+        if value is None or type(value) in (bool, int, float, str):
+            # Always picklable, so not pickled here to find out
+            value = ('generic', value)
+        elif isinstance(value, UnitObject):
             value = ('unit', value.nid)
         elif isinstance(value, ItemObject):
             value = ('item', value.uid)
@@ -200,7 +204,7 @@ class Move(Action):
         self.has_moved = self.unit.has_moved
         self.event = event
         self.follow = follow
-        self.speed = speed or cf.SETTINGS['unit_speed']
+        self.speed = speed or movement_funcs.get_default_speed(self.unit)
         self.silent = silent
 
     def do(self):
@@ -773,9 +777,11 @@ class HasNotTraded(Reset):
 
 # === RESCUE ACTIONS ========================================================
 class Rescue(Action):
-    def __init__(self, unit: UnitObject, rescuee: UnitObject):
+    def __init__(self, unit: UnitObject, rescuee: UnitObject, immediate: bool = False):
         self.unit = unit
         self.rescuee = rescuee
+        # Whether the rescuee is gone at once, rather than walking into its rescuer
+        self.immediate = immediate
         self.old_pos = self.rescuee.position
         self.update_fow_rescuee = UpdateFogOfWar(self.rescuee)
         self.subactions = []
@@ -783,9 +789,12 @@ class Rescue(Action):
     def do(self):
         self.subactions.clear()
         self.unit.traveler = self.rescuee.nid
-        # TODO Add transition
 
         if self.rescuee.position:
+            if not self.immediate and self.unit.position and \
+                    utils.calculate_distance(self.unit.position, self.rescuee.position) == 1:
+                # As on the GBA, it walks into its rescuer
+                self.rescuee.sprite.walk_one_tile(self.rescuee.position, self.unit.position, stays=False)
             game.leave(self.rescuee)
         self.unit.has_rescued = True
 
@@ -844,9 +853,8 @@ class Drop(Action):
         self.status_action.do()
 
         if utils.calculate_distance(self.unit.position, self.pos) == 1:
-            self.droppee.sprite.set_transition('fake_in')
-            self.droppee.sprite.offset = [(self.unit.position[0] - self.pos[0]) * TILEWIDTH,
-                                          (self.unit.position[1] - self.pos[1]) * TILEHEIGHT]
+            # As on the GBA, it walks out of the unit that dropped it
+            self.droppee.sprite.walk_one_tile(self.unit.position, self.pos, stays=True)
 
     def execute(self):
         game.arrive(self.droppee, self.pos)

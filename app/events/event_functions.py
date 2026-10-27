@@ -156,7 +156,7 @@ def add_portrait(self: Event, portrait, screen_position: Tuple | str, slide=None
     if 'immediate' in flags or 'no_block' in flags or self.do_skip:
         pass
     else:
-        self.wait_time = engine.get_time() + new_portrait.transition_speed + 33  # 16 frames
+        self.wait_time = engine.get_time() + int(new_portrait.appear_wait * speed_mult)
         self.state = 'waiting'
 
     return True
@@ -285,6 +285,48 @@ def mirror_portrait(self: Event, portrait, speed_mult: float = 1.0, flags=None):
             else:
                 self.wait_time = engine.get_time() + event_portrait.transition_speed + 33
                 self.state = 'waiting'
+
+def replace_portrait(self: Event, portrait, new_portrait, flags=None):
+    flags = flags or set()
+
+    _, name = self._get_portrait(portrait)
+    event_portrait = self.portraits.get(name)
+    if not event_portrait or event_portrait.remove:
+        return False
+
+    portrait_prefab, new_name = self._get_portrait(new_portrait)
+    if not portrait_prefab:
+        self.logger.error("replace_portrait: Couldn't find portrait %s" % new_name)
+        return False
+    if new_name != name and new_name in self.portraits and not self.portraits[new_name].remove:
+        self.logger.error("replace_portrait: Portrait %s is already on screen" % new_name)
+        return False
+
+    replacement = \
+        EventPortrait(
+            portrait_prefab,
+            event_portrait.position,
+            event_portrait.priority,
+            False, None, event_portrait.mirror,
+            new_name, event_portrait.expressions.copy())
+    replacement.saturation = event_portrait.saturation
+    replacement.saturation_direction = event_portrait.saturation_direction
+    replacement.talk_on = event_portrait.talk_on
+    if event_portrait.moving:
+        replacement.copy_movement(event_portrait)
+    if self.text_boxes and self.text_boxes[-1].portrait == event_portrait:
+        self.text_boxes[-1].portrait = replacement
+
+    del self.portraits[name]
+    self.portraits[new_name] = replacement
+
+    if 'immediate' in flags or self.do_skip:
+        return True
+    replacement.crossfade_from(event_portrait)
+    if 'no_block' not in flags:
+        self.wait_time = engine.get_time() + replacement.transition_speed + 33
+        self.state = 'waiting'
+    return True
 
 def bop_portrait(self: Event, portrait, num_bops: int = 2, time: int = utils.frames2ms(8), flags=None):
     flags = flags or set()
@@ -595,9 +637,11 @@ def rumble(self: Event, duration: int, low_frequency: float = None, high_frequen
     low_frequency = 0.5 if low_frequency is None else low_frequency
     high_frequency = 0.5 if high_frequency is None else high_frequency
     get_input_manager().rumble(low_frequency, high_frequency, duration)
+    self.endless_rumble = duration == 0
 
 def rumble_end(self: Event, flags=None):
     get_input_manager().stop_rumble()
+    self.endless_rumble = False
 
 def game_var(self: Event, nid, expression, flags=None):
     val = self._eval_expr(expression, 'from_python' in flags)
@@ -2806,6 +2850,7 @@ def remove_generics_from_region(self: Event, nid, flags=None):
         self.logger.error("remove_generics_from_region: Couldn't find RegionObject %s" % nid)
 
 def show_layer(self: Event, layer, layer_transition=None, flags=None):
+    flags = flags or set()
     if layer not in self.game.level.tilemap.layers:
         self.logger.error("show_layer: Could not find layer %s in tilemap" % layer)
         return
@@ -2816,8 +2861,13 @@ def show_layer(self: Event, layer, layer_transition=None, flags=None):
         self.logger.warning("show_layer: Layer %s is already visible!" % layer)
         return
     action.do(action.ShowLayer(layer, layer_transition))
+    # As on the GBA, the event waits for the layer to fade in
+    if layer_transition != 'immediate' and 'no_block' not in flags and not self.do_skip:
+        self.wait_time = engine.get_time() + self.game.level.tilemap.layers.get(layer).transition_speed
+        self.state = 'waiting'
 
 def hide_layer(self: Event, layer, layer_transition=None, flags=None):
+    flags = flags or set()
     if layer not in self.game.level.tilemap.layers:
         self.logger.error("hide_layer: Could not find layer %s in tilemap" % layer)
         return
@@ -2828,6 +2878,10 @@ def hide_layer(self: Event, layer, layer_transition=None, flags=None):
         self.logger.warning("hide_layer: Layer %s is already hidden!" % layer)
         return
     action.do(action.HideLayer(layer, layer_transition))
+    # As on the GBA, the event waits for the layer to fade out
+    if layer_transition != 'immediate' and 'no_block' not in flags and not self.do_skip:
+        self.wait_time = engine.get_time() + self.game.level.tilemap.layers.get(layer).transition_speed
+        self.state = 'waiting'
 
 def add_weather(self: Event, weather, position=None, flags=None):
     nid = weather.lower()
@@ -3829,7 +3883,8 @@ def trigger_script(self: Event, event, unit1=None, unit2=None, flags=None):
 
 def trigger_script_with_args(self: Event, event: str, arg_list: Dict[str, str] = None, flags=None):
     trigger_script = event
-    valid_events = DB.events.get_by_nid_or_name(trigger_script, self.game.level.nid)
+    level_nid = None if self.game.level is None else self.game.level.nid
+    valid_events = DB.events.get_by_nid_or_name(trigger_script, level_nid)
 
     # Process Arg List into local args directory
     local_args = arg_list
@@ -3903,6 +3958,7 @@ def move_in_initiative(self: Event, unit, integer: int, flags=None):
     action.do(action.MoveInInitiative(unit, offset))
 
 def pair_up(self: Event, unit1, unit2, flags=None):
+    flags = flags or set()
     new_unit1 = self._get_unit(unit1)
     if not new_unit1:
         self.logger.error("pair_up: Couldn't find unit with nid %s" % unit1)
@@ -3922,7 +3978,12 @@ def pair_up(self: Event, unit1, unit2, flags=None):
     if unit_funcs.can_pairup(leader, follower):
         action.do(action.PairUp(follower, leader))
     else:
-        action.do(action.Rescue(leader, follower))
+        immediate = 'immediate' in flags or self.do_skip
+        action.do(action.Rescue(leader, follower, immediate))
+        if follower.sprite.transition_state == 'walk':
+            # As on the GBA, the event waits for it to walk into its rescuer
+            self.wait_time = engine.get_time() + follower.sprite.walk_time
+            self.state = 'waiting'
 
 def separate(self: Event, unit, flags=None):
     new_unit = self._get_unit(unit)

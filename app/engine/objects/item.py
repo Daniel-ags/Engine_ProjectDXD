@@ -4,7 +4,8 @@ from typing import TYPE_CHECKING, Optional
 
 import app.engine.item_component_access as ICA
 from app.data.database.database import DB
-from app.utilities.data import Data
+from app.engine import stale_save
+from app.data.database.components import ComponentData
 
 if TYPE_CHECKING:
     from app.data.database.item_components import ItemComponent
@@ -12,7 +13,7 @@ if TYPE_CHECKING:
 class ItemObject():
     next_uid = 100
 
-    def __init__(self, nid, name, desc, icon_nid=None, icon_index=(0, 0), components: Optional[Data[ItemComponent]]=None):
+    def __init__(self, nid, name, desc, icon_nid=None, icon_index=(0, 0), components: Optional[ComponentData]=None):
         self.uid = ItemObject.next_uid
         ItemObject.next_uid += 1
 
@@ -27,7 +28,7 @@ class ItemObject():
 
         self.droppable = False
 
-        self.components: Data[ItemComponent] = components or Data()
+        self.components: ComponentData = components or ComponentData()
         for component_key, component_value in self.components.items():
             self.__dict__[component_key] = component_value
             # Assign parent to component
@@ -61,7 +62,7 @@ class ItemObject():
     @classmethod
     def from_prefab(cls, prefab, component_data=None):
         # Components NEED To be copies! Since they store individualized information
-        components = Data()
+        components = ComponentData()
         component_data = component_data or []
 
         if component_data:
@@ -130,6 +131,7 @@ class ItemObject():
         if prefab:
             components = dat.get('components', [])
             self = cls.from_prefab(prefab, components)
+            stale_save.require_weapon_types(self.components, DB.weapons, "Item '%s'" % dat['nid'])
             self.name = dat.get('name', prefab.name)
             self.desc = dat.get('desc', prefab.desc)
         else:
