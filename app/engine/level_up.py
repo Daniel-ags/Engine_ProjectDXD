@@ -767,19 +767,32 @@ class SkillSwapLevelUpState(State):
 
         self.unit, self.new_skill_nid, self.source, self.source_type = queue.pop(0)
         self.new_skill_obj = item_funcs.create_skill(self.unit, self.new_skill_nid)
-        self.equipped_skills = self.unit.get_equipped_skills()
+        
+        # Garante a unidade viva e atualizada com as habilidades mais recentes
+        live_unit = self._get_live_unit()
+        self.equipped_skills = live_unit.get_equipped_skills()
 
-        # Painel de Habilidades Ativas (movido para a DIREITA: x=124)
+        # Reseta os estados de confirmação e tooltips
+        self.confirming = False
+        self.pending_action = None
+        self.pending_skill_idx = None
+        self.confirm_idx = 0
+        self.confirm_prompt = ""
+        self.confirm_cursor = menus.Cursor()
+        self.help_dialog = None
+        self.fluid.reset_on_change_state()
+
+        # Painel de Habilidades Ativas (Direita: x=124)
         self.box_x, self.box_y = 124, 8
         self.window_bg = image_mods.make_translucent(base_surf.create_base_surf(114, 144, 'menu_bg_base'), 0.1)
 
-        # O menu agora se posiciona em topleft=(124, 28)
-        self.menu = menus.Choice(None, [s.name for s in self.equipped_skills], topleft=(124, 28), background=None)
+        skill_names = [s.name for s in self.equipped_skills] or ['---']
+        self.menu = menus.Choice(None, skill_names, topleft=(124, 28), background=None)
         self.menu.set_limit(7)
         self.menu.width = 98
         self.menu.draw_cursor = True
 
-        # Painel da Nova Habilidade (movido para a ESQUERDA: x=6)
+        # Painel da Nova Habilidade (Esquerda: x=6)
         self.right_box_x, self.right_box_y = 6, 8
         self.right_window_bg = image_mods.make_translucent(base_surf.create_base_surf(110, 108, 'menu_bg_base'), 0.1)
 
@@ -838,7 +851,10 @@ class SkillSwapLevelUpState(State):
         self.pending_skill_idx = skill_idx
         self.confirm_idx = 0
 
-        self.confirm_prompt = f"Replace {self.equipped_skills[skill_idx].name}?" if action_type == 'swap' else "Send to reserve?"
+        if action_type == 'swap' and skill_idx is not None and skill_idx < len(self.equipped_skills):
+            self.confirm_prompt = f"Replace {self.equipped_skills[skill_idx].name}?"
+        else:
+            self.confirm_prompt = "Send to reserve?"
 
         standard_w = text_width('text', self.confirm_prompt)
         if standard_w > 180:
@@ -966,6 +982,7 @@ class SkillSwapLevelUpState(State):
             elif event == 'SELECT':
                 if self.confirm_idx == 0:
                     get_sound_thread().play_sfx('Select 1')
+                    self.confirming = False
                     if self.pending_action == 'swap':
                         self._execute_swap()
                     else:
@@ -997,10 +1014,10 @@ class SkillSwapLevelUpState(State):
             self.menu.handle_mouse()
 
         if 'DOWN' in directions or event == 'DOWN':
-            if self.menu.move_down(first_push):
+            if self.menu and self.menu.move_down(first_push):
                 get_sound_thread().play_sfx('Select 5')
         elif 'UP' in directions or event == 'UP':
-            if self.menu.move_up(first_push):
+            if self.menu and self.menu.move_up(first_push):
                 get_sound_thread().play_sfx('Select 5')
         elif event == 'INFO':
             if self.menu and self.menu.get_current_index() < len(self.equipped_skills):
@@ -1010,7 +1027,7 @@ class SkillSwapLevelUpState(State):
             get_sound_thread().play_sfx('Select 4')
             self._open_confirmation('cancel')
         elif event == 'SELECT':
-            cur_idx = self.menu.get_current_index()
+            cur_idx = self.menu.get_current_index() if self.menu else 0
             if self.equipped_skills and cur_idx < len(self.equipped_skills):
                 get_sound_thread().play_sfx('Select 1')
                 self._open_confirmation('swap', cur_idx)
