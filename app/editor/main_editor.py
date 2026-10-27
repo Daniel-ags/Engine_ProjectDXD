@@ -347,10 +347,13 @@ class MainEditor(QMainWindow):
             "Edit Events", self, triggered=functools.partial(windows(EventDatabase.edit), self))
 
     def finish_editing(self):
-        """Ends the edit in the focused field of this window, which some fields apply
-        only when they lose focus"""
+        """Ends the edit in the focused field of this window or an editor window beside
+        it, which some fields apply only when they lose focus"""
         focused = QApplication.focusWidget()
-        if focused is not None and QWidget.window(focused) is self:
+        if focused is None:
+            return
+        window = QWidget.window(focused)
+        if window is self or any(window is editor for editor in self.editor_windows.windows.values()):
             focused.clearFocus()
 
     def undo(self):
@@ -475,6 +478,7 @@ class MainEditor(QMainWindow):
             self.status_bar.clearMessage()
 
     def closeEvent(self, event):
+        self.finish_editing()
         self.settings.component_controller.set_geometry(
             self.__class__.__name__, self.saveGeometry())
         if self.project_save_load_handler.maybe_save():
@@ -490,6 +494,8 @@ class MainEditor(QMainWindow):
             event.ignore()
 
     def test_play_current(self):
+        # The game plays the database as it is in memory
+        self.finish_editing()
         self.test_current_act.setEnabled(False)
         self.test_load_act.setEnabled(False)
         self.test_full_act.setEnabled(False)
@@ -505,6 +511,7 @@ class MainEditor(QMainWindow):
         self.test_full_act.setEnabled(True)
 
     def test_play(self):
+        self.finish_editing()
         self.test_current_act.setEnabled(False)
         self.test_load_act.setEnabled(False)
         self.test_full_act.setEnabled(False)
@@ -519,6 +526,7 @@ class MainEditor(QMainWindow):
         self.test_full_act.setEnabled(True)
 
     def test_play_load(self):
+        self.finish_editing()
         saved_games = GAME_ACTIONS.get_preloaded_games()
         if saved_games:
             save_loc = SaveViewer.get(saved_games, self)
@@ -541,6 +549,7 @@ class MainEditor(QMainWindow):
         self.test_full_act.setEnabled(True)
 
     def new(self):
+        self.finish_editing()
         if self.project_save_load_handler.new():
             # if we made a new game:
             self.set_window_title('Untitled')
@@ -579,6 +588,7 @@ class MainEditor(QMainWindow):
             'ui_refresh_signal', None)
 
     def open(self):
+        self.finish_editing()
         if self.project_save_load_handler.open():
             self._open()
 
@@ -597,14 +607,17 @@ class MainEditor(QMainWindow):
         self.status_bar.showMessage('Saved project to %s' % current_proj)
 
     def save(self):
+        self.finish_editing()
         if self.project_save_load_handler.save():
             self._save()
 
     def save_as(self):
+        self.finish_editing()
         if self.project_save_load_handler.save(True):
             self._save()
 
     def remove_unused_resources(self):
+        self.finish_editing()
         # Need to save first before cleaning
         if self.project_save_load_handler.save():
             unused_resources = self.project_save_load_handler.get_unused_files()

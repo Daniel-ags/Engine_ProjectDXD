@@ -90,11 +90,13 @@ class ProjectFileBackend():
         except Exception:
             self.metadata = Metadata()
 
+        # Each step of the progress handles the events waiting, so the progress dialogs
+        # block every window: an edit in an editor window would land mid-save
         self.save_progress = QProgressDialog(
             "Saving project to %s" % self.current_proj, None, 0, 100, self.parent)
         self.save_progress.setAutoClose(True)
         self.save_progress.setWindowTitle("Saving Project")
-        self.save_progress.setWindowModality(Qt.WindowModal)
+        self.save_progress.setWindowModality(Qt.ApplicationModal)
         self.save_progress.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
         self.save_progress.reset()
 
@@ -104,7 +106,7 @@ class ProjectFileBackend():
             "Autosaving project to %s" % autosave_path, None, 0, 100, self.parent)
         self.autosave_progress.setAutoClose(True)
         self.autosave_progress.setWindowTitle("Autosaving Project")
-        self.autosave_progress.setWindowModality(Qt.WindowModal)
+        self.autosave_progress.setWindowModality(Qt.ApplicationModal)
         self.autosave_progress.setWindowFlag(
             Qt.WindowContextHelpButtonHint, False)
         self.autosave_progress.reset()

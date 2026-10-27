@@ -1,10 +1,13 @@
+import functools
+import os
+import shutil
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from app.tests import qt_headless  # noqa: F401 -- before any QApplication
 
 from PyQt5 import sip
-from PyQt5.QtCore import QEvent
+from PyQt5.QtCore import QEvent, Qt
 from PyQt5.QtGui import QCloseEvent
 from PyQt5.QtWidgets import QApplication, QWidget
 
@@ -145,11 +148,17 @@ class EditorWindowTests(StagingEditorCase):
         self.assertTrue(sip.isdeleted(window))
         self.assertEqual({}, self.windows.windows)
 
+    def main_window(self, **attributes) -> SimpleNamespace:
+        """Stands in for the main window, with its editor windows and its own methods
+        named in attributes' place"""
+        from app.editor.main_editor import MainEditor
+        main = SimpleNamespace(editor_windows=self.windows, settings=MagicMock(), **attributes)
+        main.finish_editing = functools.partial(MainEditor.finish_editing, main)
+        return main
+
     def quit(self, save_answer: bool) -> QCloseEvent:
         from app.editor.main_editor import MainEditor
-        main = SimpleNamespace(settings=MagicMock(), saveGeometry=lambda: None,
-                               project_save_load_handler=MagicMock(),
-                               editor_windows=self.windows)
+        main = self.main_window(saveGeometry=lambda: None, project_save_load_handler=MagicMock())
         main.project_save_load_handler.maybe_save.return_value = save_answer
         event = QCloseEvent()
         MainEditor.closeEvent(main, event)
@@ -164,6 +173,63 @@ class EditorWindowTests(StagingEditorCase):
         self.assertFalse(event.isAccepted())
         self.assertFalse(sip.isdeleted(window))
         self.assertTrue(window.isVisible())
+
+    def type_unit_id(self, nid):
+        """Types nid into the unit editor's ID box, without leaving it"""
+        from PyQt5.QtTest import QTest
+        units = self.units()
+        units.tab.tree_list.select_item('Eirika')
+        box = units.tab.right_frame.nid_box.edit
+        QApplication.setActiveWindow(units)
+        box.setFocus()
+        self.settle()
+        box.selectAll()
+        QTest.keyClicks(box, nid)
+        return box
+
+    def test_saving_writes_an_id_still_being_typed_in_an_editor_window(self):
+        from app.data.database.database import DB
+        from app.data.serialization.versions import CURRENT_SERIALIZATION_VERSION
+        from app.editor.file_manager.project_file_backend import ProjectFileBackend
+        from app.editor.main_editor import MainEditor
+        box = self.type_unit_id('Eirika_Two')
+        self.assertTrue(box.hasFocus())
+        progress_parent = QWidget()
+        self.addCleanup(progress_parent.deleteLater)
+        backend = ProjectFileBackend(progress_parent, None)
+        # A project of its own, since the other tests share theirs
+        backend.current_proj = os.path.join(self.tmp, 'saved.ltproj')
+        shutil.copytree(self.proj, backend.current_proj)
+        main = self.main_window(project_save_load_handler=backend, _save=lambda: None)
+
+        MainEditor.save(main)
+
+        DB.load(backend.current_proj, CURRENT_SERIALIZATION_VERSION)
+        self.assertIn('Eirika_Two', DB.units.keys())
+        self.assertNotIn('Eirika', DB.units.keys())
+
+    def test_test_play_plays_an_id_still_being_typed_in_an_editor_window(self):
+        from app.data.database.database import DB
+        from app.editor.main_editor import GAME_ACTIONS, MainEditor
+        self.type_unit_id('Eirika_Two')
+        played = []
+        main = self.main_window(test_current_act=MagicMock(), test_load_act=MagicMock(), test_full_act=MagicMock(),
+                                app_state_manager=SimpleNamespace(state=SimpleNamespace(selected_level='0')))
+        main.settings.get_current_project.return_value = 'default.ltproj'  # Plays without saving first
+
+        with patch.object(GAME_ACTIONS, 'test_play_current', lambda level_nid: played.append(list(DB.units.keys()))):
+            MainEditor.test_play_current(main)
+
+        self.assertIn('Eirika_Two', played[0])
+
+    def test_a_save_blocks_every_window_while_it_runs(self):
+        from app.editor.file_manager.project_file_backend import ProjectFileBackend
+        progress_parent = QWidget()
+        self.addCleanup(progress_parent.deleteLater)
+        backend = ProjectFileBackend(progress_parent, None)
+
+        self.assertEqual(Qt.ApplicationModal, backend.save_progress.windowModality())
+        self.assertEqual(Qt.ApplicationModal, backend.autosave_progress.windowModality())
 
     def test_quitting_closes_the_editor_windows(self):
         window = self.units()
