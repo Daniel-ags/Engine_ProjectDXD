@@ -3,7 +3,7 @@ from functools import partial
 from typing import List, Tuple
 
 from PyQt5.QtCore import QAbstractItemModel, Qt
-from PyQt5.QtWidgets import (QDoubleSpinBox, QFormLayout, QFrame, QGridLayout,
+from PyQt5.QtWidgets import (QCheckBox, QDoubleSpinBox, QFormLayout, QFrame, QGridLayout,
                              QGroupBox, QHBoxLayout, QLabel, QLineEdit,
                              QPushButton, QSizePolicy, QSpinBox, QSplitter,
                              QTreeView, QVBoxLayout, QWidget, QTabWidget,
@@ -22,6 +22,20 @@ from app.extensions.custom_gui import ComboBox, PropertyBox
 from app.extensions.multi_select_combo_box import MultiSelectComboBox
 from app.utilities.data import Data
 from app.utilities import str_utils
+
+
+def show_constant(widget: QWidget, constant: Constant):
+    """Shows the constant's value in the widget that edits it, writing nothing back"""
+    widget.blockSignals(True)
+    if isinstance(widget, (QSpinBox, QDoubleSpinBox)):
+        widget.setValue(constant.value)
+    elif isinstance(widget, QCheckBox):
+        widget.setChecked(bool(constant.value))
+    elif isinstance(widget, ComboBox):
+        widget.setValue(constant.value)
+    else:
+        widget.setText(constant.value or '')
+    widget.blockSignals(False)
 
 
 class BoolConstantsModel(ComponentModel):
@@ -65,6 +79,7 @@ class MainExpEquation(QWidget):
         super().__init__(parent)
         self.window = parent
         self._data = data
+        self.shown: List[Tuple[QWidget, Constant]] = []  # Each widget, with the constant it edits
         self.class_list_boxes: List[Tuple[MultiSelectComboBox, Constant]] = []
 
         label = QLabel(_('Combat Experience Equation:'), self)
@@ -108,6 +123,16 @@ class MainExpEquation(QWidget):
         self.toggle_exp_frame()
         self.window.parameters_changed(0)
 
+    def show_constants(self):
+        selector = self.exp_calc_type_selector.edit
+        selector.blockSignals(True)
+        selector.setCurrentText(ExpCalcType(self._data.get('exp_formula').value).name)
+        selector.blockSignals(False)
+        self.toggle_exp_frame()
+        for widget, constant in self.shown:
+            show_constant(widget, constant)
+        self.fill_class_lists()
+
     def create_standard_exp_frame(self):
         # classic_exp frame
         exp_magnitude = self._data.get('exp_magnitude')
@@ -116,18 +141,21 @@ class MainExpEquation(QWidget):
         self.exp_magnitude.setDecimals(1)
         self.exp_magnitude.setRange(0, 255)
         self.exp_magnitude.valueChanged.connect(exp_magnitude.set_value)
+        self.shown.append((self.exp_magnitude, exp_magnitude))
         exp_curve = self._data.get('exp_curve')
         self.exp_curve = QDoubleSpinBox(self)
         self.exp_curve.setValue(exp_curve.value)
         self.exp_curve.setDecimals(3)
         self.exp_curve.setRange(0, 255)
         self.exp_curve.valueChanged.connect(exp_curve.set_value)
+        self.shown.append((self.exp_curve, exp_curve))
         exp_offset = self._data.get('exp_offset')
         self.exp_offset = QDoubleSpinBox(self)
         self.exp_offset.setValue(exp_offset.value)
         self.exp_offset.setDecimals(1)
         self.exp_offset.setRange(-255, 255)
         self.exp_offset.valueChanged.connect(exp_offset.set_value)
+        self.shown.append((self.exp_offset, exp_offset))
 
         self.exp_magnitude.valueChanged.connect(self.window.parameters_changed)
         self.exp_curve.valueChanged.connect(self.window.parameters_changed)
@@ -159,24 +187,28 @@ class MainExpEquation(QWidget):
         self.gexp_max.setDecimals(1)
         self.gexp_max.setRange(0, 255)
         self.gexp_max.valueChanged.connect(gexp_max.set_value)
+        self.shown.append((self.gexp_max, gexp_max))
         gexp_min = self._data.get('gexp_min')
         self.gexp_min = QDoubleSpinBox(self)
         self.gexp_min.setValue(gexp_min.value)
         self.gexp_min.setDecimals(1)
         self.gexp_min.setRange(0, 255)
         self.gexp_min.valueChanged.connect(gexp_min.set_value)
+        self.shown.append((self.gexp_min, gexp_min))
         gexp_slope = self._data.get('gexp_slope')
         self.gexp_slope = QDoubleSpinBox(self)
         self.gexp_slope.setValue(gexp_slope.value)
         self.gexp_slope.setDecimals(3)
         self.gexp_slope.setRange(-255, 255)
         self.gexp_slope.valueChanged.connect(gexp_slope.set_value)
+        self.shown.append((self.gexp_slope, gexp_slope))
         gexp_intercept = self._data.get('gexp_intercept')
         self.gexp_intercept = QDoubleSpinBox(self)
         self.gexp_intercept.setValue(gexp_intercept.value)
         self.gexp_intercept.setDecimals(1)
         self.gexp_intercept.setRange(gexp_min.value + 1, gexp_max.value - 1)
         self.gexp_intercept.valueChanged.connect(gexp_intercept.set_value)
+        self.shown.append((self.gexp_intercept, gexp_intercept))
 
         self.gexp_max.valueChanged.connect(self.window.parameters_changed)
         self.gexp_min.valueChanged.connect(self.window.parameters_changed)
@@ -231,6 +263,7 @@ class MainExpEquation(QWidget):
         self.thief_bonus.setValue(thief_bonus.value)
         self.thief_bonus.setRange(0, 255)
         self.thief_bonus.valueChanged.connect(thief_bonus.set_value)
+        self.shown.append((self.thief_bonus, thief_bonus))
         thief_list = self._data.get('cexp_thief_list')
         self.thief_list = self.create_class_list_box(thief_list)
         damage_bonus = self._data.get('cexp_damage_bonus')
@@ -238,41 +271,49 @@ class MainExpEquation(QWidget):
         self.damage_bonus.setValue(damage_bonus.value)
         self.damage_bonus.setRange(0, 255)
         self.damage_bonus.valueChanged.connect(damage_bonus.set_value)
+        self.shown.append((self.damage_bonus, damage_bonus))
         kill_bonus = self._data.get('cexp_kill_bonus')
         self.kill_bonus = QSpinBox(self)
         self.kill_bonus.setValue(kill_bonus.value)
         self.kill_bonus.setRange(0, 255)
         self.kill_bonus.valueChanged.connect(kill_bonus.set_value)
+        self.shown.append((self.kill_bonus, kill_bonus))
         mode_coeff = self._data.get('cexp_mode_coeff')
         self.mode_coeff = QSpinBox(self)
         self.mode_coeff.setValue(mode_coeff.value)
         self.mode_coeff.setRange(1, 255)
         self.mode_coeff.valueChanged.connect(mode_coeff.set_value)
+        self.shown.append((self.mode_coeff, mode_coeff))
         class_bonus_a = self._data.get('cexp_class_bonus_a')
         self.class_bonus_a = QSpinBox(self)
         self.class_bonus_a.setValue(class_bonus_a.value)
         self.class_bonus_a.setRange(0, 255)
         self.class_bonus_a.valueChanged.connect(class_bonus_a.set_value)
+        self.shown.append((self.class_bonus_a, class_bonus_a))
         class_bonus_a_tier = self._data.get('cexp_class_bonus_a_tier')
         self.class_bonus_a_tier = QSpinBox(self)
         self.class_bonus_a_tier.setValue(class_bonus_a_tier.value)
         self.class_bonus_a_tier.setRange(0, 255)
         self.class_bonus_a_tier.valueChanged.connect(class_bonus_a_tier.set_value)
+        self.shown.append((self.class_bonus_a_tier, class_bonus_a_tier))
         class_bonus_b = self._data.get('cexp_class_bonus_b')
         self.class_bonus_b = QSpinBox(self)
         self.class_bonus_b.setValue(class_bonus_b.value)
         self.class_bonus_b.setRange(0, 255)
         self.class_bonus_b.valueChanged.connect(class_bonus_b.set_value)
+        self.shown.append((self.class_bonus_b, class_bonus_b))
         class_bonus_b_tier = self._data.get('cexp_class_bonus_b_tier')
         self.class_bonus_b_tier = QSpinBox(self)
         self.class_bonus_b_tier.setValue(class_bonus_b_tier.value)
         self.class_bonus_b_tier.setRange(0, 255)
         self.class_bonus_b_tier.valueChanged.connect(class_bonus_b_tier.set_value)
+        self.shown.append((self.class_bonus_b_tier, class_bonus_b_tier))
         class_bonus_b1 = self._data.get('cexp_class_bonus_b1')
         self.class_bonus_b1 = QSpinBox(self)
         self.class_bonus_b1.setValue(class_bonus_b1.value)
         self.class_bonus_b1.setRange(0, 255)
         self.class_bonus_b1.valueChanged.connect(class_bonus_b1.set_value)
+        self.shown.append((self.class_bonus_b1, class_bonus_b1))
         class_bonus_b1_list = self._data.get('cexp_class_bonus_b1_list')
         self.class_bonus_b1_list = self.create_class_list_box(class_bonus_b1_list)
         class_power_1 = self._data.get('cexp_class_power_1')
@@ -280,11 +321,13 @@ class MainExpEquation(QWidget):
         self.class_power_1.setValue(class_power_1.value)
         self.class_power_1.setRange(1, 255)
         self.class_power_1.valueChanged.connect(class_power_1.set_value)
+        self.shown.append((self.class_power_1, class_power_1))
         class_power_1_tier = self._data.get('cexp_class_power_1_tier')
         self.class_power_1_tier = QSpinBox(self)
         self.class_power_1_tier.setValue(class_power_1_tier.value)
         self.class_power_1_tier.setRange(0, 255)
         self.class_power_1_tier.valueChanged.connect(class_power_1_tier.set_value)
+        self.shown.append((self.class_power_1_tier, class_power_1_tier))
         class_power_1_list = self._data.get('cexp_class_power_1_list')
         self.class_power_1_list = self.create_class_list_box(class_power_1_list)
         class_power_2 = self._data.get('cexp_class_power_2')
@@ -292,6 +335,7 @@ class MainExpEquation(QWidget):
         self.class_power_2.setValue(class_power_2.value)
         self.class_power_2.setRange(1, 255)
         self.class_power_2.valueChanged.connect(class_power_2.set_value)
+        self.shown.append((self.class_power_2, class_power_2))
         class_power_2_list = self._data.get('cexp_class_power_2_list')
         self.class_power_2_list = self.create_class_list_box(class_power_2_list)
         class_power_3 = self._data.get('cexp_class_power_3')
@@ -299,16 +343,19 @@ class MainExpEquation(QWidget):
         self.class_power_3.setValue(class_power_3.value)
         self.class_power_3.setRange(1, 255)
         self.class_power_3.valueChanged.connect(class_power_3.set_value)
+        self.shown.append((self.class_power_3, class_power_3))
         class_power_4 = self._data.get('cexp_class_power_4')
         self.class_power_4 = QSpinBox(self)
         self.class_power_4.setValue(class_power_4.value)
         self.class_power_4.setRange(1, 255)
         self.class_power_4.valueChanged.connect(class_power_4.set_value)
+        self.shown.append((self.class_power_4, class_power_4))
         class_power_4_tier = self._data.get('cexp_class_power_4_tier')
         self.class_power_4_tier = QSpinBox(self)
         self.class_power_4_tier.setValue(class_power_4_tier.value)
         self.class_power_4_tier.setRange(0, 255)
         self.class_power_4_tier.valueChanged.connect(class_power_4_tier.set_value)
+        self.shown.append((self.class_power_4_tier, class_power_4_tier))
 
         layout = QVBoxLayout()
         layout.setSpacing(6)
@@ -550,6 +597,8 @@ class HealExpEquation(QWidget):
         self.window = parent
         self._data = data
 
+        self.shown: List[Tuple[QWidget, Constant]] = []  # Each widget, with the constant it edits
+
         label = QLabel('Heal Experience Equation:', self)
         label.setAlignment(Qt.AlignBottom)
         label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
@@ -562,18 +611,21 @@ class HealExpEquation(QWidget):
         self.heal_magnitude.setValue(heal_magnitude.value)
         self.heal_magnitude.setRange(-255, 255)
         self.heal_magnitude.valueChanged.connect(heal_magnitude.set_value)
+        self.shown.append((self.heal_magnitude, heal_magnitude))
         heal_curve = self._data.get('heal_curve')
         self.heal_curve = QDoubleSpinBox(self)
         self.heal_curve.setValue(heal_curve.value)
         self.heal_curve.setDecimals(3)
         self.heal_curve.setRange(0, 255)
         self.heal_curve.valueChanged.connect(heal_curve.set_value)
+        self.shown.append((self.heal_curve, heal_curve))
         heal_offset = self._data.get('heal_offset')
         self.heal_offset = QDoubleSpinBox(self)
         self.heal_offset.setValue(heal_offset.value)
         self.heal_offset.setDecimals(1)
         self.heal_offset.setRange(-255, 255)
         self.heal_offset.valueChanged.connect(heal_offset.set_value)
+        self.shown.append((self.heal_offset, heal_offset))
 
         self.heal_magnitude.valueChanged.connect(self.window.parameters_changed)
         self.heal_curve.valueChanged.connect(self.window.parameters_changed)
@@ -595,6 +647,10 @@ class HealExpEquation(QWidget):
         eq_layout.addWidget(label3)
         layout.addLayout(eq_layout)
 
+    def show_constants(self):
+        for widget, constant in self.shown:
+            show_constant(widget, constant)
+
 class ExperienceWidget(QWidget):
     def __init__(self, data, parent=None):
         super().__init__(parent)
@@ -604,6 +660,7 @@ class ExperienceWidget(QWidget):
         layout = QGridLayout()
         self.setLayout(layout)
 
+        self.shown: List[Tuple[QWidget, Constant]] = []  # Each widget, with the constant it edits
         self.main_exp_equation = MainExpEquation(data, self)
         layout.addWidget(self.main_exp_equation, 0, 0, 1, 3)
 
@@ -613,6 +670,7 @@ class ExperienceWidget(QWidget):
         self.min_exp.edit.setValue(min_exp.value)
         self.min_exp.edit.setAlignment(Qt.AlignRight)
         self.min_exp.edit.valueChanged.connect(min_exp.set_value)
+        self.shown.append((self.min_exp.edit, min_exp))
         self.min_exp.edit.valueChanged.connect(self.parameters_changed)
 
         kill_multiplier = data.get('kill_multiplier')
@@ -622,6 +680,7 @@ class ExperienceWidget(QWidget):
         self.kill_multiplier.edit.setAlignment(Qt.AlignRight)
         self.kill_multiplier.edit.setValue(kill_multiplier.value)
         self.kill_multiplier.edit.valueChanged.connect(kill_multiplier.set_value)
+        self.shown.append((self.kill_multiplier.edit, kill_multiplier))
         self.kill_multiplier.edit.valueChanged.connect(self.parameters_changed)
 
         boss_bonus = data.get('boss_bonus')
@@ -630,6 +689,7 @@ class ExperienceWidget(QWidget):
         self.boss_bonus.edit.setAlignment(Qt.AlignRight)
         self.boss_bonus.edit.setValue(boss_bonus.value)
         self.boss_bonus.edit.valueChanged.connect(boss_bonus.set_value)
+        self.shown.append((self.boss_bonus.edit, boss_bonus))
         self.boss_bonus.edit.valueChanged.connect(self.parameters_changed)
 
         layout.addWidget(self.min_exp, 1, 0)
@@ -646,6 +706,12 @@ class ExperienceWidget(QWidget):
         self.display_exp.setVisible(not is_classic)
         self.display_exp.update_parameters()
 
+    def show_constants(self):
+        self.main_exp_equation.show_constants()
+        for widget, constant in self.shown:
+            show_constant(widget, constant)
+        self.parameters_changed(0)
+
 class MiscExperienceWidget(QWidget):
     def __init__(self, data, parent=None):
         super().__init__(parent)
@@ -655,6 +721,7 @@ class MiscExperienceWidget(QWidget):
         layout = QGridLayout()
         self.setLayout(layout)
 
+        self.shown: List[Tuple[QWidget, Constant]] = []  # Each widget, with the constant it edits
         self.main_exp_equation = HealExpEquation(data, self)
         layout.addWidget(self.main_exp_equation, 0, 0, 1, 3)
 
@@ -667,6 +734,7 @@ class MiscExperienceWidget(QWidget):
         self.heal_min.edit.setValue(heal_min.value)
         self.heal_min.edit.setAlignment(Qt.AlignRight)
         self.heal_min.edit.valueChanged.connect(heal_min.set_value)
+        self.shown.append((self.heal_min.edit, heal_min))
         self.heal_min.edit.valueChanged.connect(self.parameters_changed)
 
         default_exp = data.get('default_exp')
@@ -675,6 +743,7 @@ class MiscExperienceWidget(QWidget):
         self.default_exp.edit.setAlignment(Qt.AlignRight)
         self.default_exp.edit.setValue(default_exp.value)
         self.default_exp.edit.valueChanged.connect(default_exp.set_value)
+        self.shown.append((self.default_exp.edit, default_exp))
         self.default_exp.edit.valueChanged.connect(self.parameters_changed)
 
         layout.addWidget(self.heal_min, 2, 0)
@@ -682,6 +751,12 @@ class MiscExperienceWidget(QWidget):
 
     def parameters_changed(self, val):
         self.display_exp.update_parameters()
+
+    def show_constants(self):
+        self.main_exp_equation.show_constants()
+        for widget, constant in self.shown:
+            show_constant(widget, constant)
+        self.parameters_changed(0)
 
 class ConstantDatabase(DatabaseTab):
     @classmethod
@@ -692,17 +767,16 @@ class ConstantDatabase(DatabaseTab):
         dialog = cls(data, title, parent)
         return dialog
 
-    # Its widgets are built once from the constants' values
-    supports_undo = False
-
     def update_list(self):
         pass
 
     def reset(self):
-        # Constants hold their own values, which only this tab edits, but the
-        # class lists choose from the classes as they are now
-        for equation in self.findChildren(MainExpEquation):
-            equation.fill_class_lists()
+        for model in self.bool_models:
+            model.layoutChanged.emit()
+        for widget, constant in self.shown:
+            show_constant(widget, constant)
+        self.exp_widget.show_constants()
+        self.misc_exp_widget.show_constants()
 
     # Now we get to the new stuff
     def __init__(self, data, title, parent=None):
@@ -712,6 +786,8 @@ class ConstantDatabase(DatabaseTab):
         HISTORY.bind_all(data, data, self)
         self._data: ConstantCatalog = data
         self.title = title
+        self.shown: List[Tuple[QWidget, Constant]] = []  # Each widget, with the constant it edits
+        self.bool_models: List[BoolConstantsModel] = []
 
         self.setWindowTitle('%s Editor' % self.title)
         self.setStyleSheet("font: 10pt")
@@ -726,6 +802,7 @@ class ConstantDatabase(DatabaseTab):
             if not bool_constants:
                 continue
             bool_model = BoolConstantsModel(bool_constants, self)
+            self.bool_models.append(bool_model)
             bool_view = QTreeView()
             bool_view.setModel(bool_model)
             bool_view.header().hide()
@@ -772,14 +849,14 @@ class ConstantDatabase(DatabaseTab):
         combat_exp_layout = QHBoxLayout(self)
         exp_section = QGroupBox("Combat Experience Constants", self)
         exp_section.setLayout(combat_exp_layout)
-        exp_widget = ExperienceWidget(self._data, self)
-        combat_exp_layout.addWidget(exp_widget)
+        self.exp_widget = ExperienceWidget(self._data, self)
+        combat_exp_layout.addWidget(self.exp_widget)
 
         misc_exp_layout = QHBoxLayout(self)
         misc_exp_section = QGroupBox("Miscellaneous Experience Constants", self)
         misc_exp_section.setLayout(misc_exp_layout)
-        misc_exp_widget = MiscExperienceWidget(self._data, self)
-        misc_exp_layout.addWidget(misc_exp_widget)
+        self.misc_exp_widget = MiscExperienceWidget(self._data, self)
+        misc_exp_layout.addWidget(self.misc_exp_widget)
 
         exp_layout.addWidget(exp_section)
         exp_layout.addWidget(misc_exp_section)
@@ -852,6 +929,7 @@ class ConstantDatabase(DatabaseTab):
                 box.edit.setValue(constant.value)
                 box.edit.currentTextChanged.connect(constant.set_value)
             box.setToolTip(info_text)
+            self.shown.append((box.edit, constant))
             layout.addWidget(box)
         return section
 

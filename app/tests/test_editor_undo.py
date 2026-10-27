@@ -346,5 +346,80 @@ class LegacyEditorUndoTests(EditorUndoTestCase):
         self.assertEqual(faction.nid, DB.levels.get('0').units.get('101').faction)
 
 
+class ConstantsUndoTests(EditorUndoTestCase):
+    """The constants windows show every constant at once, and show them again after an undo"""
+    def show(self, dialog):
+        dialog.show()
+        dialog.activateWindow()
+        self.app.processEvents()
+
+    def widget(self, tab, constant):
+        """The widget under the constant's name"""
+        from app.extensions.custom_gui import PropertyBox
+        return next(box.edit for box in tab.findChildren(PropertyBox) if box.label.text() == constant.name)
+
+    def test_ctrl_z_in_the_constants_window_takes_back_a_constant_and_shows_it(self):
+        from PyQt5.QtCore import Qt
+        from PyQt5.QtTest import QTest
+        from app.editor.constant_tab import ConstantDatabase
+        from app.editor.data_editor import SingleDatabaseEditor
+        dialog = self.open(SingleDatabaseEditor, ConstantDatabase)
+        self.show(dialog)
+        box = self.widget(dialog.tab, DB.constants.get('num_items'))
+        box.setFocus()
+        old = DB.constants.value('num_items')
+        box.setValue(old + 1)
+        self.history.commit()
+
+        QTest.keyClick(box, Qt.Key_Z, Qt.ControlModifier)
+
+        self.assertEqual(old, DB.constants.value('num_items'))
+        self.assertEqual(old, box.value())
+
+    def test_an_undo_from_another_window_shows_in_the_constants_window(self):
+        from app.editor.constant_tab import ConstantDatabase, MainExpEquation
+        from app.editor.data_editor import SingleDatabaseEditor
+        from app.engine.exp_calculator import ExpCalcType
+        dialog = self.open(SingleDatabaseEditor, ConstantDatabase)
+        tab = dialog.tab
+        equation = tab.findChild(MainExpEquation)
+        formula = ExpCalcType(DB.constants.value('exp_formula')).name
+        gexp_max = DB.constants.value('gexp_max')
+        music = self.widget(tab, DB.constants.get('music_main'))
+        DB.constants.get('music_main').set_value('Distant Roads')
+        music.setText('Distant Roads')
+        self.history.commit()
+        equation.exp_calc_type_selector.edit.setCurrentText(ExpCalcType.GOMPERTZ.name)
+        equation.gexp_max.setValue(gexp_max + 10)
+        self.history.commit()
+
+        self.history.undo()
+        self.history.undo()
+        self.app.processEvents()  # The window shows the change once the undo is done
+
+        self.assertEqual(formula, equation.exp_calc_type_selector.edit.currentText())
+        self.assertTrue(equation.gompertz_exp_frame.isHidden())
+        self.assertEqual(gexp_max, equation.gexp_max.value())
+        self.assertEqual(DB.constants.value('music_main') or '', music.text())
+
+    def test_ctrl_z_in_the_support_constants_takes_back_a_constant_and_shows_it(self):
+        from PyQt5.QtCore import Qt
+        from PyQt5.QtTest import QTest
+        from app.editor.data_editor import SingleDatabaseEditor
+        from app.editor.support_editor.support_constants_tab import SupportConstantDatabase
+        dialog = self.open(SingleDatabaseEditor, SupportConstantDatabase)
+        self.show(dialog)
+        box = self.widget(dialog.tab, DB.support_constants.get('bonus_range'))
+        box.setFocus()
+        old = DB.support_constants.value('bonus_range')
+        box.setValue(old + 1)
+        self.history.commit()
+
+        QTest.keyClick(box, Qt.Key_Z, Qt.ControlModifier)
+
+        self.assertEqual(old, DB.support_constants.value('bonus_range'))
+        self.assertEqual(old, box.value())
+
+
 if __name__ == '__main__':
     unittest.main()

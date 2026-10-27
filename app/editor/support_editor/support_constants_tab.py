@@ -9,6 +9,7 @@ from app.editor.edit_history import HISTORY
 from app.extensions.custom_gui import PropertyBox, ComboBox, PropertyCheckBox
 
 from app.editor.base_database_gui import DatabaseTab
+from app.editor.constant_tab import show_constant
 from app.editor.data_editor import SingleDatabaseEditor
 
 import logging
@@ -22,14 +23,12 @@ class SupportConstantDatabase(DatabaseTab):
         dialog = cls(data, title, parent)
         return dialog
 
-    # Its widgets are built once from the constants' values
-    supports_undo = False
-
     def update_list(self):
         pass
 
     def reset(self):
-        pass
+        for widget, constant in self.shown:
+            show_constant(widget, constant)
 
     # Now we get to the new stuff
     def __init__(self, data, title, parent=None):
@@ -39,6 +38,7 @@ class SupportConstantDatabase(DatabaseTab):
         HISTORY.bind_all(data, data, self)
         self._data = data
         self.title = title
+        self.shown = []  # Each widget, with the constant it edits
 
         self.setWindowTitle('%s Editor' % self.title)
         self.setStyleSheet("font: 10pt")
@@ -89,6 +89,7 @@ class SupportConstantDatabase(DatabaseTab):
                 box.edit.addItems(constant.attr)
                 box.edit.setValue(constant.value)
                 box.edit.currentTextChanged.connect(constant.set_value)
+            self.shown.append((box.edit, constant))
             layout.addWidget(box)
         return section
 
