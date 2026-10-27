@@ -1,0 +1,365 @@
+'''
+Entry point of the browser build. app/utilities/web_export.py packs it beside
+the engine and the one project it builds, and pygbag's page runs it under
+CPython compiled to WebAssembly (sys.platform == 'emscripten').
+
+The page's address takes options:
+    ?level=<nid>            starts that level as the editor's Test Chapter does,
+                            instead of the title screen
+    ?perf                   prints a summary of frame times (LTPERF) every 120
+                            frames, as LT_FRAME_STATS does on the desktop
+    ?bench                  times a few kinds of work (bench.py) before starting,
+                            to compare one browser or device with another
+    ?cprofile=<start>,<n>   splits frames start to start + n between pygame's
+                            C functions and Python (bench.CCallTimer)
+    ?audio_buffer=<n>       opens the mixer with 128 * 2 ** n frames of buffer,
+                            in place of the sound_buffer_size setting (2)
+    ?audio_log              logs to the browser's console whether the sound
+                            keeps up (AUDIO_LOG_JS)
+    ?frame_log              logs to the browser's console each screen refresh
+                            the page missed, and what held it up (FRAME_LOG_JS)
+    ?memory                 prints how much memory the game holds (LTMEMORY)
+                            every ten seconds (log_memory)
+    ?touch                  draws the on-screen buttons (page.js) even where
+                            the screen isn't a touch screen
+    ?integer                shows the game only at whole multiples of its size,
+                            with a border, rather than filling the window
+    ?report                 sends Python's output, the browser's console and
+                            the page's errors to the server it came from, for
+                            a phone whose browser can't be inspected
+                            (serve.py writes them down)
+'''
+import asyncio
+import json
+import os
+import sys
+import time
+import traceback
+from pathlib import Path
+from urllib.parse import parse_qs
+
+# pygbag fetches the packages that main.py itself imports, and no others
+import pygame  # noqa: F401
+
+def page_options() -> dict[str, str]:
+    # pygbag's platform module, standing in for the standard library's, reaches the page
+    import platform
+    query = parse_qs(str(platform.window.location.search).lstrip('?'), keep_blank_values=True)
+    return {key: values[0] for key, values in query.items()}
+
+def loaded(step: str):
+    """
+    Notes how long after the page was opened a step of loading finished, and
+    tells the page's loading screen (loading.js)
+    """
+    import platform
+    print('LTLOAD %-20s %6.0f ms' % (step, float(platform.window.performance.now())), flush=True)
+    platform.window.__ltLoading.step(step)
+
+async def shown(step: str):
+    """loaded, then a frame for the page to show it, as the engine's loading holds the page"""
+    loaded(step)
+    await asyncio.sleep(0)
+
+# Sends what it is given to the server's /report once a second, along with the
+# browser's console and the page's errors, starting with the steps the loading
+# screen noted before main.py ran (loading.js), and what device this is
+REPORT_JS = """(() => {
+  const pending = __ltLoading.noted.slice();
+  window.__ltReport = (line) => { pending.push(line); };
+  const send = () => {
+    if (!pending.length) return;
+    const body = pending.splice(0).join('\\n');
+    fetch('/report', {method: 'POST', body: body, keepalive: true}).catch(() => {});
+  };
+  setInterval(send, 1000);
+  window.addEventListener('pagehide', send);
+  for (const level of ['log', 'warn', 'error']) {
+    const original = console[level];
+    console[level] = function (...args) {
+      pending.push('console.' + level + ' ' + args.map(String).join(' '));
+      original.apply(console, args);
+    };
+  }
+  window.addEventListener('error', (event) => {
+    pending.push('page error: ' + event.message + ' at ' + event.filename + ':' + event.lineno);
+  });
+  window.addEventListener('unhandledrejection', (event) => {
+    pending.push('page error: unhandled rejection ' + event.reason);
+  });
+  document.addEventListener('visibilitychange', () => { pending.push('page ' + document.visibilityState); });
+  pending.push('device ' + navigator.userAgent + '; screen ' + screen.width + 'x' + screen.height +
+               ' at ' + devicePixelRatio + 'x; window ' + innerWidth + 'x' + innerHeight +
+               '; ' + navigator.hardwareConcurrency + ' cores');
+  // When each file the page fetched so far, pygbag's Python among them, began and finished arriving
+  for (const entry of performance.getEntriesByType('resource')) {
+    pending.push('LTFETCH ' + entry.startTime.toFixed(0).padStart(6) + ' to ' + entry.responseEnd.toFixed(0).padStart(6) +
+                 ' ms ' + entry.name);
+  }
+})();"""
+
+class ReportingStream():
+    """Passes writes on to the stream it wraps, and each finished line to REPORT_JS"""
+    def __init__(self, stream, window):
+        self.stream = stream
+        self.window = window
+        self.partial = ''
+
+    def write(self, text: str) -> int:
+        self.partial += text
+        *lines, self.partial = self.partial.split('\n')
+        for line in lines:
+            self.window.eval('__ltReport(%s)' % json.dumps(line))
+        return self.stream.write(text)
+
+    def flush(self):
+        self.stream.flush()
+
+def start_reporting():
+    import platform
+    platform.window.eval(REPORT_JS)
+    sys.stdout = ReportingStream(sys.stdout, platform.window)
+    sys.stderr = ReportingStream(sys.stderr, platform.window)
+
+OPTIONS = page_options()
+if 'report' in OPTIONS:
+    start_reporting()
+loaded('main.py running')
+if 'perf' in OPTIONS:
+    # Read by the driver at import
+    os.environ['LT_FRAME_STATS'] = '1'
+
+# The engine is imported in main(), once the saves are back: it reads the
+# player's settings from them as it is imported
+
+def find_project() -> str:
+    projects = [name for name in os.listdir('.') if name.endswith('.ltproj')]
+    if len(projects) != 1:
+        raise ValueError("Expected exactly one .ltproj beside main.py, found %s" % projects)
+    return projects[0]
+
+async def run_c_timed(game, start: int, frames: int):
+    import bench
+    from app.engine import driver
+    main_loop = driver.MainLoop(game, wait_out_frame=True)
+    timer = bench.CCallTimer()
+    frame, wall = 0, 0.0
+    while True:
+        timed = start <= frame < start + frames
+        if timed:
+            began = time.perf_counter()
+            timer.start()
+        running = main_loop.run_frame()
+        if timed:
+            timer.stop()
+            wall += time.perf_counter() - began
+        if not running:
+            break
+        frame += 1
+        if frame == start + frames:
+            timer.report(frames, wall)
+        await asyncio.sleep(0)
+
+# Logs to the browser's console, every two seconds, how the sound kept up:
+# page.js has SDL fill buffers ahead of time, and any the game's thread held
+# up past their time leave a gap of silence (holds)
+AUDIO_LOG_JS = """setInterval(() => {
+  console.log('LTAUDIO ' + (__ltSound.buffers / 2).toFixed(1) + ' buffers/s of ' + __ltSound.node + ', ' +
+              __ltSound.holds + ' holds, ' + __ltSound.silentMs.toFixed(0) + ' ms silent');
+  __ltSound.buffers = 0; __ltSound.holds = 0; __ltSound.silentMs = 0;
+}, 2000);"""
+
+# Logs to the browser's console each time the page's animation frames, which
+# the engine runs in, come more than 20 ms apart: how late the frame's
+# callbacks started after its time, how long each of the last frame's took
+# (the engine's is the longest), and how long feeding the sound took between
+# them (page.js). Every two seconds it sums up
+FRAME_LOG_JS = """(() => {
+  const request = window.requestAnimationFrame.bind(window);
+  let last = null, current = null, frames = 0, missed = 0;
+  window.requestAnimationFrame = (callback) => request((stamp) => {
+    if (!current || current.stamp !== stamp) {
+      last = current;
+      current = {stamp: stamp, start: performance.now(), took: [], sound: __ltSound.busyMs};
+      frames++;
+      if (last && stamp - last.stamp > 20) {
+        missed++;
+        console.log('LTFRAME ' + (stamp - last.stamp).toFixed(1) + ' ms since the last frame, started ' +
+                    (current.start - stamp).toFixed(1) + ' ms late; last frame callbacks ' +
+                    last.took.map((ms) => ms.toFixed(1)).join(', ') + ' ms, started ' +
+                    (last.start - last.stamp).toFixed(1) + ' ms late; sound since ' +
+                    (current.sound - last.sound).toFixed(1) + ' ms (longest ' + __ltSound.longestMs.toFixed(1) + ')');
+        __ltSound.longestMs = 0;
+      }
+    }
+    const began = performance.now();
+    try { callback(stamp); } finally { current.took.push(performance.now() - began); }
+  });
+  setInterval(() => {
+    console.log('LTFRAME ' + (frames / 2).toFixed(1) + ' frames/s, ' + missed + ' late');
+    frames = 0; missed = 0;
+  }, 2000);
+})();"""
+
+# The bytes the page holds: Python's heap, which grows and never shrinks,
+# the files in Python's filesystem, which is only memory, the deferred
+# bundles that have arrived, which the browser keeps apart from the page
+# (page.js), and, where the browser tells, the page's JavaScript
+MEMORY_JS = """(() => {
+  let files = 0;
+  const add = (node) => {
+    if (python.FS.isDir(node.mode)) {
+      for (const name in node.contents) add(node.contents[name]);
+    } else if (python.FS.isFile(node.mode)) {
+      files += node.usedBytes || 0;
+    }
+  };
+  add(python.FS.lookupPath('/').node);
+  return JSON.stringify([python.HEAP8.buffer.byteLength, files, __ltDeferred.held(),
+                         performance.memory ? performance.memory.usedJSHeapSize : null]);
+})()"""
+
+def decoded_bytes(sound: pygame.mixer.Sound) -> int:
+    """How much memory a sound holds, decoded at the mixer's rate, format and channels"""
+    frequency, sample_format, channels = pygame.mixer.get_init()
+    return int(sound.get_length() * frequency * channels * abs(sample_format) // 8)
+
+async def log_memory():
+    """
+    Prints every ten seconds how much memory the game holds (MEMORY_JS), and
+    how much of the heap the decoded music and sound effects take, which
+    the engine keeps until the level ends (app/engine/sound.py)
+    """
+    import platform
+    from app.engine import sound
+    from app.engine.game_state import game
+    megabyte = 2 ** 20
+    while True:
+        heap, files, bundles, script = json.loads(str(platform.window.eval(MEMORY_JS)))
+        songs = [part for song in sound.MUSIC.values() if song for part in (song.song, song.battle, song.intro) if part]
+        effects = [effect for effect in sound.SFX.values() if effect]
+        print('LTMEMORY heap %d MB, files %d MB, bundles %d MB, %s%d songs (%d MB decoded), %d sound effects (%d MB decoded), level %s' % (
+            heap / megabyte, files / megabyte, bundles / megabyte, '' if script is None else 'script %d MB, ' % (script / megabyte),
+            len(sound.MUSIC), sum(decoded_bytes(part) for part in songs) / megabyte,
+            len(effects), sum(decoded_bytes(effect) for effect in effects) / megabyte, game.level_nid))
+        await asyncio.sleep(10)
+
+def read_game_nid(project: str) -> str:
+    """The project's game_nid, read before the engine is imported, which needs the saves back first"""
+    constants = dict(json.loads(Path(project, 'game_data', 'constants.json').read_text()))
+    return str(constants['game_nid'])
+
+async def restore_saves(game_nid: str):
+    """
+    Puts the saves page.js kept in the browser for this game back in the saves
+    folder, the one the engine reads and writes, and from then on keeps what
+    it writes
+    """
+    import platform
+    os.makedirs('saves', exist_ok=True)
+    platform.window.__ltSaves.restore(os.getcwd() + '/saves', game_nid)
+    while not json.loads(str(platform.window.eval('JSON.stringify(__ltSaves.ready)'))):
+        await asyncio.sleep(0)
+    await shown('saves restored')
+
+def setup_page():
+    """
+    Lays out the page, with on-screen buttons on a touch screen or for ?touch.
+    The engine draws at the game's own size, and the page scales it up
+    """
+    import platform
+    from app.constants import WINWIDTH, WINHEIGHT
+    from app.engine import config as cf
+    show_pad = json.loads(str(platform.window.eval(
+        'JSON.stringify(__ltSetupPage(%s || matchMedia("(pointer: coarse)").matches, %s, %s))'
+        % (json.dumps('touch' in OPTIONS), WINWIDTH / WINHEIGHT, json.dumps('integer' in OPTIONS)))))
+    # The files the build left out of the download, from here on
+    platform.window.__ltDeferred.start()
+    cf.SETTINGS['screen_size'] = 1
+    if show_pad:
+        # A touch on the game's screen would press SELECT where it touched; the buttons do instead
+        cf.SETTINGS['mouse'] = 0
+
+async def pump_touch_controls():
+    """
+    Hands the engine the on-screen buttons' presses as presses of the keys
+    the player has for those buttons, so it takes them as it does a keyboard
+    """
+    import platform
+    from app.engine import config as cf
+    while True:
+        for button, down in json.loads(str(platform.window.eval('__ltTouch.take()'))):
+            event_type = pygame.KEYDOWN if down else pygame.KEYUP
+            pygame.event.post(pygame.event.Event(event_type, key=cf.SETTINGS['key_' + button], mod=0, scancode=0, unicode=''))
+        await asyncio.sleep(0)
+
+async def main():
+    import platform
+    platform.window.eval(Path('page.js').read_text())
+    project = find_project()
+    await restore_saves(read_game_nid(project))
+    from app.constants import VERSION
+    from app.data.metadata import Metadata
+    from app.data.resources.resources import RESOURCES
+    from app.data.database.database import DB
+    from app.data.serialization.dataclass_serialization import dataclass_from_dict
+    from app.data.serialization.versions import CURRENT_SERIALIZATION_VERSION
+    from app.engine import config as cf
+    from app.engine import driver
+    from app.engine import game_state
+    await shown('engine imported')
+    setup_page()
+    print('*** Lex Talionis Engine Version %s on Python %s (%s) ***' % (VERSION, sys.version.split()[0], sys.platform))
+    print('Built', Path('built.txt').read_text())
+    print('Working directory:', os.getcwd())
+    if 'audio_log' in OPTIONS:
+        platform.window.eval(AUDIO_LOG_JS)
+    if 'frame_log' in OPTIONS:
+        platform.window.eval(FRAME_LOG_JS)
+    if 'audio_buffer' in OPTIONS:
+        # The mixer's buffer is 128 * 2 ** this many frames
+        cf.SETTINGS['sound_buffer_size'] = int(OPTIONS['audio_buffer'])
+    if 'bench' in OPTIONS:
+        import bench
+        pygame.init()
+        bench.run()
+    metadata = dataclass_from_dict(Metadata, json.loads(Path(project, 'metadata.json').read_text()))
+    if metadata.has_fatal_errors:
+        raise ValueError("Fatal errors detected in game. Aborting launch.")
+    RESOURCES.load(project, CURRENT_SERIALIZATION_VERSION)
+    await shown('resources loaded')
+    DB.load(project, CURRENT_SERIALIZATION_VERSION)
+    await shown('database loaded')
+    title = DB.constants.value('title')
+    platform.window.__ltSetTitle(title)
+    platform.window.__ltSaves.offer(title)
+    level_nid = OPTIONS.get('level')
+    driver.start(title, from_editor=bool(level_nid))
+    print('Mixer (frequency, format, channels):', pygame.mixer.get_init())
+    await shown('engine started')
+    if level_nid:
+        game = game_state.start_level(level_nid)
+    else:
+        game = game_state.start_game()
+    await shown('game started')
+    asyncio.create_task(pump_touch_controls())
+    if 'memory' in OPTIONS:
+        asyncio.create_task(log_memory())
+    if 'cprofile' in OPTIONS:
+        start, frames = (int(n) for n in OPTIONS['cprofile'].split(','))
+        await run_c_timed(game, start, frames)
+    else:
+        await driver.run_async(game)
+
+async def run():
+    """main, showing any error that stops it on the page's loading screen (loading.js)"""
+    import platform
+    try:
+        await main()
+    except Exception as error:
+        traceback.print_exc()
+        platform.window.__ltLoading.failed(''.join(traceback.format_exception_only(error)).strip())
+
+# pygbag's asyncio.run starts the task and returns at once, so an error in it
+# is only seen inside it
+asyncio.run(run())

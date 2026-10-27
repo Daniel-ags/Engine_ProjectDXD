@@ -1,18 +1,16 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-from app.data.serialization.versions import CURRENT_SERIALIZATION_VERSION
-from app.engine import dialog, fonts, sprites
+from app.tests.engine_harness import EngineTestCase
+from app.engine import dialog, fonts
 
 # Fits a default width text box with 3 pixels to spare -- but not with the waiting cursor after it
 FULL_LINE = "Doesn't look like you've got anything to forge."
 
-class DialogCursorWrapTests(unittest.TestCase):
+class DialogCursorWrapTests(EngineTestCase):
     def setUp(self):
-        from app.data.resources.resources import RESOURCES
-        RESOURCES.load('testing_proj.ltproj', CURRENT_SERIALIZATION_VERSION)
+        super().setUp()
         fonts.load_fonts(headless=True)
-        sprites.load_images()
 
     def _process(self, text, **kwargs) -> dialog.Dialog:
         with patch.object(dialog.engine, 'create_surface', new=MagicMock()), \
@@ -59,6 +57,20 @@ class DialogCursorWrapTests(unittest.TestCase):
                 bare = self._line_widths(self._process(text, autosize=True, draw_cursor=False))
                 self.assertEqual(len(widths), len(bare))
                 self.assertLessEqual(self._cursor_right_edge(box, widths[-1]), box.text_width)
+
+    def test_autosized_box_is_built_wide_enough_for_a_mid_text_cursor(self):
+        '''
+        Silvio: an autosized box reserved room for the cursor at the end of the text
+        but not at a wait in the middle of it, so the word before that wait dropped
+        to the next line and pushed the rest of the text onto a third
+        '''
+        text = "I shall do more than that!{w} Prepare yourself!"
+        box = self._process(text, autosize=True)
+        widths = self._line_widths(box)
+        bare = self._line_widths(self._process(text, autosize=True, draw_cursor=False))
+        self.assertEqual(widths, bare)
+        for width in widths:
+            self.assertLessEqual(self._cursor_right_edge(box, width), box.text_width)
 
     def test_no_room_reserved_without_cursor(self):
         self.assertEqual(len(self._line_widths(self._process(FULL_LINE, draw_cursor=False))), 1)

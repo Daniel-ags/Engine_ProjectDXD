@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Dict
-from app.engine.codegen.codegen_utils import get_codegen_header
+from app.engine.codegen.codegen_utils import GeneratedSource, get_codegen_header
 from app.engine.component_system.utils import HookInfo, ARG_TYPE_MAP, ResolvePolicy
 
 ITEM_HOOKS: Dict[str, HookInfo] = {
@@ -36,6 +36,7 @@ ITEM_HOOKS: Dict[str, HookInfo] = {
     'simple_target_restrict':                          HookInfo(['unit', 'item'], ResolvePolicy.ALL_DEFAULT_FALSE),
     'force_map_anim':                                  HookInfo(['unit', 'item'], ResolvePolicy.ALL_DEFAULT_FALSE),
     'map_cast_pose':                                   HookInfo(['unit', 'item'], ResolvePolicy.ALL_DEFAULT_FALSE),
+    'wait_on_map_anim':                                HookInfo(['unit', 'item'], ResolvePolicy.ALL_DEFAULT_FALSE),
     'ignore_line_of_sight':                            HookInfo(['unit', 'item'], ResolvePolicy.ALL_DEFAULT_FALSE),
     'ignore_fog_of_war':                               HookInfo(['unit', 'item'], ResolvePolicy.ALL_DEFAULT_FALSE),
     'allow_target_in_fog_of_war':                      HookInfo(['unit', 'item'], ResolvePolicy.ALL_DEFAULT_FALSE),
@@ -99,6 +100,7 @@ ITEM_HOOKS: Dict[str, HookInfo] = {
     'dynamic_multiattacks':                            HookInfo(['unit', 'item', 'target', 'item2', 'mode', 'attack_info', 'base_value'], ResolvePolicy.NUMERIC_ACCUM),
     # aesthetic components that return a value
     'hover_description':                               HookInfo(['unit', 'item'], ResolvePolicy.UNIQUE),
+    'targeting_pennant':                               HookInfo(['unit', 'item'], ResolvePolicy.UNIQUE),
     'show_weapon_advantage':                           HookInfo(['unit', 'item', 'target', 'item2'], ResolvePolicy.UNIQUE),
     'show_weapon_disadvantage':                        HookInfo(['unit', 'item', 'target', 'item2'], ResolvePolicy.UNIQUE),
     'battle_music':                                    HookInfo(['unit', 'item', 'target', 'item2', 'mode'], ResolvePolicy.UNIQUE),
@@ -132,23 +134,21 @@ def generate_item_hook_str(hook_name: str, hook_info: HookInfo):
     if hook_info.has_default_value:
         default_handling = "return result if values else Defaults.{hook_name}({args})".format(hook_name=hook_name, args=', '.join(args))
     if hook_info.inherits_parent:
-        inheritance_handling = """
-            if item.parent_item:
-                orig_item = item
-                item = item.parent_item
-                for component in item.components:
-                    if component.defines('{hook_name}'):
-                        values.append(component.{hook_name}({args}))
-                item = orig_item
+        # Inside the loop over the item's own components, as it always has been: the
+        # parent's are asked once for each of the item's own that defines the hook
+        inheritance_handling = """        if item.parent_item:
+            orig_item = item
+            item = item.parent_item
+            for component in item.components.with_hook('{hook_name}'):
+                values.append(component.{hook_name}({args}))
+            item = orig_item
 """.format(hook_name=hook_name, args=', '.join(args))
 
     func_text = """
 def {hook_name}({func_signature}):
-    all_components = get_all_components(unit, item)
     values = []
-    for component in all_components:
-        if component.defines('{hook_name}'):
-            values.append(component.{hook_name}({args}))
+    for component in get_hook_components(unit, item, '{hook_name}'):
+        values.append(component.{hook_name}({args}))
 {inheritance_handling}
     result = utils.{policy_resolution}(values)
     {default_handling}
@@ -163,7 +163,7 @@ def {hook_name}({func_signature}):
 def compile_item_system():
     import os
     dir_path = os.path.dirname(os.path.realpath(__file__))
-    compiled_item_system = open(os.path.join(dir_path, '..', 'item_system.py'), 'w')
+    compiled_item_system = GeneratedSource(os.path.join(dir_path, '..', 'item_system.py'))
     item_system_base = open(os.path.join(dir_path, 'item_system_base.py'), 'r')
 
     # write warning msg

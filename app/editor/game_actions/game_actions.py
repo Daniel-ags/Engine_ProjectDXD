@@ -6,6 +6,7 @@ from app.editor.data_editor import DB
 from app.editor.settings import MainSettingsController
 from app.editor.settings.preference_definitions import Preference
 from app.engine import driver, engine, game_state
+from app.engine.utils import garbage
 from PyQt5.QtWidgets import QMessageBox
 from PyQt5.QtGui import QFont
 
@@ -39,6 +40,8 @@ def test_play():
         driver.run(game)
     except Exception as e:
         handle_exception(e)
+    finally:
+        garbage.release()
 
 def test_play_current(level_nid):
     title = DB.constants.value('title')
@@ -51,6 +54,8 @@ def test_play_current(level_nid):
         driver.run(game)
     except Exception as e:
         handle_exception(e)
+    finally:
+        garbage.release()
 
 def get_preloaded_games():
     GAME_NID = str(DB.constants.value('game_nid'))
@@ -69,6 +74,8 @@ def test_play_load(level_nid, save_loc=None):
         driver.run(game)
     except Exception as e:
         handle_exception(e)
+    finally:
+        garbage.release()
 
 def test_combat(left_combat_anim, left_weapon_anim, left_palette_name, left_palette, left_item_nid: str,
                 right_combat_anim, right_weapon_anim, right_palette_name, right_palette, right_item_nid: str,
@@ -86,12 +93,21 @@ def test_combat(left_combat_anim, left_weapon_anim, left_palette_name, left_pale
         driver.run_combat(mock_combat)
     except Exception as e:
         handle_exception(e)
+    finally:
+        garbage.release()
 
 def test_event(event_prefab, starting_command_idx=0, strategy=None):
     try:
         driver.start("Event Test", from_editor=True)
+        # The event evaluates against the global game, which outlives each launch
+        # from the editor, so give it a fresh new game instead of the last playthrough
+        game = game_state.game
+        game.clear()
+        game.build_new()
         from app.events.mock_event import MockEvent
         mock_event = MockEvent('Test Event', event_prefab, starting_command_idx, strategy)
         driver.run_event(mock_event)
     except Exception as e:
         handle_exception(e)
+    finally:
+        garbage.release()

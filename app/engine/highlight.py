@@ -6,11 +6,15 @@ from app.engine.sprites import SPRITES
 from app.engine import engine, line_of_sight, aura_funcs, skill_system
 from app.engine.movement.move_selection import MoveSelection
 from app.engine.game_state import game
+from app.engine.unit_sprite import UnitSprite
 
 import logging
 
 class HighlightController():
-    starting_cutoff = 7
+    # As on the GBA (gOpenLimitViewImgLut), squares newly shown grow out of their
+    # bottom left corner, a frame at a time, before they are drawn whole
+    opening_sizes = (5, 7, 9, 11, 13, 15)
+    starting_cutoff = 0  # Frames into opening
 
     def __init__(self):
         self.images = {'spell': SPRITES.get('highlight_green'),
@@ -30,6 +34,9 @@ class HighlightController():
         self.update_idx = 0
 
         self.current_hover = None
+        # The unit the cursor is on, and when it came onto it
+        self.hover_candidate = None
+        self.hover_start = 0
 
         self.formation_highlights = []
         self.escape_highlights = []
@@ -57,6 +64,7 @@ class HighlightController():
                 self.highlights[k].clear()
                 self.transitions[k] = self.starting_cutoff
         self.current_hover = None
+        self.hover_candidate = None
 
     def remove_aura_highlights(self):
         self.highlights['aura'].clear()
@@ -65,12 +73,18 @@ class HighlightController():
         hover_unit = game.cursor.get_hover()
         if self.current_hover and hover_unit != self.current_hover:
             self.remove_highlights()
-        if hover_unit and hover_unit != self.current_hover:
+        if hover_unit != self.hover_candidate:
+            self.hover_candidate = hover_unit
+            self.hover_start = engine.get_time()
+        # Like a unit's hover animation (see UnitSprite.hover_wait), its range waits for
+        # the cursor to rest on it
+        if hover_unit and hover_unit != self.current_hover and \
+                engine.get_time() - self.hover_start >= UnitSprite.hover_wait:
             selection = game.path_system.get_move_selection(
                 hover_unit, zero_move=hover_unit.team != 'player')
             self.display_highlights(hover_unit, selection, light=True)
             self.display_aura_highlights(hover_unit)
-        self.current_hover = hover_unit
+            self.current_hover = hover_unit
 
     def display_moves(self, valid_moves, light=False):
         name = 'possible_move' if light else 'move'
@@ -149,10 +163,15 @@ class HighlightController():
         for name, highlight_set in self.highlights.items():
             if not highlight_set:
                 continue
-            self.transitions[name] = max(0, self.transitions[name] - 1)
-            cut_off = self.transitions[name]
-            rect = (self.update_idx//4 * TILEWIDTH + cut_off, cut_off, TILEWIDTH - cut_off, TILEHEIGHT - cut_off)
+            frame = self.transitions[name]
+            if frame < len(self.opening_sizes):
+                size = self.opening_sizes[frame]
+                self.transitions[name] += 1
+            else:
+                size = TILEWIDTH
+            # The bottom left corner of the square, that size
+            rect = (self.update_idx//4 * TILEWIDTH, TILEHEIGHT - size, size, size)
             image = engine.subsurface(self.images[name], rect)
             for position in highlight_set:
-                surf.blit(image, (position[0] * TILEWIDTH - cull_rect[0], position[1] * TILEHEIGHT - cull_rect[1]))
+                surf.blit(image, (position[0] * TILEWIDTH - cull_rect[0], position[1] * TILEHEIGHT - cull_rect[1] + TILEHEIGHT - size))
         return surf

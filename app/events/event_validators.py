@@ -29,8 +29,24 @@ class Validator():
     include_generic_completions = False
 
     def __init__(self, db: Optional[Database] = None, resources: Optional[Resources] = None):
-        self._db = db or Database()
-        self._resources = resources or Resources()
+        self._given_db = db
+        self._given_resources = resources
+
+    # Without a database or resources given, a validator checks against empty
+    # ones, built the first time it needs them. Building Resources reads the
+    # disk, and converting a command's text, the engine's use of validators,
+    # needs neither
+    @property
+    def _db(self) -> Database:
+        if self._given_db is None:
+            self._given_db = Database()
+        return self._given_db
+
+    @property
+    def _resources(self) -> Resources:
+        if self._given_resources is None:
+            self._given_resources = Resources()
+        return self._given_resources
 
     def validate(self, text, level):
         return text
@@ -379,6 +395,14 @@ class Time(Integer):
 class Volume(Float):
     desc = "A number between 0 and 1 (0 is muted, 1 is current volume)"
 
+class Intensity(Float):
+    desc = "A number between 0 and 1 (0 is off, 1 is full strength)"
+
+    def validate(self, text, level):
+        if str_utils.is_float(text) and 0 <= float(text) <= 1:
+            return text
+        return None
+
 class String(Validator):
     """
     Any string will do
@@ -575,7 +599,7 @@ class ExpressionList(SequenceValidator):
     desc = ("expects a comma-delimited list of expressions. "
             "Valid expressions are: (`NoSmile`, `Smile`, `NormalBlink`, `CloseEyes`, `HalfCloseEyes`, `LeftWink`, `RightWink`, `FarWink`, `NearWink`, `OpenEyes`, `OpenMouth`). "
             "Expressions can also be of patterns: `BlinkFrameX` and `MouthFrameX` where X is a non-negative whole number "
-            "(BlinkFrame0 is top blink frame, and MouthFrame0 is rightmost mouth frame). "
+            "(BlinkFrame0 is bottom blink frame, and MouthFrame0 is rightmost mouth frame). "
             "Example: `Smile,LeftWink,MouthFrame12,HalfCloseEyes`")
 
     def validate(self, text, level):

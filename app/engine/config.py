@@ -16,7 +16,7 @@ def base_config() -> OrderedDict:
                         ('animation', 'Always'),
                         ('display_fps', 0),
                         ('battle_bg', 0),
-                        ('unit_speed', 120),
+                        ('unit_speed', 133),  # ms a tile: 8 frames, as on the GBA
                         ('text_speed', 32),
                         ('cursor_speed', 66),
                         ('mouse', 1),
@@ -34,6 +34,7 @@ def base_config() -> OrderedDict:
                         ('hp_map_team', 'All'),
                         ('hp_map_cull', 'All'),
                         ('display_hints', 0),
+                        ('rumble', 1),
                         ('key_SELECT', 'K_x'),
                         ('key_BACK', 'K_z'),
                         ('key_INFO', 'K_c'),
@@ -42,7 +43,39 @@ def base_config() -> OrderedDict:
                         ('key_LEFT', 'K_LEFT'),
                         ('key_RIGHT', 'K_RIGHT'),
                         ('key_UP', 'K_UP'),
-                        ('key_DOWN', 'K_DOWN')])
+                        ('key_DOWN', 'K_DOWN'),
+                        ('key_SPEED', 'K_TAB'),
+                        ('joy_SELECT', 'button:a'),
+                        ('joy_BACK', 'button:b'),
+                        ('joy_INFO', 'button:x,button:rightshoulder,axis:triggerright+'),
+                        ('joy_AUX', 'button:leftshoulder,axis:triggerleft+'),
+                        ('joy_START', 'button:start,button:y,button:back'),
+                        ('joy_SPEED', 'button:rightstick')])
+
+float_vals = ('music_volume', 'sound_volume')
+string_vals = ('animation', 'hp_map_team', 'hp_map_cull', 'forecast')
+key_vals = ('key_SELECT', 'key_BACK', 'key_INFO', 'key_AUX',
+            'key_START', 'key_LEFT', 'key_RIGHT', 'key_UP', 'key_DOWN', 'key_SPEED')
+joy_vals = ('joy_SELECT', 'joy_BACK', 'joy_INFO', 'joy_AUX', 'joy_START', 'joy_SPEED')
+
+def convert_setting(k, v):
+    if k in float_vals:
+        return float(v)
+    elif k in string_vals:
+        return v
+    elif k in key_vals:
+        if str_utils.is_int(v):
+            return int(v)
+        elif v.startswith('K_'):  # pygame key constant
+            import pygame
+            return getattr(pygame, v)
+        raise ValueError("Unknown key constant: %s" % v)
+    elif k in joy_vals:
+        from app.engine import joy_bindings
+        joy_bindings.parse_bindings(v)  # Raises ValueError if malformed
+        return v
+    else:
+        return int(v)
 
 def read_config_file():
     config = base_config()
@@ -61,26 +94,6 @@ def read_config_file():
         if os.path.exists('data/config.ini'):
             parse_ini('data/config.ini')
 
-    float_vals = ('music_volume', 'sound_volume')
-    string_vals = ('animation', 'hp_map_team', 'hp_map_cull', 'forecast')
-    key_vals = ('key_SELECT', 'key_BACK', 'key_INFO', 'key_AUX',
-                'key_START', 'key_LEFT', 'key_RIGHT', 'key_UP', 'key_DOWN')
-
-    def convert(k, v):
-        if k in float_vals:
-            return float(v)
-        elif k in string_vals:
-            return v
-        elif k in key_vals:
-            if str_utils.is_int(v):
-                return int(v)
-            elif v.startswith('K_'):  # pygame key constant
-                import pygame
-                return getattr(pygame, v)
-            raise ValueError("Unknown key constant: %s" % v)
-        else:
-            return int(v)
-
     defaults = base_config()
     for k, v in list(config.items()):
         if k not in defaults:
@@ -89,12 +102,17 @@ def read_config_file():
             del config[k]
             continue
         try:
-            config[k] = convert(k, v)
+            config[k] = convert_setting(k, v)
         except (ValueError, AttributeError):
             logging.warning("Bad config value %s=%s; using default %s", k, v, defaults[k])
-            config[k] = convert(k, defaults[k])
+            config[k] = convert_setting(k, defaults[k])
 
     return config
+
+def reset_settings(keys):
+    defaults = base_config()
+    for k in keys:
+        SETTINGS[k] = convert_setting(k, defaults[k])
 
 def save_config(cfg: OrderedDict, path: Path):
     with open(path, 'w') as fp:
