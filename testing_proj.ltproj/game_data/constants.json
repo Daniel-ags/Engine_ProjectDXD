@@ -269,7 +269,7 @@
     ],
     [
         "music_main",
-        "Main Theme"
+        null
     ],
     [
         "music_promotion",
@@ -281,7 +281,7 @@
     ],
     [
         "music_game_over",
-        "Game Over"
+        null
     ],
     [
         "restart_phase_music",

@@ -60,6 +60,7 @@ class ErrorViewer(QWidget):
         text_body += create_error_log('UNIT', dbchecker.validate_units)
         text_body += create_error_log('SKILL AND ITEM', dbchecker.validate_items_and_skills)
         text_body += create_error_log('LEVEL', dbchecker.validate_levels)
+        text_body += create_error_log('REFERENCE', dbchecker.validate_references)
 
         if not text_body:
             text_body = generate_header("No errors in project!")

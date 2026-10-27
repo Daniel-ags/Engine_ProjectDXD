@@ -59,6 +59,53 @@ class CleanProjectTests(ValidationTestCase):
         self.assertEqual(1, len(self.warnings()))
 
 
+class ReferenceValidationTests(ValidationTestCase):
+    def test_a_reference_to_nothing_is_a_warning_naming_where_it_is(self):
+        DB.classes.get('Swordmaster').learned_skills.append([5, MISSING])
+
+        self.assertEqual([], self.errors())
+        self.assert_one(self.warnings(), 'WARNING', 'Swordmaster', 'learned_skills', MISSING)
+
+    def test_a_reference_to_nothing_outside_the_database_is_a_warning(self):
+        DB.constants.get('music_main').set_value(MISSING)
+
+        self.assert_one(self.warnings(), 'music_main', 'MUSIC', MISSING)
+
+    def test_a_stat_table_entry_for_no_stat_is_a_warning(self):
+        DB.classes.get('Swordmaster').bases['LEAD'] = 0
+
+        self.assert_one(self.warnings(), 'Swordmaster', 'bases', 'LEAD')
+
+    def test_a_reference_reported_as_an_error_is_not_also_a_warning(self):
+        def roam_unit(level):
+            level.roam, level.roam_unit = True, MISSING
+
+        breaks = {
+            'unit class': lambda: setattr(DB.units.get(UNIT), 'klass', MISSING),
+            'unit alternate class': lambda: DB.units.get(UNIT).alternate_classes.append(MISSING),
+            'unit item': lambda: DB.units.get(UNIT).starting_items.append([MISSING, False]),
+            'unit skill': lambda: DB.units.get(UNIT).learned_skills.append([1, MISSING]),
+            'level tilemap': lambda: setattr(self.level, 'tilemap', MISSING),
+            'level background': lambda: setattr(self.level, 'bg_tilemap', MISSING),
+            'level party': lambda: setattr(self.level, 'party', MISSING),
+            'level music': lambda: self.level.music.__setitem__('player_phase', MISSING),
+            'level roam unit': lambda: roam_unit(self.level),
+            'level unit ai': lambda: setattr(self.level_unit(UNIT), 'ai', MISSING),
+            'level unit roam ai': lambda: setattr(self.level_unit(UNIT), 'roam_ai', MISSING),
+            'generic item': lambda: self.level_unit('101').starting_items.append([MISSING, False]),
+            'generic skill': lambda: self.level_unit('101').starting_skills.append(MISSING),
+            'traveler': lambda: setattr(self.level_unit(UNIT), 'starting_traveler', MISSING),
+            'component': lambda: DB.items.get(ITEM).components.append(
+                ICA.restore_component(('status_on_hit', MISSING))),
+        }
+        for name, make_break in breaks.items():
+            with self.subTest(name):
+                self.setUp()
+                make_break()
+                self.assertTrue(self.errors())
+                self.assertEqual([], self.warnings())
+
+
 class UnitValidationTests(ValidationTestCase):
     def test_a_unit_of_a_class_that_does_not_exist(self):
         DB.units.get(UNIT).klass = MISSING
