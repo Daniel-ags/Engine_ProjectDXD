@@ -3,9 +3,12 @@ Undo and redo for edits to the database, one record at a time.
 
 The history never snapshots the whole database. It records three kinds of delta:
 
-- RecordChange: a record's saved form before and after an edit. Undo restores
-  the fields in place on the same object, so anything holding the record keeps
-  holding the right one.
+- RecordChange: the parts of a record's saved form an edit changed, before and
+  after, so a stroke on a big tilemap keeps only the tiles it painted. Undo
+  patches the record's saved form as it is now and restores the fields in place
+  on the same object, so anything holding the record keeps holding the right
+  one. A resource with files keeps its whole saved form before and after
+  instead (WholeRecordChange), since keep_files repoints each version's files.
 - CatalogChange: a catalog's members and order (object references, not copies),
   plus its categories and, for teams, the alliances. Creating, deleting,
   duplicating, pasting and reordering are all changes of membership.
@@ -104,10 +107,60 @@ def rebuild_keys(data: Data) -> None:
         data.append(member)
 
 
+_ABSENT = object()  # Where a dict has no such key. Never copied, which would make another object
+
+Where = Tuple[Any, ...]  # The keys and indices from a saved form down to one part of it
+FormChange = Tuple[Where, Any, Any]  # Where, the part before, the part after
+
+def form_changes(before, after, where: Where = ()) -> Iterator[FormChange]:
+    """The smallest parts of a saved form that differ. Dicts are compared key by key
+    and lists of one length item by item; anything else that differs is a part."""
+    if before == after:
+        return
+    if type(before) is dict and type(after) is dict:
+        for key in list(before) + [key for key in after if key not in before]:
+            yield from form_changes(before.get(key, _ABSENT), after.get(key, _ABSENT), where + (key,))
+    elif type(before) is list and type(after) is list and len(before) == len(after):
+        for index, (part_before, part_after) in enumerate(zip(before, after)):
+            yield from form_changes(part_before, part_after, where + (index,))
+    else:
+        yield where, before, after
+
+def patched(form, changes: List[FormChange], side: int) -> Any:
+    """form, a saved form of its own, with each changed part as it was before
+    (side 1) or after (side 2)"""
+    for change in changes:
+        where, part = change[0], change[side]
+        if not where:
+            form = copy.deepcopy(part)
+            continue
+        parent = form
+        for key in where[:-1]:
+            parent = parent[key]
+        if part is _ABSENT:
+            del parent[where[-1]]
+        else:
+            parent[where[-1]] = copy.deepcopy(part)
+    return form
+
+
 @dataclass(eq=False)
 class RecordChange:
     catalog: Data
     record: Any
+    changes: List[FormChange]
+
+    def undo(self):
+        restore_in_place(self.record, patched(saved(self.record), self.changes, 1))
+
+    def redo(self):
+        restore_in_place(self.record, patched(saved(self.record), self.changes, 2))
+
+
+@dataclass(eq=False)
+class WholeRecordChange:
+    catalog: Data
+    record: WithResources
     before: Any
     after: Any
 
@@ -116,6 +169,14 @@ class RecordChange:
 
     def redo(self):
         restore_in_place(self.record, self.after)
+
+
+def record_change(data: Data, record, before, after) -> Delta:
+    """The change between two saved forms of a record, which share nothing with it"""
+    if isinstance(record, WithResources) and record.path_fields:
+        # keep_files lists the files of every version, which only the whole version can
+        return WholeRecordChange(data, record, before, after)
+    return RecordChange(data, record, list(form_changes(before, after)))
 
 
 @dataclass(frozen=True)
@@ -177,7 +238,7 @@ class GridChange:
         self.grid.restore(copy.deepcopy(self.after))
 
 
-Delta = Any  # RecordChange | CatalogChange | GridChange
+Delta = Any  # RecordChange | WholeRecordChange | CatalogChange | GridChange
 
 
 @dataclass(eq=False)
@@ -488,7 +549,7 @@ class EditHistory:
 
         for change_set in self._undo + self._redo:
             for delta in change_set.deltas:
-                if isinstance(delta, RecordChange) and isinstance(delta.record, WithResources) and delta.record.path_fields:
+                if isinstance(delta, WholeRecordChange):
                     for saved_form in (delta.before, delta.after):
                         version = type(delta.record).restore(copy.deepcopy(saved_form['record']))
                         version.set_file_paths(copy.deepcopy(saved_form['files']))
@@ -531,7 +592,7 @@ class EditHistory:
             if form != baseline:
                 now = copy.deepcopy(form)
                 if key not in recorded:  # Two owners may show the same record
-                    change_set.deltas.append(RecordChange(data, record, baseline, now))
+                    change_set.deltas.append(record_change(data, record, baseline, now))
                     recorded.add(key)
                 bindings[key] = (data, record, now)
         for key, (data, state) in list(self._catalogs.items()):
@@ -560,7 +621,8 @@ class EditHistory:
         return {id(record): saved(record) for data in self.watched_catalogs() for record in data}
 
     def _check_unrecorded(self, change_set: ChangeSet) -> None:
-        recorded = {id(delta.record) for delta in change_set.deltas if isinstance(delta, RecordChange)}
+        recorded = {id(delta.record) for delta in change_set.deltas
+                    if isinstance(delta, (RecordChange, WholeRecordChange))}
         now = self._saved_records()
         for data in self.watched_catalogs():
             for record in data:
@@ -651,7 +713,7 @@ class _ModifyingContext:
                 continue  # A bound record is diffed against its baseline when the set ends
             after = saved(record)
             if after != before:
-                change_set.deltas.append(RecordChange(data, record, before, after))
+                change_set.deltas.append(record_change(data, record, before, after))
         self.history.end()
         return False
 

@@ -132,6 +132,35 @@ class ModifyTests(HistoryTestCase):
         for layer in tilemap.layers:
             self.assertIs(tilemap, layer.parent)
 
+    def test_a_stroke_on_a_tilemap_keeps_only_the_tiles_it_changed(self):
+        from app.data.resources.resources import RESOURCES
+        RESOURCES.load('testing_proj.ltproj', CURRENT_SERIALIZATION_VERSION)
+        HISTORY.clear()
+        tilemap = RESOURCES.tilemaps[0]
+        layer = tilemap.layers[0]
+        painted = (0, 0)
+        sprite = layer.sprite_grid[painted].save()
+        erased, terrain = next(iter(layer.terrain_grid.items()))
+        HISTORY.bind(tilemap, RESOURCES.tilemaps)
+        layer.set_sprite(painted, 'Painted', (1, 2))
+        layer.erase_terrain(erased)
+        HISTORY.commit()
+
+        changes = HISTORY.last_change().deltas[0].changes
+        self.assertEqual(2, len(changes))
+        self.assertEqual({('record', 'layers', 0, 'sprite_grid', '%d,%d' % painted),
+                          ('record', 'layers', 0, 'terrain_grid', '%d,%d' % erased)},
+                         {where for where, _, _ in changes})
+
+        HISTORY.undo()
+        layer = tilemap.layers[0]
+        self.assertEqual(sprite, layer.sprite_grid[painted].save())
+        self.assertEqual(terrain, layer.terrain_grid[erased])
+        HISTORY.redo()
+        layer = tilemap.layers[0]
+        self.assertEqual(('Painted', (1, 2)), layer.sprite_grid[painted].save())
+        self.assertNotIn(erased, layer.terrain_grid)
+
 
 class MembershipTests(HistoryTestCase):
     def test_creating_is_undone_and_redone_with_the_same_object(self):
