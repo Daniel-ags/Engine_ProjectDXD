@@ -221,6 +221,9 @@ class FrameList(QListWidget):
         return s
 
     def frame_time_changed(self, idx: int, val: int):
+        if len(self.current.frame_times) <= idx:
+            # The frames shown with no time of their own show 1
+            self.current.frame_times.extend([1] * (idx + 1 - len(self.current.frame_times)))
         self.current.frame_times[idx] = val
 
     def set_current(self, current):
@@ -236,9 +239,7 @@ class FrameList(QListWidget):
             top = (num // self.current.frame_x) * height
             base_image = self.current.pixmap.copy(left, top, width, height)
             
-            if len(self.current.frame_times) < self.current.num_frames:
-                self.current.frame_times.extend([1]*(self.current.num_frames - len(self.current.frame_times)))
-            frame_time = self.current.frame_times[num]
+            frame_time = self.current.frame_times[num] if num < len(self.current.frame_times) else 1
             frame_time_widget = FrameTime(num, base_image, frame_time, self)
             frame_time_widget.frame_time_changed.connect(self.frame_time_changed)
 

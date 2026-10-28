@@ -5,6 +5,7 @@ from PyQt5.QtCore import Qt
 from app.data.database.database import DB
 from app.data.database.database_types import DatabaseType as DType
 from app.editor.edit_history import HISTORY
+from app.editor.stat_editor import stat_model
 
 from app.data.database.stats import StatPrefab
 from app.utilities import str_utils
@@ -60,32 +61,6 @@ class StatTypeProperties(QWidget):
         self.setLayout(name_section)
         name_section.setAlignment(Qt.AlignTop)
 
-        self.clean_all_stats()
-
-    def clean_all_stats(self):
-        # makes sure all units have all stats set and nothing else
-        all_stats = set([stat.nid for stat in DB.stats])
-        records = [(unit, DB.units) for unit in DB.units] + [(klass, DB.classes) for klass in DB.classes]
-        with HISTORY.modifying(records):
-            for unit in DB.units:
-                for row in unit.get_stat_lists():
-                    unit_stats = set(row.keys())
-                    missing_stats = all_stats.difference(unit_stats)
-                    extraneous_stats = unit_stats.difference(all_stats)
-                    for stat in missing_stats:
-                        row[stat] = 0
-                    for stat in extraneous_stats:
-                        row.pop(stat)
-            for klass in DB.classes:
-                for row in klass.get_stat_lists():
-                    klass_stats = set(row.keys())
-                    missing_stats = all_stats.difference(klass_stats)
-                    extraneous_stats = klass_stats.difference(all_stats)
-                    for stat in missing_stats:
-                        row[stat] = 0
-                    for stat in extraneous_stats:
-                        row.pop(stat)
-
     def on_nid_changed(self, old_nid, new_nid):
         HISTORY.rewrite(DType.STATS, old_nid, new_nid)
 
@@ -102,7 +77,7 @@ class StatTypeProperties(QWidget):
             self.name_box.edit.setText(new_nid.replace('_', ' '))
         HISTORY.rename(self._data, self.current, new_nid, self.on_nid_changed)
         self.window.update_list()
-        self.clean_all_stats()
+        stat_model.fill_stat_tables()
 
     def name_changed(self, text):
         self.current.name = text

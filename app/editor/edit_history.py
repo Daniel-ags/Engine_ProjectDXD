@@ -264,8 +264,9 @@ class EditHistory:
         before. Without an owner the record stays bound until the history is cleared.
         Commits whatever changed first.
 
-        Bind once the record is on show: some forms tidy a record as they show it
-        (a terrain's color loses its alpha), and that is not an edit to undo."""
+        Bind once the record is on show. Showing a record must change nothing in it,
+        which test_editor_show checks for every editor window: a change made before
+        the bind becomes part of the baseline, unrecorded and never undone."""
         watched = record is not None and self.is_watched(data)
         if watched and CHECK_UNRECORDED:
             self._shadow[id(record)] = saved(record)

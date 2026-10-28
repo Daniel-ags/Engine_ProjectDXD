@@ -421,5 +421,55 @@ class ConstantsUndoTests(EditorUndoTestCase):
         self.assertEqual(old, box.value())
 
 
+class StatTableTests(EditorUndoTestCase):
+    def test_a_new_stat_gives_every_unit_and_class_an_entry_for_it_in_one_undo_step(self):
+        from app.editor.data_editor import SingleDatabaseEditor
+        from app.editor.stat_editor.stat_tab import StatTypeDatabase
+        dialog = self.open(SingleDatabaseEditor, StatTypeDatabase)
+        unit, klass = DB.units.get(UNIT), DB.classes.get('Citizen')
+
+        new_stat = dialog.tab.left_frame.model.create_new()
+        self.history.commit()
+
+        self.assertEqual(0, unit.bases[new_stat.nid])
+        self.assertEqual(0, klass.growths[new_stat.nid])
+        self.history.undo()
+        self.assertNotIn(new_stat.nid, DB.stats.keys())
+        self.assertNotIn(new_stat.nid, unit.bases)
+        self.assertNotIn(new_stat.nid, klass.growths)
+        self.assertFalse(self.history.can_undo())
+
+
+class MapAnimationFrameTimeTests(EditorUndoTestCase):
+    def test_timing_a_frame_past_the_listed_times_gives_the_frames_between_one_each(self):
+        from app.editor.data_editor import SingleResourceEditor
+        from app.editor.map_animation_editor.map_animation_tab import MapAnimationDatabase
+        anim = RESOURCES.animations.get('HitSpark')
+        listed = anim.num_frames - 4
+        del anim.frame_times[listed:]
+        dialog = SingleResourceEditor(MapAnimationDatabase, ['animations'])
+        self.addCleanup(dialog.stop_history)
+        frames = dialog.tab.right_frame.frame_time_list.edit
+
+        frames.set_current(anim)
+        frames.frame_time_changed(listed + 2, 7)
+
+        self.assertEqual(listed + 3, len(anim.frame_times))
+        self.assertEqual([1, 1, 7], anim.frame_times[listed:])
+
+
+class FontPaletteTests(EditorUndoTestCase):
+    def test_a_font_saved_before_its_palettes_were_pinned_has_them_pinned(self):
+        from app.editor.font_editor import font_model
+        font = RESOURCES.fonts.get('convo')
+        self.assertIsNone(font.base_color)
+        font.default_color = None
+
+        font_model.pin_palettes(font)
+
+        self.assertIn(font.base_color, font.palettes)
+        self.assertEqual(list(font.palettes)[0], font.default_color)
+
+
 if __name__ == '__main__':
     unittest.main()

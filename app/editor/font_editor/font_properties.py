@@ -337,12 +337,6 @@ class FontProperties(QWidget):
             return
         self.setEnabled(True)
 
-        # Fonts predating base_color never recorded which palette is the sheet's.
-        # Read it off the PNG once and pin it, so moving the default color later
-        # cannot mistake the outgoing default for the sheet
-        if current.palettes and not current.base_color:
-            current.base_color = detect_base_palette(current) or current.default_color
-
         ttf_basename = os.path.basename(current.fallback_ttf) if current.fallback_ttf else ""
         self.fallback_ttf_box.edit.blockSignals(True)
         self.fallback_ttf_box.edit.setText(ttf_basename)
@@ -495,8 +489,8 @@ class FontProperties(QWidget):
 
     def _default_color_changed(self, text):
         if self.current and text:
-            # set_current pins this, but a font with no palettes at all reaches
-            # here unpinned the moment its first palette is added
+            # Pinned as the project loaded, but a font with no palettes at all
+            # reaches here unpinned the moment its first palette is added
             if not self.current.base_color:
                 self.current.base_color = detect_base_palette(self.current) or self.current.default_color
             self.current.default_color = text

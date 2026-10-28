@@ -176,6 +176,8 @@ class TerrainProperties(QWidget):
         else:
             self.status_box.edit.setValue("None")
 
-        # Icon
+        # Icon. Blocked, since the color shown has no alpha and the record's may
         color = current.color
+        self.icon_edit.blockSignals(True)
         self.icon_edit.change_color(QColor(color[0], color[1], color[2]))
+        self.icon_edit.blockSignals(False)

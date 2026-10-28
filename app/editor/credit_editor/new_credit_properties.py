@@ -125,7 +125,8 @@ class TextDesc(QWidget):
         self.layout = QVBoxLayout()
 
         self.header_box = PropertyBox("Header", QLineEdit, self)
-        self.header_box.edit.textChanged.connect(self.header_changed)
+        # Typed only: showing a credit with no header of its own shows its default one, which is not an edit
+        self.header_box.edit.textEdited.connect(self.header_changed)
 
         self.desc_box = PropertyBox("Description", QTextEdit, self)
         font_height = QFontMetrics(self.desc_box.edit.font())
@@ -158,7 +159,8 @@ class PanoramaDesc(QWidget):
         self.window = parent
         
         self.header_box = PropertyBox("Header", QLineEdit, self)
-        self.header_box.edit.textChanged.connect(self.header_changed)
+        # Typed only: showing a credit with no header of its own shows its default one, which is not an edit
+        self.header_box.edit.textEdited.connect(self.header_changed)
 
         self.panorama_box = PropertyBox("Contribution", ComboBox, self)
         self.list_panoramas()
@@ -283,7 +285,8 @@ class IconDesc(QWidget):
         self.window = parent
         
         self.header_box = PropertyBox("Header", QLineEdit, self)
-        self.header_box.edit.textChanged.connect(self.header_changed)
+        # Typed only: showing a credit with no header of its own shows its default one, which is not an edit
+        self.header_box.edit.textEdited.connect(self.header_changed)
 
         if credit_type == ResourceType.PORTRAITS:
             self.icon_box = PropertyBox("Contribution", PortraitIcon, self)
@@ -360,7 +363,8 @@ class MapSpriteDesc(QWidget):
         self.window = parent
         
         self.header_box = PropertyBox("Header", QLineEdit, self)
-        self.header_box.edit.textChanged.connect(self.header_changed)
+        # Typed only: showing a credit with no header of its own shows its default one, which is not an edit
+        self.header_box.edit.textEdited.connect(self.header_changed)
 
         self.map_sprite_box = MapSpriteBox(self, self.window.current, display_width=160, orient=Orientation.VERTICAL)
         self.map_sprite_box.sourceChanged.connect(self.select_map_sprite)
@@ -418,7 +422,8 @@ class ListDesc(QWidget):
         self.layout = QVBoxLayout()
 
         self.header_box = PropertyBox("Header", QLineEdit, self)
-        self.header_box.edit.textChanged.connect(self.header_changed)
+        # Typed only: showing a credit with no header of its own shows its default one, which is not an edit
+        self.header_box.edit.textEdited.connect(self.header_changed)
 
         attrs = ("Author", "Contribution")
         self.desc_box = AppendMultiListWidget([], "List of Contributions", attrs, KeyValueDelegate, self, model=CreditListModel)

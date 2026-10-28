@@ -84,6 +84,18 @@ def detect_base_palette(font: Font) -> Optional[str]:
     return None
 
 
+def pin_palettes(font: Font) -> None:
+    """Records which palette is the sheet's own, and which text defaults to, for a font
+    saved before either was always set: so moving the default color later cannot
+    mistake the outgoing default for the sheet. Run as a project loads, before the
+    edit history starts, so neither is taken for an edit."""
+    if font.palettes and not font.base_color:
+        font.base_color = detect_base_palette(font) or font.default_color
+    if font.palettes and not font.default_color:
+        # A default naming no palette leaves the engine nothing to render
+        font.default_color = next(iter(font.palettes))
+
+
 def seed_default_palette(font: Font) -> bool:
     """Give *font* a palette of its sprite sheet's colors read off its PNG, if it has none yet."""
     base_nid = font.base_palette_nid

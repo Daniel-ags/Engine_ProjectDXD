@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+
 from PyQt5.QtWidgets import QWidget, QLabel, QLineEdit, \
     QMessageBox, QSpinBox, QHBoxLayout, QGroupBox, QRadioButton, \
     QVBoxLayout, QComboBox, QStackedWidget, QDoubleSpinBox, QCheckBox, \
@@ -487,7 +489,15 @@ class BehaviourBox(QGroupBox):
             self.current.view_range = -1 * (self.view_range.currentIndex() + 1)
 
     def set_current(self, behaviour):
+        # Showing a behaviour goes through the handlers the user's changes do, which
+        # write to self.current as they go: forcing the target an action implies, a
+        # listed position into a tuple, a target spec the shown kind can't hold to None.
+        # They write to a copy, so showing a behaviour changes nothing in it
+        self.current = copy.deepcopy(behaviour)
+        self.show_behaviour(behaviour)
         self.current = behaviour
+
+    def show_behaviour(self, behaviour):
         action = behaviour.action.replace('_', ' ')
         self.action.setValue(action)
         self.action_changed(None)

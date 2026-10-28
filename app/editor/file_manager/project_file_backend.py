@@ -22,6 +22,7 @@ from app.data.serialization.versions import CURRENT_SERIALIZATION_VERSION
 from app.data.validation.db_validation import DBChecker
 from app.editor.edit_history import HISTORY
 from app.editor.file_manager.staging import STAGING
+from app.editor.font_editor import font_model
 from app.editor import timer
 from app.editor.error_viewer import show_error_report
 from app.editor.settings.preference_definitions import Preference
@@ -391,6 +392,8 @@ class ProjectFileBackend():
         self.parent.editor_windows.close_all()
         RESOURCES.load(self.current_proj, self.metadata.serialization_version)
         DB.load(curr_proj_path, self.metadata.serialization_version)
+        for font in RESOURCES.fonts:
+            font_model.pin_palettes(font)
         # Undo never reaches back into another project
         HISTORY.clear()
         STAGING.start(self.current_proj)
