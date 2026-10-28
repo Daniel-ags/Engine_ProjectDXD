@@ -90,6 +90,92 @@ class CheckDeleteTests(DialogTestCase):
         self.assertFalse(any(weapon.nid in klass.wexp_gain for klass in DB.classes))
 
 
+class EventMentionTests(DialogTestCase):
+    """Event scripts are not rewritten: a deletion lists their lines, and a rename tells the user"""
+    def event(self, *lines):
+        from app.events.event_prefab import EventPrefab
+        event = EventPrefab('Script')
+        event.source = '\n'.join(lines)
+        DB.events.append(event)
+        return event
+
+    def item_box(self):
+        return ItemBox(None, exclude=DB.items.get(ITEM))
+
+    def record_renames(self) -> list:
+        from app.editor.edit_history import HISTORY
+        renames = []
+        listener = lambda target, old, new: renames.append((target, old, new))
+        HISTORY.listen_to_renames(listener)
+        self.addCleanup(HISTORY.unlisten_to_renames, listener)
+        return renames
+
+    def test_a_deletion_lists_the_event_lines_naming_it_and_leaves_them(self):
+        get_swap = self.patch_dialog('get_swap', (DB.items.get(SWAP), True))
+        event = self.event('give_item;Eirika;%s' % ITEM)
+
+        reference_dialogs.check_delete(DType.ITEMS, ITEM, 'Item', None, self.item_box)
+
+        events_tab = next(tab for tab in get_swap.call_args[0][0] if tab.label == 'Events')
+        self.assertEqual(['Global Script, line 1: give_item;Eirika;%s' % ITEM],
+                         [mention.label() for mention in events_tab.affected_items])
+        self.assertIn('does not change event scripts', events_tab.msg)
+        self.assertEqual('give_item;Eirika;%s' % ITEM, event.source)
+
+    def test_a_record_only_events_name_still_warns_before_its_deletion(self):
+        from app.data.database.items import ItemPrefab
+        DB.items.append(ItemPrefab('Lonely', 'Lonely', ''))
+        self.event('give_item;Eirika;Lonely')
+        inform = self.patch_dialog('inform', False)
+        get_swap = self.patch_dialog('get_swap', (None, False))
+
+        ok = reference_dialogs.check_delete(DType.ITEMS, 'Lonely', 'Item', None, self.item_box)
+
+        self.assertFalse(ok)
+        get_swap.assert_not_called()
+        self.assertEqual(['Events'], [tab.label for tab in inform.call_args[0][0]])
+
+    def test_a_rename_is_heard_but_a_deletions_swap_is_not(self):
+        from app.editor.edit_history import HISTORY
+        renames = self.record_renames()
+        self.patch_dialog('get_swap', (DB.items.get(SWAP), True))
+
+        HISTORY.rewrite(DType.ITEMS, ITEM, 'Renamed')
+        reference_dialogs.check_delete(DType.ITEMS, 'Renamed', 'Item', None, self.item_box)
+
+        self.assertEqual([(DType.ITEMS, ITEM, 'Renamed')], renames)
+
+    def shown_warnings(self) -> list:
+        from PyQt5.QtWidgets import QApplication
+        return [w for w in QApplication.topLevelWidgets()
+                if isinstance(w, reference_dialogs.RenameWarning) and w.isVisible()]
+
+    def test_a_rename_warns_of_the_event_lines_still_naming_the_old_nid(self):
+        from PyQt5.QtCore import Qt
+        from PyQt5.QtWidgets import QApplication
+        self.event('give_item;Eirika;%s' % ITEM)
+
+        reference_dialogs.warn_of_event_mentions(DType.ITEMS, ITEM, 'Renamed')
+        QApplication.processEvents()  # The warning waits for the rename's event to finish
+
+        warnings = self.shown_warnings()
+        self.assertEqual(1, len(warnings))
+        self.addCleanup(warnings[0].close)
+        self.assertIn('a rename does not change event scripts', warnings[0].label.text())
+        model = warnings[0].view.model()
+        self.assertEqual(['Global Script, line 1: give_item;Eirika;%s' % ITEM],
+                         [model.data(model.index(row), Qt.DisplayRole) for row in range(model.rowCount())])
+        self.assertFalse(warnings[0].isModal())
+
+    def test_a_rename_no_event_names_shows_nothing(self):
+        from PyQt5.QtWidgets import QApplication
+
+        reference_dialogs.warn_of_event_mentions(DType.ITEMS, ITEM, 'Renamed')
+        QApplication.processEvents()
+
+        self.assertEqual([], self.shown_warnings())
+
+
 class EditorTabTests(DialogTestCase):
     """The editor tabs reach the database through the reference schema"""
     def test_renaming_in_the_item_tab_reaches_units(self):

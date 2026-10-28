@@ -21,7 +21,7 @@ from app.editor.settings import MainSettingsController
 from app.constants import VERSION
 from app.data.database.database import DB
 
-from app.editor import log_viewer, timer, error_viewer
+from app.editor import log_viewer, timer, error_viewer, reference_dialogs
 from app.editor.custom_widgets import ObjBox
 from app.editor.data_editor import EditHistoryDialog
 from app.editor.edit_history import HISTORY
@@ -162,6 +162,8 @@ class MainEditor(QMainWindow):
 
         self.history_changed = False
         HISTORY.listen(self.on_history_changed)
+        # A rename leaves event scripts as they are, so the user hears which lines still name the old nid
+        HISTORY.listen_to_renames(reference_dialogs.warn_of_event_mentions)
 
     def on_history_changed(self, origin):
         # Editor windows change the database beside this window

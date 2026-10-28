@@ -215,6 +215,7 @@ class EditHistory:
         self._grid: Any = None  # The movement cost grid's saved form at the last commit
         self._shadow: Dict[int, dict] = {}  # LT_EDITOR_CHECK only
         self._listeners: List[Callable[[Any], None]] = []
+        self._rename_listeners: List[Callable[[references.Target, NID, NID], None]] = []
         self.clear()
 
     # === Lifetime ===
@@ -245,6 +246,13 @@ class EditHistory:
 
     def unlisten(self, listener: Callable[[Any], None]) -> None:
         self._listeners.remove(listener)
+
+    def listen_to_renames(self, listener: Callable[[references.Target, NID, NID], None]) -> None:
+        """Calls listener(target, old_nid, new_nid) after each rename's references are rewritten"""
+        self._rename_listeners.append(listener)
+
+    def unlisten_to_renames(self, listener: Callable[[references.Target, NID, NID], None]) -> None:
+        self._rename_listeners.remove(listener)
 
     def _announce(self, origin) -> None:
         for listener in self._listeners[:]:
@@ -331,11 +339,17 @@ class EditHistory:
         return _ModifyingContext(self, list(records))
 
     # === References ===
-    def rewrite(self, target: references.Target, old_nid: NID, new_nid: NID) -> List[references.RefSite]:
-        """references.rewrite, recorded"""
+    def rewrite(self, target: references.Target, old_nid: NID, new_nid: NID,
+                renamed: bool = True) -> List[references.RefSite]:
+        """references.rewrite, recorded. renamed is False for a deletion swapping
+        its references onto another record, which rename listeners don't hear of"""
         sites = references.find_referrers(self.db, target, old_nid)
         with self.change_set('Rename %s' % old_nid), self.modifying(self._owners(sites)):
-            return references.rewrite(self.db, target, old_nid, new_nid)
+            changed = references.rewrite(self.db, target, old_nid, new_nid)
+        if renamed and old_nid and old_nid != new_nid:
+            for listener in self._rename_listeners[:]:
+                listener(target, old_nid, new_nid)
+        return changed
 
     def clear_references(self, target: references.Target, nid: NID,
                          fallback: Optional[NID] = None) -> List[references.RefSite]:
