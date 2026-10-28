@@ -4,13 +4,16 @@ import logging
 import unittest
 
 import app.engine.item_component_access as ICA
+import app.engine.skill_component_access as SCA
 from app.data.database import references
 from app.data.database.components import Component
 from app.data.database.database import DB
 from app.data.database.database_types import DatabaseType as DType
 from app.data.database.level_units import UniqueUnit, UnitGroup
 from app.data.database.parties import PartyPrefab
-from app.data.database.reference_schema import SCHEMA
+from app.data.database.reference_schema import SCHEMA, OtherType
+from app.data.database.weapons import CombatBonus
+from app.events.node_events import NodeMenuEvent
 from app.data.database.units import UnitPrefab
 from app.data.database.supports import SupportPair, SupportRankRequirementList
 from app.data.resources.resource_types import ResourceType as RType
@@ -116,6 +119,15 @@ class ReferenceTestCase(unittest.TestCase):
 
     def assert_no_references(self, target, nid):
         self.assertEqual([], [s.where for s in references.find_referrers(DB, target, nid)])
+
+    def give_item(self, component_nid, value):
+        """Gives the test item a component, and returns it"""
+        DB.items.get(ITEM).components.append(ICA.restore_component((component_nid, value)))
+        return DB.items.get(ITEM).components.get(component_nid)
+
+    def give_skill(self, component_nid, value):
+        DB.skills.get(SKILL).components.append(SCA.restore_component((component_nid, value)))
+        return DB.skills.get(SKILL).components.get(component_nid)
 
 
 class RenameTests(ReferenceTestCase):
@@ -303,6 +315,158 @@ class RenameTests(ReferenceTestCase):
         self.assertEqual(NEW, DB.overworlds.get('0').music)
         self.assert_no_references(RType.MUSIC, 'Distant Roads')
 
+    def test_renaming_an_affinity_reaches_units_and_components(self):
+        prf = self.give_item('prf_affinity', ['Light', 'Dark'])
+        desc = self.give_item('multi_desc_affinity', ['Light'])
+
+        self.rename(DB.affinities, DType.AFFINITIES, 'Light', NEW)
+
+        self.assertEqual(NEW, DB.units.get(UNIT).affinity)
+        self.assertEqual([NEW, 'Dark'], prf.value)
+        self.assertEqual([NEW], desc.value)
+        self.assert_no_references(DType.AFFINITIES, 'Light')
+
+    def test_renaming_a_party_reaches_levels(self):
+        self.rename(DB.parties, DType.PARTIES, 'Eirika', NEW)
+
+        self.assertEqual(NEW, self.level.party)
+        self.assert_no_references(DType.PARTIES, 'Eirika')
+
+    def test_renaming_a_support_rank_reaches_affinity_bonuses_and_pair_requirements(self):
+        self.rename(DB.support_ranks, DType.SUPPORT_RANKS, 'C', NEW)
+
+        self.assertEqual([NEW, 'B', 'A'], [bonus.support_rank for bonus in DB.affinities.get('Fire').bonus])
+        self.assertEqual([NEW, 'B', 'A'], [req.support_rank for req in DB.support_pairs.get('Eirika | Seth').requirements])
+        self.assert_no_references(DType.SUPPORT_RANKS, 'C')
+
+    def test_renaming_a_tag_reaches_classes_units_ai_targets_and_components(self):
+        DB.units.get(UNIT).tags.append('Tile')
+        effective = self.give_item('effective_tag', ['Tile'])
+
+        self.rename(DB.tags, DType.TAGS, 'Tile', NEW)
+
+        self.assertIn(NEW, DB.classes.get('Wall25').tags)
+        self.assertIn(NEW, DB.units.get(UNIT).tags)
+        self.assertEqual(['Tag', NEW], DB.ai.get('AttackTile').behaviours[1].target_spec)
+        self.assertEqual([NEW], effective.value)
+        self.assert_no_references(DType.TAGS, 'Tile')
+
+    def test_renaming_a_weapon_rank_reaches_item_components_and_rank_bonuses(self):
+        bonus = CombatBonus('Sword', 'E', [1] * 8)
+        DB.weapons.get('Sword').rank_bonus.append(bonus)
+
+        self.rename(DB.weapon_ranks, DType.WEAPON_RANKS, 'E', NEW)
+
+        self.assertEqual(NEW, DB.items.get(ITEM).components.get('weapon_rank').value)
+        self.assertEqual(NEW, bonus.weapon_rank)
+        self.assert_no_references(DType.WEAPON_RANKS, 'E')
+
+    def test_renaming_an_equation_reaches_item_components(self):
+        self.rename(DB.equations, DType.EQUATIONS, 'HEAL', NEW)
+
+        self.assertEqual(NEW, DB.items.get('Heal').components.get('equation_heal').value)
+        self.assert_no_references(DType.EQUATIONS, 'HEAL')
+
+    def test_renaming_an_event_reaches_components_and_overworld_menus(self):
+        event = DB.events[0].nid
+        on_hit = self.give_item('event_on_hit', event)
+        option = NodeMenuEvent('Talk')
+        option.event = event
+        DB.overworlds.get('0').overworld_nodes[0].menu_options.append(option)
+
+        references.rewrite(DB, DType.EVENTS, event, NEW)
+
+        self.assertEqual(NEW, on_hit.value)
+        self.assertEqual(NEW, option.event)
+        self.assert_no_references(DType.EVENTS, event)
+
+    def test_renaming_a_lore_entry_reaches_components(self):
+        desc = self.give_skill('multi_desc_lore', ['Eirika'])
+
+        self.rename(DB.lore, DType.LORE, 'Eirika', NEW)
+
+        self.assertEqual([NEW], desc.value)
+        self.assert_no_references(DType.LORE, 'Eirika')
+
+    def test_renaming_a_movement_type_reaches_classes_and_components(self):
+        movement = self.give_skill('movement_type', 'Light Foot')
+
+        references.rewrite(DB, OtherType.MOVEMENT_TYPES, 'Light Foot', NEW)
+
+        self.assertEqual(NEW, DB.classes.get('Citizen').movement_group)
+        self.assertEqual(NEW, movement.value)
+        self.assert_no_references(OtherType.MOVEMENT_TYPES, 'Light Foot')
+
+    def test_renaming_a_terrain_movement_type_reaches_terrain(self):
+        references.rewrite(DB, OtherType.TERRAIN_MOVEMENT_TYPES, 'Normal', NEW)
+
+        self.assertEqual(NEW, DB.terrain.get('1').mtype)
+        self.assert_no_references(OtherType.TERRAIN_MOVEMENT_TYPES, 'Normal')
+
+    def test_renaming_icons_reaches_what_shows_them(self):
+        for catalog, target, old, owner in ((RESOURCES.icons16, RType.ICONS16, 'Sword', DB.items.get(ITEM)),
+                                            (RESOURCES.icons32, RType.ICONS32, 'KnightEmblem', DB.factions.get('Soldier')),
+                                            (RESOURCES.icons80, RType.ICONS80, 'Generic_Portrait_Citizen', DB.classes.get('Citizen'))):
+            with self.subTest(target):
+                self.rename(catalog, target, old, NEW)
+
+                self.assertEqual(NEW, owner.icon_nid)
+                self.assert_no_references(target, old)
+
+    def test_renaming_a_map_sprite_reaches_classes(self):
+        self.rename(RESOURCES.map_sprites, RType.MAP_SPRITES, 'Citizen', NEW)
+
+        self.assertEqual(NEW, DB.classes.get('Citizen').map_sprite_nid)
+        self.assert_no_references(RType.MAP_SPRITES, 'Citizen')
+
+    def test_renaming_a_combat_animation_reaches_classes_and_components(self):
+        DB.classes.get('Citizen').combat_anim_nid = 'Assassin'
+        change = self.give_skill('change_animation', 'Assassin')
+
+        self.rename(RESOURCES.combat_anims, RType.COMBAT_ANIMS, 'Assassin', NEW)
+
+        self.assertEqual(NEW, DB.classes.get('Citizen').combat_anim_nid)
+        self.assertEqual(NEW, change.value)
+        self.assert_no_references(RType.COMBAT_ANIMS, 'Assassin')
+
+    def test_renaming_a_combat_effect_reaches_components(self):
+        cast = self.give_item('battle_cast_anim', 'GleipnirGust')
+
+        self.rename(RESOURCES.combat_effects, RType.COMBAT_EFFECTS, 'GleipnirGust', NEW)
+
+        self.assertEqual(NEW, cast.value)
+        self.assert_no_references(RType.COMBAT_EFFECTS, 'GleipnirGust')
+
+    def test_renaming_a_map_animation_reaches_item_and_skill_components(self):
+        cast = self.give_item('map_cast_anim', 'HitSpark')
+        unit_anim = self.give_skill('unit_anim', 'HitSpark')
+
+        self.rename(RESOURCES.animations, RType.ANIMATIONS, 'HitSpark', NEW)
+
+        self.assertEqual(NEW, cast.value)
+        self.assertEqual(NEW, unit_anim.value)
+        self.assert_no_references(RType.ANIMATIONS, 'HitSpark')
+
+    def test_renaming_a_combat_palette_reaches_teams(self):
+        self.rename(RESOURCES.combat_palettes, RType.COMBAT_PALETTES, 'map_sprite_blue', NEW)
+
+        self.assertEqual(NEW, DB.teams.get('player').map_sprite_palette)
+        self.assert_no_references(RType.COMBAT_PALETTES, 'map_sprite_blue')
+
+    def test_renaming_a_map_icon_reaches_overworld_nodes(self):
+        self.rename(RESOURCES.map_icons, RType.MAP_ICONS, 'fort', NEW)
+
+        self.assertEqual(NEW, DB.overworlds.get('0').overworld_nodes[0].icon)
+        self.assert_no_references(RType.MAP_ICONS, 'fort')
+
+    def test_renaming_a_panorama_reaches_terrain(self):
+        DB.terrain.get('1').background = 'Hill'
+
+        self.rename(RESOURCES.panoramas, RType.PANORAMAS, 'Hill', NEW)
+
+        self.assertEqual(NEW, DB.terrain.get('1').background)
+        self.assert_no_references(RType.PANORAMAS, 'Hill')
+
     def test_rewrite_returns_what_it_changed(self):
         DB.units.get(UNIT).starting_items = [[ITEM, False]]
         sites = references.rewrite(DB, DType.ITEMS, ITEM, NEW)
@@ -356,6 +520,43 @@ class SwapTests(ReferenceTestCase):
 
         self.assertEqual('Test', self.level.tilemap)
         self.assertEqual('Test', DB.levels.get('1').tilemap)
+
+    def test_swapping_an_affinity_moves_its_units(self):
+        references.rewrite(DB, DType.AFFINITIES, 'Light', 'Dark')
+
+        self.assertEqual('Dark', DB.units.get(UNIT).affinity)
+
+    def test_swapping_a_party_moves_its_levels(self):
+        DB.parties.append(PartyPrefab('Other', 'Other', 'Seth'))
+
+        references.rewrite(DB, DType.PARTIES, 'Eirika', 'Other')
+
+        self.assertEqual('Other', self.level.party)
+
+    def test_swapping_a_tag_moves_classes_that_lack_the_other(self):
+        references.rewrite(DB, DType.TAGS, 'Sword', 'Armor')
+
+        self.assertEqual(['Armor'], DB.classes.get('Eirika_Lord').tags)
+
+    def test_swapping_a_weapon_rank_moves_item_components(self):
+        references.rewrite(DB, DType.WEAPON_RANKS, 'E', 'D')
+
+        self.assertEqual('D', DB.items.get(ITEM).components.get('weapon_rank').value)
+
+    def test_swapping_an_equation_moves_item_components(self):
+        references.rewrite(DB, DType.EQUATIONS, 'HEAL', 'HIT')
+
+        self.assertEqual('HIT', DB.items.get('Heal').components.get('equation_heal').value)
+
+    def test_swapping_a_movement_type_moves_its_classes(self):
+        references.rewrite(DB, OtherType.MOVEMENT_TYPES, 'Light Foot', 'Armors')
+
+        self.assertEqual('Armors', DB.classes.get('Citizen').movement_group)
+
+    def test_swapping_an_icon_moves_what_shows_it(self):
+        references.rewrite(DB, RType.ICONS16, 'Sword', 'Axe')
+
+        self.assertEqual('Axe', DB.items.get(ITEM).icon_nid)
 
     def test_swapping_a_song_moves_every_phase_playing_it(self):
         self.level.music['player_phase'] = 'Distant Roads'
