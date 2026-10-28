@@ -122,18 +122,21 @@ class Collection(QWidget):
             print(e)
 
     def on_item_changed(self, curr, prev):
-        if self._data:
-            new_data = curr.internalPointer()  # Internal pointer is way too powerful
-            if not new_data:
-                if self._data:
-                    new_data = self._data[curr.row()]
-                elif self.display:
-                    self.display.setEnabled(False)
+        if not self._data:
+            # An undo can take away a catalog's only record: the form shows nothing
+            # to edit, and nothing it shows is watched
             if self.display:
-                HISTORY.commit(origin=self.window)
-                self.display.set_current(new_data)
-                self.display.setEnabled(True)
-                HISTORY.bind(new_data, self._data, self.window)
+                self.display.setEnabled(False)
+            HISTORY.bind(None, self._data, self.window)
+            return
+        new_data = curr.internalPointer()  # Internal pointer is way too powerful
+        if not new_data:
+            new_data = self._data[curr.row()]
+        if self.display:
+            HISTORY.commit(origin=self.window)
+            self.display.set_current(new_data)
+            self.display.setEnabled(True)
+            HISTORY.bind(new_data, self._data, self.window)
 
     def set_display(self, disp):
         self.display = disp

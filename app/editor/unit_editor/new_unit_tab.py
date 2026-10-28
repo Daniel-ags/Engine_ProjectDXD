@@ -70,7 +70,10 @@ class NewUnitDatabase(NewEditorTab):
         if ok and fn:
             parent_dir = os.path.split(fn)[0]
             settings.set_last_open_path(parent_dir)
-            unit_import.update_db_from_csv(self._db, fn)
+            # The csv changes the units it names in place, as one undo step
+            with HISTORY.change_set('Import %s' % os.path.basename(fn), origin=self), \
+                    HISTORY.modifying([(record, self.data) for record in self.data]):
+                unit_import.update_db_from_csv(self._db, fn)
             self.reset()
 
     def _on_nid_changed(self, old_nid: NID, new_nid: NID):
@@ -80,20 +83,6 @@ class NewUnitDatabase(NewEditorTab):
         # Levels drop the unit rather than take another in its place
         fallback = next(unit.nid for unit in self.data if unit.nid != nid)
         return reference_dialogs.check_delete(DType.UNITS, nid, 'Unit', self, fallback=fallback)
-
-    def on_tab_close(self):
-        # Checking to see if any levels need to be changed
-        for level in DB.levels:
-            for unit in level.units.values():
-                if unit.generic or unit.nid in DB.units:
-                    pass
-                else:  # Remove any unit that no longer exist
-                    level.units.remove_key(unit.nid)
-            # Now remove groups
-            for unit_group in level.unit_groups:
-                for unit_nid in unit_group.units:
-                    if unit_nid not in level.units:
-                        unit_group.remove(unit_nid)
 
 def get(unit_nid: Optional[NID] = None, parent=None):
     """Opens the unit editor on unit_nid. Returns the unit it shows when closed with OK."""

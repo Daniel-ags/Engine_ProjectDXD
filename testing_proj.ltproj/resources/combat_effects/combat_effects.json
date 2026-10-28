@@ -1154,11 +1154,6 @@
                 ]
             ]
         ],
-        "palettes": [
-            [
-                "Image",
-                "GleipnirGust_Image"
-            ]
-        ]
+        "palettes": []
     }
 ]

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import importlib
 from types import SimpleNamespace
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, List, Optional, Tuple
 
 from PyQt5.QtCore import QAbstractListModel, Qt, QTimer
 from PyQt5.QtWidgets import (QApplication, QDialog, QDialogButtonBox, QLabel, QListView,
@@ -20,7 +20,7 @@ from app.editor.custom_widgets import ObjBox
 from app.editor.edit_history import HISTORY
 from app.events import event_references
 from app.events.event_references import EventMention
-from app.extensions.custom_gui import ComboBox, DeletionDialog, DeletionTab
+from app.extensions.custom_gui import DeletionDialog, DeletionTab
 from app.utilities.typing import NID
 
 # How to list the records of each catalog in a deletion warning, as module and class
@@ -69,11 +69,18 @@ def owner_model(owner_type: DType):
 
 
 def deletion_tabs(sites: List[references.RefSite], kind: str, nid: NID) -> List[DeletionTab]:
+    removed = {id(record) for _, record in references.removed_records(sites)}
     tabs = []
     for owner_type, records in references.owners(site for site in sites if site.listed).items():
         label = owner_type.name.replace('_', ' ').title()
-        msg = "Deleting %s <b>%s</b> would affect these %s." % (kind, nid, label.lower())
-        tabs.append(DeletionTab(records, owner_model(owner_type), msg, label))
+        deleted = [record for record in records if id(record) in removed]
+        affected = [record for record in records if id(record) not in removed]
+        if deleted:
+            msg = "Deleting %s <b>%s</b> deletes these %s with it." % (kind, nid, label.lower())
+            tabs.append(DeletionTab(deleted, owner_model(owner_type), msg, 'Deleted ' + label))
+        if affected:
+            msg = "Deleting %s <b>%s</b> would affect these %s." % (kind, nid, label.lower())
+            tabs.append(DeletionTab(affected, owner_model(owner_type), msg, label))
     return tabs
 
 
@@ -92,36 +99,64 @@ class EventMentionModel(QAbstractListModel):
         return None
 
 
-def event_mentions_tab(target: references.Target, nid: NID, kind: str) -> Optional[DeletionTab]:
-    """The event lines naming nid, as a deletion warning's tab, if any do"""
+def event_mentions_tab(target: references.Target, nid: NID, kind: str,
+                       removed: List[Tuple[DType, Any]] = ()) -> Optional[DeletionTab]:
+    """The event lines naming nid, or a record removed with it, as a deletion warning's
+    tab, if any do"""
     mentions = event_references.find_mentions(HISTORY.db, target, nid)
+    for dtype, record in removed:
+        mentions += event_references.find_mentions(HISTORY.db, dtype, record.nid)
+    # The lines of events deleted along with it go with them
+    gone = {record.nid for dtype, record in removed if dtype == DType.EVENTS}
+    mentions = list(dict.fromkeys(mention for mention in mentions if mention.event not in gone))
     if not mentions:
         return None
-    msg = ("These event script lines name %s <b>%s</b>. Deleting it does not change event scripts: "
-           "these lines will name something that no longer exists until you edit them." % (kind, nid))
+    msg = ("These event script lines name %s <b>%s</b>%s. Deleting it does not change event scripts: "
+           "these lines will name something that no longer exists until you edit them."
+           % (kind, nid, ", or what is deleted with it" if removed else ""))
     return DeletionTab(mentions, EventMentionModel, msg, "Events")
 
 
 def check_delete(target: references.Target, nid: NID, kind: str, parent,
-                 make_swap_box: Optional[Callable[[], ComboBox]] = None, fallback: Optional[NID] = None,
-                 extra_tabs: List[DeletionTab] = (), on_swap: Optional[Callable[[NID], None]] = None) -> bool:
+                 make_swap_box: Optional[Callable[[], ObjBox]] = None, fallback: Optional[NID] = None,
+                 extra_tabs: List[DeletionTab] = (), on_swap: Optional[Callable[[NID], None]] = None,
+                 on_clear: Optional[Callable[[], None]] = None) -> bool:
     """
     Shows the user every record that names nid and asks whether to go ahead.
     With a swap box, those references are pointed at the record the user picks;
     without one they are removed, and those that must name something take fallback.
     References not worth listing are removed without asking.
-    extra_tabs and on_swap cover references kept outside the database (in resources).
+    A swap box that lists nothing, as when the last record of its kind is deleted,
+    leaves nothing to swap to, so the references are removed.
+    extra_tabs, on_swap and on_clear cover references kept outside the database (in
+    resources): on_swap(swap_nid) points them at the swap, on_clear() removes them.
+    Records that go with the deleted one, like a level's events, are listed, and
+    whatever names them is cleared as well.
     Event script lines naming nid are listed, but left as they are.
     Returns whether the deletion should go ahead.
     """
     sites = references.find_referrers(HISTORY.db, target, nid)
-    tabs = deletion_tabs(sites, kind, nid) + list(extra_tabs)
-    events_tab = event_mentions_tab(target, nid, kind)
+    removed = references.removed_records(sites)
+    taken_sites = [site for dtype, record in removed for site in references.find_referrers(HISTORY.db, dtype, record.nid)]
+    tabs = deletion_tabs(sites + taken_sites, kind, nid) + list(extra_tabs)
+    events_tab = event_mentions_tab(target, nid, kind, removed)
+
+    def clear(swapped: bool):
+        with HISTORY.change_set('Delete %s' % nid):
+            HISTORY.clear_references(target, nid, fallback)
+            for dtype, record in removed:
+                # Unless a swap gave it another record to belong to
+                if not any(entry is record for entry in references.catalog(HISTORY.db, dtype)):
+                    HISTORY.clear_references(dtype, record.nid)
+            if on_clear and not swapped:
+                on_clear()
+
     if not tabs and not events_tab:
-        HISTORY.clear_references(target, nid, fallback)
+        clear(swapped=False)
         return True
-    if make_swap_box and tabs:
-        swap, ok = DeletionDialog.get_swap(tabs + ([events_tab] if events_tab else []), make_swap_box(), parent)
+    swap_box = make_swap_box() if make_swap_box and tabs else None
+    if swap_box is not None and swap_box.edit.count():
+        swap, ok = DeletionDialog.get_swap(tabs + ([events_tab] if events_tab else []), swap_box, parent)
         if not ok:
             return False
         HISTORY.rewrite(target, nid, swap.nid, renamed=False)
@@ -129,11 +164,13 @@ def check_delete(target: references.Target, nid: NID, kind: str, parent,
             on_swap(swap.nid)
         # Whatever the swap could not take over, such as an entry of a dict
         # that already has one for the swap, goes with the record
-        HISTORY.clear_references(target, nid, fallback)
+        clear(swapped=True)
         return True
+    if swap_box is not None:
+        swap_box.deleteLater()  # Nothing to swap to
     if not DeletionDialog.inform(tabs + ([events_tab] if events_tab else []), parent):
         return False
-    HISTORY.clear_references(target, nid, fallback)
+    clear(swapped=False)
     return True
 
 

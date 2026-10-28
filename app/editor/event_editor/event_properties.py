@@ -576,7 +576,8 @@ class EventProperties(QWidget):
         self.window.update_list()
 
     def level_nid_changed(self, idx):
-        self.rename(self.current.name, None if idx == 0 else DB.levels[idx - 1].nid)
+        # By the level's nid as listed: DB.levels may have changed order since the box was filled
+        self.rename(self.current.name, None if idx == 0 else self.level_nid_box.edit.currentText())
         self.window.left_frame.filter_to_level_of(self.current)
 
         # Update trigger box to match current level

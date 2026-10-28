@@ -2,9 +2,11 @@ from PyQt5.QtWidgets import QWidget, QGridLayout, QPushButton
 from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtGui import QIcon
 
-from app.editor import tilemap_editor
+from app.editor import reference_dialogs, tilemap_editor
+from app.editor.edit_history import HISTORY
 from app.data.resources.resources import RESOURCES
 from app.data.database.database import DB
+from app.data.database.database_types import DatabaseType as DType
 from app.data.database.levels import LevelPrefab
 
 from app.editor.lib.state_editor.state_enums import MainEditorScreenStates
@@ -101,6 +103,16 @@ class LevelModel(DragDropCollectionModel):
                 img = QIcon(pix)
                 return img
         return None
+
+    def delete(self, idx):
+        """Deletes the level, and its events with it, as one undo step, once the user
+        has seen what names it"""
+        if not self.allow_delete_last_obj and len(self._data) == 1:
+            return super().delete(idx)  # Which refuses the last level, leaving what names it alone
+        level = self._data[idx]
+        with HISTORY.change_set('Delete %s' % level.nid, origin=self.window):
+            if reference_dialogs.check_delete(DType.LEVELS, level.nid, 'Level', self.window):
+                return super().delete(idx)
 
     def create_new(self):
         nids = [level.nid for level in DB.levels]

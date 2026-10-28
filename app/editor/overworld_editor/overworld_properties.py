@@ -1,5 +1,7 @@
 from app.editor.lib.components.validated_line_edit import NidLineEdit
 from app.data.database.database import DB
+from app.data.database.database_types import DatabaseType as DType
+from app.editor.edit_history import HISTORY
 from app.editor.sound_editor import sound_tab
 from app.editor.tile_editor import tile_tab
 from app.extensions.custom_gui import (ComboBox, PropertyBox, PropertyCheckBox,
@@ -81,7 +83,10 @@ class OverworldPropertiesMenu(QWidget):
                 self, 'Warning', 'Level ID %s already in use' % new_nid)
             new_nid = str_utils.get_next_int(new_nid, other_nids)
             self.nid_box.edit.setText(new_nid)
-        DB.overworlds.update_nid(self.current, new_nid)
+        # Nothing in the database names an overworld, but the rename warns of the event
+        # script lines that still do
+        HISTORY.rename(DB.overworlds, self.current, new_nid,
+                       lambda old_nid, new_nid: HISTORY.rewrite(DType.OVERWORLDS, old_nid, new_nid))
         self.state_manager.change_and_broadcast('ui_refresh_signal', None)
 
     def title_changed(self, text):

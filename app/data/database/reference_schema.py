@@ -89,7 +89,7 @@ Resolver = Callable[[Any], Optional[Target]]
 class ClearPolicy(Enum):
     """What deleting the record a reference names does to the reference"""
     AUTO = 0  # Drop the element of the last [*] in the path, or the dict key; otherwise set None
-    REMOVE_RECORD = 1  # Remove the sub-record holding the field from its Data
+    REMOVE_RECORD = 1  # Remove the record holding the field from its Data, be it a sub-record or a catalog's own
     REPLACE = 2  # The field must name something: point it at the caller's fallback
 
 
@@ -510,7 +510,7 @@ SCHEMA: Dict[type, Dict[str, FieldDeclarations]] = {
     EventPrefab: {
         'name': NOT_REF,
         'trigger': NOT_REF,
-        'level_nid': Ref(DType.LEVELS),
+        'level_nid': Ref(DType.LEVELS, on_clear=ClearPolicy.REMOVE_RECORD),  # a level's events go with it
         'condition': NOT_REF,
         'commands': NOT_REF,  # event scripts name records in free text; they are searched, not rewritten
         'only_once': NOT_REF,

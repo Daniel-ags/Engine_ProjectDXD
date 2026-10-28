@@ -6,6 +6,7 @@ from app.data.database.database import DB
 from app.data.database.levels import LevelPrefab
 from app.data.resources.tiles import TileMapPrefab
 from app.editor import tilemap_editor, timer
+from app.editor.edit_history import HISTORY
 from app.editor.map_sprite_editor import map_sprite_model
 from app.editor.overworld_editor.road_sprite_wrapper import RoadSpriteWrapper
 from app.editor.settings import MainSettingsController
@@ -630,6 +631,8 @@ class NewMapView(SimpleMapView):
                         current_region.position = (left, top)
                         current_region.size = [width + 1, height + 1]
                     self.region_select = None
+        # Each click or drag on the map is an undo step of its own
+        HISTORY.commit(origin=self.main_editor)
 
     def keyPressEvent(self, event):
         super().keyPressEvent(event)
@@ -639,3 +642,4 @@ class NewMapView(SimpleMapView):
                 indices = unit_painter_menu.view.selectionModel().selectedIndexes()
                 for index in indices:
                     unit_painter_menu.model.delete(index.row())
+                HISTORY.commit(origin=self.main_editor)

@@ -33,6 +33,7 @@ KEYWORD_TARGETS: Dict[str, Tuple[Target, ...]] = {
     'DifficultyMode': (DType.DIFFICULTY_MODES,),
     'Event': (DType.EVENTS,),
     'Faction': (DType.FACTIONS,),
+    'Font': (RType.FONTS,),
     'GlobalUnit': (DType.UNITS,),
     'GlobalUnitOrConvoy': (DType.UNITS,),
     'Item': (DType.ITEMS,),
@@ -42,6 +43,8 @@ KEYWORD_TARGETS: Dict[str, Tuple[Target, ...]] = {
     'Lore': (DType.LORE,),
     'MapAnim': (RType.ANIMATIONS,),
     'Music': (RType.MUSIC,),
+    'OverworldEntity': (DType.PARTIES,),  # A party's overworld entity has the party's nid
+    'OverworldNID': (DType.OVERWORLDS,),
     'Palette': (RType.COMBAT_PALETTES,),
     'Panorama': (RType.PANORAMAS,),
     'Party': (DType.PARTIES,),

@@ -78,7 +78,10 @@ class NewItemDatabase(NewEditorTab):
         if ok and fn:
             parent_dir = os.path.split(fn)[0]
             settings.set_last_open_path(parent_dir)
-            item_import.update_db_from_csv(self._db, fn)
+            # The csv changes the items it names in place, as one undo step
+            with HISTORY.change_set('Import %s' % os.path.basename(fn), origin=self), \
+                    HISTORY.modifying([(record, self.data) for record in self.data]):
+                item_import.update_db_from_csv(self._db, fn)
             self.reset()
 
 # Testing

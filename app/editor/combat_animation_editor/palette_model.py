@@ -60,7 +60,9 @@ def check_delete(nid: NID, window) -> bool:
     return reference_dialogs.check_delete(RType.COMBAT_PALETTES, nid, 'Palette', window,
                                           lambda: PaletteBox(window, exclude=res),
                                           extra_tabs=resource_deletion_tabs(nid),
-                                          on_swap=lambda swap_nid: swap_in_resources(nid, swap_nid))
+                                          on_swap=lambda swap_nid: swap_in_resources(nid, swap_nid),
+                                          # Each animation keeps the palette's name, with no palette under it
+                                          on_clear=lambda: swap_in_resources(nid, None))
 
 def on_nid_changed(old_nid, new_nid):
     HISTORY.rewrite(RType.COMBAT_PALETTES, old_nid, new_nid)

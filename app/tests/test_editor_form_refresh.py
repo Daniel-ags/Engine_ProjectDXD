@@ -248,6 +248,17 @@ class FormRefreshTests(unittest.TestCase):
         self.assertIs(event, form.current)
         self.assertIs(event, self.highlighted_event(frame))
 
+    def test_choosing_a_level_moves_the_event_to_that_level_though_the_levels_were_reordered(self):
+        dialog, form = self.event_editor()
+        event = form.current
+        other_level = next(level.nid for level in DB.levels if level.nid != event.level_nid)
+        # Reordered in the main window, with nothing told to the event editor yet
+        DB.levels.sort(lambda level: -DB.levels.index(level.nid))
+
+        form.level_nid_box.edit.setValue(other_level)
+
+        self.assertEqual(other_level, event.level_nid)
+
     def test_the_event_list_follows_an_event_whose_move_to_another_level_is_undone(self):
         dialog, form = self.event_editor()
         frame = dialog.tab.left_frame

@@ -108,6 +108,50 @@ class ChangeBusTests(unittest.TestCase):
         unit_reset.assert_not_called()
         class_reset.assert_called_once()
 
+    def focus(self, dialog, widget):
+        dialog.show()
+        dialog.activateWindow()
+        widget.setFocus()
+        self.app.processEvents()  # The window activates, moving focus
+        self.app.processEvents()  # The tabs show what the move committed
+
+    def test_moving_to_another_window_does_not_redraw_the_one_whose_edit_it_finished(self):
+        from PyQt5.QtTest import QTest
+        name_box = self.unit_tab.right_frame.name_box.edit
+        self.focus(self.unit_dialog, name_box)
+        QTest.keyClicks(name_box, ' Typed')
+        with patch.object(self.unit_tab, 'reset') as unit_reset, \
+                patch.object(self.class_tab, 'reset') as class_reset:
+            self.focus(self.class_dialog, self.class_tab.right_frame.name_box.edit)
+
+        self.assertTrue(DB.units.get(UNIT).name.endswith(' Typed'))
+        self.assertTrue(self.history.can_undo())
+        unit_reset.assert_not_called()
+        class_reset.assert_called_once()
+
+    def test_moving_to_the_main_window_finishes_an_edit_without_redrawing_its_editor(self):
+        from PyQt5.QtTest import QTest
+        from PyQt5.QtWidgets import QLineEdit, QMainWindow
+        from app.editor.data_editor import EditHistoryDialog
+        name_box = self.unit_tab.right_frame.name_box.edit
+        self.focus(self.unit_dialog, name_box)
+        QTest.keyClicks(name_box, ' Typed')
+        # A stand-in for the main window, which commits as focus comes into it
+        other = QMainWindow()
+        self.addCleanup(other.deleteLater)
+        field = QLineEdit(other)
+        other.setCentralWidget(field)
+        with patch.object(self.unit_tab, 'reset') as unit_reset:
+            other.show()
+            other.activateWindow()
+            field.setFocus()
+            self.app.processEvents()
+            self.app.processEvents()
+
+        self.assertTrue(self.history.can_undo())
+        unit_reset.assert_not_called()
+        self.assertIs(self.unit_tab, EditHistoryDialog.tab_holding(name_box))
+
     def test_a_box_keeps_its_choice_when_a_record_above_it_is_deleted(self):
         # As the level editor's Load Unit dialog does, while the unit editor opened from it deletes
         from app.editor.custom_widgets import UnitBox

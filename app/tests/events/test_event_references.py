@@ -35,6 +35,14 @@ class EventMentionTests(unittest.TestCase):
         self.assertEqual([(1, True)], self.mentions(DType.ITEMS, 'Iron_Sword'))
         self.assertEqual([(1, True)], self.mentions(DType.UNITS, 'Eirika'))
 
+    def test_fonts_overworlds_and_overworld_entities_are_certain_mentions(self):
+        self.event('Script', 'textbox;Box;Hello;FontType=convo', 'overworld_cinematic;Magvel',
+                   'overworld_move_unit;Eirika_Party')
+
+        self.assertEqual([(1, True)], self.mentions(RType.FONTS, 'convo'))
+        self.assertEqual([(2, True)], self.mentions(DType.OVERWORLDS, 'Magvel'))
+        self.assertEqual([(3, True)], self.mentions(DType.PARTIES, 'Eirika_Party'))
+
     def test_an_argument_of_another_kind_is_no_mention(self):
         # A unit and a portrait share Eirika's nid; change_music takes neither
         self.event('Script', 'give_item;Eirika;Iron_Sword', 'change_music;player_phase;Eirika')

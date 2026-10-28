@@ -6,9 +6,10 @@ from typing import Optional
 
 from PyQt5.QtWidgets import QMainWindow, QAction, QMenu, QMessageBox, QApplication, \
     QDesktopWidget, \
-    QToolButton, QWidget, QWidgetAction, QStackedWidget
+    QDockWidget, QToolButton, QWidget, QWidgetAction, QStackedWidget
 from PyQt5.QtGui import QIcon, QKeySequence
-from PyQt5.QtCore import QTimer
+from PyQt5 import sip
+from PyQt5.QtCore import QEvent, QTimer
 
 from app import autoupdate, dark_theme
 from app.utilities import file_utils
@@ -23,7 +24,7 @@ from app.data.database.database import DB
 
 from app.editor import log_viewer, timer, error_viewer, reference_dialogs
 from app.editor.custom_widgets import ObjBox
-from app.editor.data_editor import EditHistoryDialog
+from app.editor.data_editor import EditHistoryDialog, handles_own_undo
 from app.editor.edit_history import HISTORY
 from app.editor.editor_windows import EditorWindows
 
@@ -164,9 +165,57 @@ class MainEditor(QMainWindow):
         HISTORY.listen(self.on_history_changed)
         # A rename leaves event scripts as they are, so the user hears which lines still name the old nid
         HISTORY.listen_to_renames(reference_dialogs.warn_of_event_mentions)
+        # The level and overworld editors change their records in place, which the
+        # next commit records. A field's edit is done once focus moves on
+        self.key_widget = None
+        QApplication.instance().focusChanged.connect(self.on_focus_changed)
+
+    def holds(self, widget: QWidget) -> bool:
+        """Whether widget is part of this window, a dock floating beside it included"""
+        while widget is not None:
+            if widget is self:
+                return True
+            if widget.isWindow() and not isinstance(widget, QDockWidget):
+                return False
+            widget = widget.parentWidget()
+        return False
+
+    def watch_keys(self, widget):
+        """Watches widget for the undo keys in place of the one watched before, if it
+        is in this window. A text field claims the keys ahead of the Undo action's
+        shortcut, even with no typing of its own to undo"""
+        if self.key_widget is not None and not sip.isdeleted(self.key_widget):
+            self.key_widget.removeEventFilter(self)
+        self.key_widget = widget if self.holds(widget) else None
+        if self.key_widget is not None:
+            self.key_widget.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if obj is self.key_widget and event.type() == QEvent.KeyPress:
+            if event.matches(QKeySequence.Undo) and not handles_own_undo(obj, redo=False):
+                self.undo()
+                return True
+            if event.matches(QKeySequence.Redo) and not handles_own_undo(obj, redo=True):
+                self.redo()
+                return True
+        return super().eventFilter(obj, event)
+
+    def on_focus_changed(self, old, new):
+        self.watch_keys(new)
+        if self.holds(old):
+            # A field here has finished its edit, an undo step of its own, kept
+            # apart from whatever is edited next in another window
+            HISTORY.commit(origin=self)
+        elif self.holds(new):
+            # From another window, whose edits this window has yet to show; an
+            # editor window's tab already shows its own
+            HISTORY.commit(origin=EditHistoryDialog.tab_holding(old))
 
     def on_history_changed(self, origin):
-        # Editor windows change the database beside this window
+        # Editor windows change the database beside this window. What this window
+        # changed it shows already, and showing it again would drop its selections
+        if origin is not None and self.holds(origin):
+            return
         if not self.history_changed:
             self.history_changed = True
             QTimer.singleShot(0, self.show_changes)

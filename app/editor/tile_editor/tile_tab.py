@@ -7,7 +7,6 @@ from app.editor import tileset_editor
 from app.editor.tileset_editor import TileSetEditor
 from app.data.resources.resources import RESOURCES
 from app.editor.data_editor import SingleResourceEditor, MultiResourceEditor
-from app.editor.edit_history import HISTORY
 
 from app.editor.tile_editor import tile_model
 from app.editor.tilemap_editor import MapEditor
@@ -141,11 +140,8 @@ class TileSetDatabase(TileTab):
     def edit_current(self):
         current_tileset = self.current
         if current_tileset:
-            tileset_editor = TileSetEditor(self, current_tileset)
-            # Its Cancel puts the terrain back, which leaves nothing to record
-            with HISTORY.change_set('Edit %s terrain' % current_tileset.nid, origin=self), \
-                    HISTORY.modifying([(current_tileset, self._data)]):
-                tileset_editor.exec_()
+            # It records each of its edits as an undo step, and its Cancel takes them back
+            TileSetEditor(self, current_tileset).exec_()
 
 class TileMapDatabase(TileTab):
     @classmethod
@@ -168,13 +164,9 @@ class TileMapDatabase(TileTab):
     def edit_current(self):
         current_tilemap = self.current
         if current_tilemap:
-            map_editor = MapEditor(self, current_tilemap)
-            # Its Cancel puts the tilemap back as it was when it opened or was last
-            # saved. It can also make a tileset's autotiles
-            with HISTORY.change_set('Edit %s' % current_tilemap.nid, origin=self), \
-                    HISTORY.modifying([(current_tilemap, self._data)] +
-                                      [(tileset, RESOURCES.tilesets) for tileset in RESOURCES.tilesets]):
-                map_editor.exec_()
+            # It records each of its edits as an undo step, and its Cancel takes them
+            # back to where it opened or was last saved
+            MapEditor(self, current_tilemap).exec_()
             tilemap_editor.get_tilemap_pixmap(current_tilemap)
 
 def get_tilesets() -> tuple:

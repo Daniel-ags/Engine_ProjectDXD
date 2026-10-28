@@ -470,6 +470,18 @@ def owners(sites: Iterable[RefSite]) -> Dict[DType, List[Any]]:
             result.setdefault(site.owner_type, []).append(site.owner)
     return result
 
+def removed_records(sites: Iterable[RefSite]) -> List[Tuple[DType, Any]]:
+    """The catalog records that clearing these references removes outright, like a
+    deleted level's events, by catalog, each listed once"""
+    result: List[Tuple[DType, Any]] = []
+    seen: Set[int] = set()
+    for site in sites:
+        if site.ref and site.ref.on_clear == ClearPolicy.REMOVE_RECORD and site.record[1] is site.owner \
+                and id(site.owner) not in seen:
+            seen.add(id(site.owner))
+            result.append((site.owner_type, site.owner))
+    return result
+
 def rewrite(db, target: Target, old_nid: NID, new_nid: NID) -> List[RefSite]:
     """Points every reference to old_nid at new_nid instead. Returns the references changed.
 

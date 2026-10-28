@@ -1,66 +1,25 @@
 """
 Shows everything the main window's own editors show, and reports what that changed.
 
-Run by test_main_window_show.py in a process of its own, since the main window
-writes the editor's settings (the current project, recent projects, window
-layouts), which are pointed at a temporary folder here before anything reads
-them, and holds on to the edit history's listeners and the timer.
+Run by test_main_window_show.py in a process of its own (see main_window_harness.py):
 
     python -m app.tests.main_window_show PROJECT WORK_DIR
 
 Works on a copy of PROJECT in WORK_DIR. Through the real main window it shows the
 global editor's lists, every level in the level editor with each of its docks
 raised and every entry of their lists selected, and every overworld with each of
-its nodes selected. The last line printed is REPORT followed by JSON: how many
-entries were shown, each record whose saved form changed, the undo steps made,
-and any exception raised.
+its nodes selected. The report says how many entries were shown, each record whose
+saved form changed, the undo steps made, and any exception raised.
 """
-import json
-import os
-import shutil
-import sys
-import traceback
-
-REPORT = 'REPORT '
+from app.tests.main_window_harness import open_main_window, report
 
 
 def main(source_proj: str, work: str) -> dict:
-    from app.tests import qt_headless  # noqa: F401 -- before any QApplication
-    from PyQt5.QtCore import QEvent, QSettings
-    # Before the first settings controller exists
-    QSettings.setDefaultFormat(QSettings.IniFormat)
-    QSettings.setPath(QSettings.IniFormat, QSettings.UserScope, os.path.join(work, 'settings'))
-    from PyQt5.QtWidgets import QAbstractItemView, QApplication, QMessageBox
-    from unittest.mock import patch
-    app = QApplication(sys.argv)
-    from app.editor.editor_locale import init_locale
-    init_locale()
-    import pygame
-    pygame.font.init()
-    # A message box would wait forever for someone to close it
-    for kind in ('critical', 'warning', 'information', 'question'):
-        patch.object(QMessageBox, kind, staticmethod(lambda *args, **kwargs: QMessageBox.Ok)).start()
-    errors = []
-    sys.excepthook = lambda *exc: errors.append(''.join(traceback.format_exception(*exc)))
-
-    proj = os.path.join(work, os.path.basename(source_proj))
-    shutil.copytree(source_proj, proj, ignore=shutil.ignore_patterns('old_portraits'))
-    # The testing project's metadata leaves out its version, which a load would
-    # take for the oldest and migrate from scratch
-    from app.data.serialization.versions import CURRENT_SERIALIZATION_VERSION
-    with open(os.path.join(proj, 'metadata.json')) as fp:
-        metadata = json.load(fp)
-    metadata.setdefault('serialization_version', CURRENT_SERIALIZATION_VERSION)
-    with open(os.path.join(proj, 'metadata.json'), 'w') as fp:
-        json.dump(metadata, fp)
-
+    run = open_main_window(source_proj, work)
+    from PyQt5.QtWidgets import QAbstractItemView
     from app.data.database.database import DB
     from app.editor.edit_history import HISTORY, saved
-    from app.editor.main_editor import MainEditor
-
-    def settle():
-        app.processEvents()
-        app.sendPostedEvents(None, QEvent.DeferredDelete)
+    window, settle = run.window, run.settle
 
     def snapshot() -> dict:
         records = {id(record): ('%s %s' % (type(record).__name__, record.nid), saved(record))
@@ -79,9 +38,6 @@ def main(source_proj: str, work: str) -> dict:
                     shown += 1
         return shown
 
-    window = MainEditor(proj)
-    window.show()
-    settle()
     HISTORY.commit()
     before = snapshot()
     steps = len(HISTORY._undo)
@@ -120,12 +76,9 @@ def main(source_proj: str, work: str) -> dict:
         'shown': shown,
         'changed': [label for key, (label, form) in after.items() if key in before and before[key][1] != form],
         'undo_steps': [change_set.label for change_set in HISTORY._undo[steps:]],
-        'errors': errors,
+        'errors': run.errors,
     }
 
 
 if __name__ == '__main__':
-    report = main(os.path.abspath(sys.argv[1]), os.path.abspath(sys.argv[2]))
-    print(REPORT + json.dumps(report), flush=True)
-    # Skips tearing the window down, which only takes time
-    os._exit(0)
+    report(main)

@@ -63737,10 +63737,6 @@
             [
                 "Image",
                 "CrimsonEyeCircles_Image"
-            ],
-            [
-                "Image_old",
-                "CrimsonEyeCircles_Image_old"
             ]
         ]
     },
@@ -78360,12 +78356,6 @@
                         ]
                     ],
                     [
-                        "sound",
-                        [
-                            "Heal"
-                        ]
-                    ],
-                    [
                         "effect_with_offset",
                         [
                             "FortifyOrbMini",
@@ -78377,12 +78367,6 @@
                         "wait",
                         [
                             32
-                        ]
-                    ],
-                    [
-                        "sound",
-                        [
-                            "Heal"
                         ]
                     ],
                     [
@@ -78400,12 +78384,6 @@
                         ]
                     ],
                     [
-                        "sound",
-                        [
-                            "Heal"
-                        ]
-                    ],
-                    [
                         "effect_with_offset",
                         [
                             "FortifyOrbMini",
@@ -78417,12 +78395,6 @@
                         "wait",
                         [
                             32
-                        ]
-                    ],
-                    [
-                        "sound",
-                        [
-                            "Heal"
                         ]
                     ],
                     [
@@ -87927,12 +87899,6 @@
                         ]
                     ],
                     [
-                        "sound",
-                        [
-                            "Heal"
-                        ]
-                    ],
-                    [
                         "effect_with_offset",
                         [
                             "FortifyGreenOrbMini",
@@ -87944,12 +87910,6 @@
                         "wait",
                         [
                             32
-                        ]
-                    ],
-                    [
-                        "sound",
-                        [
-                            "Heal"
                         ]
                     ],
                     [
@@ -87967,12 +87927,6 @@
                         ]
                     ],
                     [
-                        "sound",
-                        [
-                            "Heal"
-                        ]
-                    ],
-                    [
                         "effect_with_offset",
                         [
                             "FortifyGreenOrbMini",
@@ -87984,12 +87938,6 @@
                         "wait",
                         [
                             32
-                        ]
-                    ],
-                    [
-                        "sound",
-                        [
-                            "Heal"
                         ]
                     ],
                     [

@@ -146,6 +146,8 @@ class OverworldEditor(QMainWindow):
     def on_map_double_left_click(self, x, y):
         if self.edit_mode == OverworldEditorEditMode.NODES:
             self.create_node(x, y)
+            # Each edit on the map is an undo step of its own
+            HISTORY.commit(origin=self)
 
     def on_map_right_click(self, x, y):
         if self.edit_mode == OverworldEditorEditMode.NODES:
@@ -156,7 +158,8 @@ class OverworldEditor(QMainWindow):
                 for n in self.current_overworld.overworld_nodes: 
                     if n.nid == self.selected_object.obj.nid: 
                         n.pos = (x, y)
-                self.select_object_on_map(x, y)              
+                self.select_object_on_map(x, y)
+            HISTORY.commit(origin=self)
 
     def on_map_left_click(self, x, y):
         """Left click handler. NB: this uses float granularity (see where it's bound in this class)
@@ -188,6 +191,7 @@ class OverworldEditor(QMainWindow):
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Delete:
             del self.selected_object
+            HISTORY.commit(origin=self)
         elif event.key() == Qt.Key_Space:
             self.map_view.should_draw_ghost = not self.map_view.should_draw_ghost
 

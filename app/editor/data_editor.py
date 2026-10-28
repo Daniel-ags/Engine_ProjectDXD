@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from typing import List
+
 from PyQt5 import QtGui, sip
 from PyQt5.QtWidgets import QApplication, QDialog, QGridLayout, QDialogButtonBox, QLineEdit, \
     QPlainTextEdit, QTabWidget, QTextEdit, QSizePolicy
@@ -31,9 +35,12 @@ class EditHistoryDialog(QDialog):
     change was the tab's own edit.
     """
     undo_enabled = True
+    # Every dialog whose history is running, to find the tab a widget is in
+    running: List[EditHistoryDialog] = []
 
     def start_history(self):
         self.history_running = True
+        EditHistoryDialog.running.append(self)
         self.change_origins = []  # Of the changes no tab shows yet
         app = QApplication.instance()
         app.focusChanged.connect(self.on_focus_changed)
@@ -50,6 +57,7 @@ class EditHistoryDialog(QDialog):
         if not self.history_running:
             return
         self.history_running = False
+        EditHistoryDialog.running.remove(self)
         app = QApplication.instance()
         app.focusChanged.disconnect(self.on_focus_changed)
         self.watch_keys(None)
@@ -84,6 +92,11 @@ class EditHistoryDialog(QDialog):
     def history_tab_holding(self, widget):
         return next((tab for tab in self.history_tabs() if widget is not None and tab.isAncestorOf(widget)), None)
 
+    @classmethod
+    def tab_holding(cls, widget):
+        """The tab of any dialog on the history that widget is in, if one is"""
+        return next((tab for dialog in cls.running for tab in [dialog.history_tab_holding(widget)] if tab), None)
+
     def button_box(self, picker: bool) -> QDialogButtonBox:
         if picker:
             buttons = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
@@ -97,9 +110,11 @@ class EditHistoryDialog(QDialog):
     def on_focus_changed(self, old, new):
         self.watch_keys(new)
         # The field losing focus has finished its edit by now: Qt sends it
-        # FocusOut before announcing the change
-        if new is not None and self.isAncestorOf(new):
-            HISTORY.commit(origin=self.history_tab_holding(old))
+        # FocusOut before announcing the change. Focus coming into this dialog or
+        # leaving it commits the edit, made in the tab holding the field, whichever
+        # dialog that is, so that tab is not shown again
+        if (new is not None and self.isAncestorOf(new)) or (old is not None and self.isAncestorOf(old)):
+            HISTORY.commit(origin=EditHistoryDialog.tab_holding(old))
 
     def on_history_changed(self, origin):
         # The change may still be under way -- a tab's own rename or delete --

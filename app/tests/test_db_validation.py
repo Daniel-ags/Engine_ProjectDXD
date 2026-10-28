@@ -71,6 +71,26 @@ class ReferenceValidationTests(ValidationTestCase):
 
         self.assert_one(self.warnings(), 'music_main', 'MUSIC', MISSING)
 
+    def test_an_alliance_with_no_team_is_a_warning(self):
+        DB.teams.alliance_pairs.add((DB.teams[0].nid, MISSING))
+
+        self.assert_one(self.warnings(), 'WARNING', 'alliance_pairs', 'TEAMS', MISSING)
+
+    def test_a_combat_animation_palette_naming_nothing_is_a_warning(self):
+        RESOURCES.combat_anims.get('Assassin').palettes.append(['GenericBlue', MISSING])
+
+        self.assert_one(self.warnings(), 'WARNING', 'Assassin', 'GenericBlue', 'COMBAT_PALETTES', MISSING)
+
+    def test_a_combat_animation_palette_entry_without_a_palette_is_a_warning(self):
+        RESOURCES.combat_anims.get('Assassin').palettes.append(['GenericBlue', None])
+
+        self.assert_one(self.warnings(), 'Assassin', 'GenericBlue', 'COMBAT_PALETTES')
+
+    def test_a_tilemap_terrain_naming_nothing_is_a_warning(self):
+        RESOURCES.tilemaps.get('Prologue').layers[0].terrain_grid[(0, 0)] = MISSING
+
+        self.assert_one(self.warnings(), 'Prologue', 'TERRAIN', MISSING)
+
     def test_a_stat_table_entry_for_no_stat_is_a_warning(self):
         DB.classes.get('Swordmaster').bases['LEAD'] = 0
 

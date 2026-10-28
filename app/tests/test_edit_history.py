@@ -104,6 +104,35 @@ class ModifyTests(HistoryTestCase):
         self.assertEqual(5, constant.value)
 
 
+    def test_a_record_changed_before_and_inside_a_nested_modifying_is_undone_to_where_it_began(self):
+        item = DB.items.get(ITEM)  # Nobody has it bound
+        old_name = item.name
+        with HISTORY.change_set():
+            with HISTORY.modifying([(item, DB.items)]):
+                item.name = 'Outer'
+                with HISTORY.modifying([(item, DB.items)]):
+                    item.name = 'Inner'
+
+        HISTORY.undo()
+        self.assertEqual(old_name, item.name)
+        HISTORY.redo()
+        self.assertEqual('Inner', item.name)
+
+    def test_a_restored_tilemaps_layers_belong_to_it(self):
+        from app.data.resources.resources import RESOURCES
+        RESOURCES.load('testing_proj.ltproj', CURRENT_SERIALIZATION_VERSION)
+        HISTORY.clear()
+        tilemap = RESOURCES.tilemaps[0]
+        HISTORY.bind(tilemap, RESOURCES.tilemaps)
+        tilemap.layers[0].set_sprite((0, 0), 'Nothing', (0, 0))
+        HISTORY.commit()
+
+        HISTORY.undo()
+
+        for layer in tilemap.layers:
+            self.assertIs(tilemap, layer.parent)
+
+
 class MembershipTests(HistoryTestCase):
     def test_creating_is_undone_and_redone_with_the_same_object(self):
         item = ItemPrefab('New_Item', 'New Item', '')

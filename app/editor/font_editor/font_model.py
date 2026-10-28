@@ -8,8 +8,11 @@ from PyQt5.QtGui import QImage, QPixmap, QIcon, QPainter
 
 from app.data.resources.fonts import Font
 from app.data.resources.fonts import FontIndex
+from app.data.resources.resource_types import ResourceType as RType
 from app.data.resources.resources import RESOURCES
+from app.editor import reference_dialogs
 from app.editor.base_database_gui import ResourceCollectionModel
+from app.editor.edit_history import HISTORY
 from app.editor.file_manager.staging import STAGING
 from app.editor.settings import MainSettingsController
 from app.utilities import str_utils
@@ -209,7 +212,13 @@ class FontModel(ResourceCollectionModel):
         return new_font
 
     def delete(self, idx):
-        super().delete(idx)
+        # Nothing in the database names a font, but event scripts may
+        nid = self._data[idx].nid
+        with HISTORY.change_set('Delete %s' % nid, origin=self.window):
+            if reference_dialogs.check_delete(RType.FONTS, nid, 'Font', self.window):
+                super().delete(idx)
 
     def on_nid_changed(self, old_nid, new_nid):
         self._icon_cache.pop(old_nid, None)
+        # So the event script lines still naming the old nid are pointed out
+        HISTORY.rewrite(RType.FONTS, old_nid, new_nid)

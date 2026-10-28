@@ -126,6 +126,24 @@ class ItemEditorUndoTests(EditorUndoTestCase):
         self.assertIs(self.item, DB.items.get(ITEM))
         self.assertEqual([[ITEM, False]], DB.units.get(UNIT).starting_items)
 
+    def folders_shown(self) -> dict:
+        _, categories = self.tab.tree_list.get_list_and_category_structure()
+        return categories
+
+    def test_a_folder_made_by_dragging_stays_when_the_list_is_shown_again(self):
+        from app.data.category import Categories
+        categories = Categories()
+        categories[ITEM] = ['Swords']
+        self.tab.resort_db(DB.items.keys(), categories)  # As a drag into a folder does
+        self.history.commit()
+
+        self.tab.reset()  # As an edit in another window makes it
+        self.assertEqual(['Swords'], self.folders_shown().get(ITEM))
+
+        self.dialog.undo()
+        self.assertNotIn(ITEM, self.folders_shown())
+        self.assertNotIn(ITEM, DB.items.categories)
+
     def test_undo_stops_where_the_dialog_opened(self):
         self.dialog.reject()
         self.type_name('Changed in another editor')
@@ -136,6 +154,34 @@ class ItemEditorUndoTests(EditorUndoTestCase):
         dialog.undo()
 
         self.assertEqual('Changed in another editor', self.item.name)
+
+
+class CsvImportUndoTests(EditorUndoTestCase):
+    def test_importing_a_csv_is_one_undo_step_for_the_units_it_changes_and_adds(self):
+        import os
+        import tempfile
+        from unittest.mock import MagicMock
+        from app.editor.data_editor import SingleDatabaseEditor
+        from app.editor.unit_editor.new_unit_tab import NewUnitDatabase
+        dialog = self.open(SingleDatabaseEditor, NewUnitDatabase)
+        dialog.tab.on_select('Seth')  # The csv changes a unit not on show
+        unit = DB.units.get(UNIT)
+        old_hp = unit.bases['HP']
+        with tempfile.TemporaryDirectory() as work:
+            fn = os.path.join(work, 'units.csv')
+            with open(fn, 'w') as fp:
+                fp.write('Name,NID,HP_base\n%s,%s,99\nNewbie,Newbie,20\n' % (UNIT, UNIT))
+            # The import remembers its folder in the editor's settings
+            with patch('app.editor.unit_editor.new_unit_tab.MainSettingsController', MagicMock()), \
+                    patch('app.editor.unit_editor.new_unit_tab.QFileDialog.getOpenFileName', return_value=(fn, 'csv')):
+                dialog.tab.import_csv()
+        self.assertEqual(99, unit.bases['HP'])
+        self.assertIn('Newbie', DB.units)
+
+        dialog.undo()
+
+        self.assertEqual(old_hp, unit.bases['HP'])
+        self.assertNotIn('Newbie', DB.units)
 
 
 class IdBoxTests(EditorUndoTestCase):
@@ -344,6 +390,29 @@ class LegacyEditorUndoTests(EditorUndoTestCase):
 
         self.assertIs(faction, DB.factions.get(faction.nid))
         self.assertEqual(faction.nid, DB.levels.get('0').units.get('101').faction)
+
+
+class EmptyCatalogUndoTests(EditorUndoTestCase):
+    def test_undoing_a_catalogs_only_record_leaves_nothing_to_edit_or_record(self):
+        from app.editor.data_editor import SingleDatabaseEditor
+        from app.editor.faction_editor.faction_tab import FactionDatabase
+        DB.factions.clear()
+        self.history.clear()
+        dialog = self.open(SingleDatabaseEditor, FactionDatabase)
+        dialog.tab.left_frame.model.append()
+        faction = DB.factions[0]
+
+        dialog.undo()
+
+        self.assertEqual(0, len(DB.factions))
+        self.assertFalse(dialog.tab.right_frame.isEnabled())
+        self.assertFalse(self.history._is_bound(faction))
+
+        dialog.redo()
+
+        self.assertIs(faction, dialog.tab.right_frame.current)
+        self.assertTrue(dialog.tab.right_frame.isEnabled())
+        self.assertTrue(self.history._is_bound(faction))
 
 
 class ConstantsUndoTests(EditorUndoTestCase):

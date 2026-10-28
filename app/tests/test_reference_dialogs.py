@@ -145,6 +145,23 @@ class EventMentionTests(DialogTestCase):
 
         self.assertEqual([(DType.ITEMS, ITEM, 'Renamed')], renames)
 
+    def test_renaming_a_font_is_heard(self):
+        from PyQt5.QtWidgets import QListView, QWidget
+        from app.data.resources.resource_types import ResourceType as RType
+        from app.editor.edit_history import HISTORY
+        from app.editor.font_editor.font_model import FontModel
+        renames = self.record_renames()
+        window = QWidget()
+        self.addCleanup(window.deleteLater)
+        window.view = QListView(window)
+        model = FontModel(RESOURCES.fonts, window)
+        font = RESOURCES.fonts[0]
+        old_nid = font.nid
+
+        HISTORY.rename(RESOURCES.fonts, font, 'Renamed_Font', model.on_nid_changed)
+
+        self.assertEqual([(RType.FONTS, old_nid, 'Renamed_Font')], renames)
+
     def shown_warnings(self) -> list:
         from PyQt5.QtWidgets import QApplication
         return [w for w in QApplication.topLevelWidgets()
@@ -230,10 +247,113 @@ class EditorTabTests(DialogTestCase):
     def test_deleting_in_the_unit_tab_removes_it_from_levels(self):
         from app.editor.unit_editor.new_unit_tab import NewUnitDatabase
         self.patch_dialog('inform', True)
+        level = DB.levels.get('0')
+        group = level.unit_groups[0]
+        group.units.append(UNIT)
+        group.positions[UNIT] = (1, 1)
+        traveler = next(unit for unit in level.units if unit.nid != UNIT)
+        traveler.starting_traveler = UNIT
         tab = NewUnitDatabase(None, DB, RESOURCES)
         self.assertTrue(tab.delete_from_db(UNIT))
         self.assertNotIn(UNIT, DB.units)
-        self.assertNotIn(UNIT, DB.levels.get('0').units)
+        self.assertNotIn(UNIT, level.units)
+        # With nothing left in the level naming it
+        self.assertNotIn(UNIT, group.units)
+        self.assertNotIn(UNIT, group.positions)
+        self.assertIsNone(traveler.starting_traveler)
+
+
+class PaletteDeletionTests(DialogTestCase):
+    def test_deleting_the_last_palette_leaves_each_animation_its_entry_without_a_palette(self):
+        from PyQt5.QtWidgets import QWidget
+        from app.editor.combat_animation_editor import palette_model
+        from app.editor.edit_history import HISTORY
+        last = RESOURCES.combat_palettes[0].nid
+        for nid in RESOURCES.combat_palettes.keys():
+            if nid != last:
+                RESOURCES.combat_palettes.remove_key(nid)
+        RESOURCES.combat_anims.get('Assassin').palettes.append(['GenericBlue', last])
+        HISTORY.clear()
+        inform = self.patch_dialog('inform', True)
+        get_swap = self.patch_dialog('get_swap', (None, False))
+        window = QWidget()
+        self.addCleanup(window.deleteLater)
+        window.data = RESOURCES.combat_palettes
+
+        self.assertTrue(palette_model.check_delete(last, window))
+
+        get_swap.assert_not_called()  # With no palette left to swap to
+        self.assertIn('Combat Animations', [tab.label for tab in inform.call_args[0][0]])
+        self.assertEqual([['GenericBlue', None]], RESOURCES.combat_anims.get('Assassin').palettes)
+        HISTORY.undo()
+        self.assertEqual([['GenericBlue', last]], RESOURCES.combat_anims.get('Assassin').palettes)
+
+
+class LevelDeletionTests(DialogTestCase):
+    """Deleting a level in the global editor's list takes its events with it"""
+    LEVEL = '1'
+
+    def setUp(self):
+        super().setUp()
+        from app.editor.edit_history import HISTORY
+        from app.editor.global_editor.level_menu import LevelDatabase
+        from app.editor.lib.state_editor.editor_state_manager import EditorStateManager
+        from app.events.node_events import NodeMenuEvent
+        self.events = [event for event in DB.events if event.level_nid == self.LEVEL]
+        self.assertTrue(self.events)
+        self.node = next(node for overworld in DB.overworlds for node in overworld.overworld_nodes
+                         if node.level == self.LEVEL)
+        # A menu option elsewhere runs one of the level's events
+        self.other_node = next(node for overworld in DB.overworlds for node in overworld.overworld_nodes
+                               if node.level != self.LEVEL)
+        self.option = NodeMenuEvent('Visit')
+        self.option.event = self.events[0].nid
+        self.other_node.menu_options.append(self.option)
+        HISTORY.clear()
+        self.history = HISTORY
+        self.levels = LevelDatabase(EditorStateManager())
+        self.addCleanup(self.levels.deleteLater)
+
+    def delete_level(self):
+        self.levels.model.delete(DB.levels.index(self.LEVEL))
+
+    def test_the_level_goes_with_its_events_and_what_names_them_as_one_undo_step(self):
+        inform = self.patch_dialog('inform', True)
+
+        self.delete_level()
+
+        labels = [tab.label for tab in inform.call_args[0][0]]
+        self.assertIn('Deleted Events', labels)
+        self.assertIn('Overworlds', labels)
+        self.assertNotIn(self.LEVEL, DB.levels)
+        for event in self.events:
+            self.assertNotIn(event.nid, DB.events)
+        self.assertIsNone(self.node.level)
+        self.assertIsNone(self.option.event)
+
+        self.history.undo()
+
+        self.assertFalse(self.history.can_undo())
+        self.assertIn(self.LEVEL, DB.levels)
+        self.assertEqual([event.nid for event in self.events],
+                         [event.nid for event in DB.events if event.level_nid == self.LEVEL])
+        # Undo restores an overworld in place, rebuilding its nodes
+        self.assertEqual(self.LEVEL, self.find_node(self.node).level)
+        self.assertEqual(self.events[0].nid, self.find_node(self.other_node).menu_options.get('Visit').event)
+
+    def find_node(self, node):
+        return next(found for overworld in DB.overworlds for found in overworld.overworld_nodes
+                    if found.nid == node.nid)
+
+    def test_cancelling_keeps_the_level_and_its_events(self):
+        self.patch_dialog('inform', False)
+
+        self.delete_level()
+
+        self.assertIn(self.LEVEL, DB.levels)
+        for event in self.events:
+            self.assertIn(event.nid, DB.events)
+        self.assertEqual(self.events[0].nid, self.option.event)
 
 
 if __name__ == '__main__':

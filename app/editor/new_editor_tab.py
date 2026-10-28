@@ -44,12 +44,11 @@ class NewEditorTab(QWidget, Generic[T]):
         self.setWindowTitle(_('%s Editor') % self.properties_type.title)
         self._db = database
         self._res = resources
-        self.categories = self.data.categories
 
         self.left_frame = QWidget()
         left_frame_layout = QVBoxLayout()
         self.left_frame.setLayout(left_frame_layout)
-        self.tree_list = LTNestedList(self, self.data.keys(), self.categories, self.allow_rename,
+        self.tree_list = LTNestedList(self, self.data.keys(), self.data.categories, self.allow_rename,
                                       self.allow_duplicate, self.get_icon, self.get_foreground,
                                       self.on_select, self.resort_db, self.on_begin_rename,
                                       self.delete_from_db, self.create_new, self.duplicate, self.rename,
@@ -110,7 +109,8 @@ class NewEditorTab(QWidget, Generic[T]):
             box.refresh()
         # Rebuilding the list drops its selection, and so the binding, so select
         # the entry again by its nid
-        self.tree_list.reset(self.data.keys(), self.categories)
+        # Rearranging the list puts a new categories object on the catalog, so read it afresh
+        self.tree_list.reset(self.data.keys(), self.data.categories)
         if current is not None:
             self.tree_list.select_item(current.nid)
         else:
@@ -136,7 +136,8 @@ class NewEditorTab(QWidget, Generic[T]):
         if self.data.get(new_nid):
             QMessageBox.warning(self, 'Warning', 'ID %s already in use' % new_nid)
             return False
-        with HISTORY.change_set('Rename %s' % old_nid, origin=self),                 HISTORY.modifying([(self.data.get(old_nid), self.data)]):
+        with HISTORY.change_set('Rename %s' % old_nid, origin=self), \
+                HISTORY.modifying([(self.data.get(old_nid), self.data)]):
             self._on_nid_changed(old_nid, new_nid)
             if isinstance(self.data, ManifestCatalog):
                 self.data.update_nid(self.data.get(old_nid), new_nid)

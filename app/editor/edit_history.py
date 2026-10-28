@@ -33,7 +33,7 @@ import copy
 from dataclasses import dataclass, field
 import logging
 import os
-from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Set, Tuple
 
 from app.data.category import CategorizedCatalog
 from app.data.database import references
@@ -43,6 +43,7 @@ from app.data.database.mcost import McostGrid
 from app.data.database.teams import TeamCatalog
 from app.data.resources.resource_prefab import WithResources
 from app.data.resources.resources import RESOURCES, Resources
+from app.data.resources.tiles import TileMapPrefab
 from app.editor.file_manager.staging import STAGING
 from app.utilities.data import Data
 from app.utilities.typing import NID
@@ -83,6 +84,10 @@ def restore_in_place(record, saved_form) -> None:
     # A slots dataclass, like a font, keeps its fields outside __dict__
     for name in slot_names(type(record)):
         setattr(record, name, getattr(fresh, name))
+    if isinstance(record, TileMapPrefab):
+        # The layers were built for the fresh copy, which they hold as their parent
+        for layer in record.layers:
+            layer.parent = record
     if files is not None:
         # Images cached on the record went with the old fields, so they load again from these
         record.set_file_paths(copy.deepcopy(files))
@@ -208,6 +213,7 @@ class EditHistory:
         self._undo: List[ChangeSet] = []
         self._redo: List[ChangeSet] = []
         self._open: List[ChangeSet] = []  # Nested change sets merge into the outermost
+        self._modifying: Set[int] = set()  # id() of each record an open `modifying` watches
         # id(owner) -> id(record) -> (catalog, record, baseline). An owner is
         # whatever shows the records, usually an editor tab
         self._bound: Dict[int, Dict[int, Tuple[Data, Any, Any]]] = {}
@@ -224,6 +230,7 @@ class EditHistory:
         self._undo.clear()
         self._redo.clear()
         self._open.clear()
+        self._modifying.clear()
         self._bound.clear()
         self._catalogs = {id(data): (data, CatalogState.of(data)) for data in self.watched_catalogs()}
         self._grid = self.db.mcost.save()
@@ -410,7 +417,19 @@ class EditHistory:
     def mark(self) -> ChangeSet | None:
         """A point to come back to with undo_to"""
         self.commit()
+        return self.last_change()
+
+    def last_change(self) -> Optional[ChangeSet]:
+        """The change set undo would take back next, without committing first"""
         return self._undo[-1] if self._undo else None
+
+    def next_redo(self) -> Optional[ChangeSet]:
+        """The change set redo would put back next"""
+        return self._redo[-1] if self._redo else None
+
+    def holds(self, mark: Optional[ChangeSet]) -> bool:
+        """Whether undo_to can still reach mark. None, the empty history, it always can."""
+        return mark is None or any(change_set is mark for change_set in self._undo + self._redo)
 
     def undo_to(self, mark: Optional[ChangeSet]) -> None:
         """Puts everything back as it was at mark and forgets what came after.
@@ -552,6 +571,48 @@ class EditHistory:
         self._shadow = now
 
 
+class EditSession:
+    """The undo steps of a modal editor, like the tilemap editor, from when it opens.
+    Its undo and redo stay within them, never taking back what was done before it
+    opened, and its Cancel takes back every step since it opened, or since the
+    user last chose to keep them. Each step stays in the history once it closes."""
+    def __init__(self, history: EditHistory):
+        self.history = history
+        self.opened = history.mark()
+        self.kept = self.opened
+        self.undone: List[ChangeSet] = []  # The steps this session undid, which it may redo
+
+    def undo(self) -> bool:
+        """Undoes the session's last step, if it has one left. Returns whether it did."""
+        self.history.commit()
+        last = self.history.last_change()
+        if last is None or last is self.opened:
+            return False
+        self.undone.append(self.history.undo())
+        return True
+
+    def redo(self) -> bool:
+        """Redoes the step the session last undid, unless an edit since dropped it.
+        Returns whether it did."""
+        self.history.commit()
+        if not self.undone or self.history.next_redo() is not self.undone[-1]:
+            self.undone.clear()
+            return False
+        self.history.redo()
+        self.undone.pop()
+        return True
+
+    def keep(self) -> None:
+        """Keeps the steps so far through Cancel"""
+        self.kept = self.history.mark()
+
+    def cancel(self) -> None:
+        """Takes back every step since the session opened, or was last kept. A kept
+        step undone and then dropped by a new edit is gone, so it goes back to where
+        the session opened."""
+        self.history.undo_to(self.kept if self.history.holds(self.kept) else self.opened)
+
+
 class _ChangeSetContext:
     def __init__(self, history: EditHistory, label: str, origin):
         self.history, self.label, self.origin = history, label, origin
@@ -574,12 +635,18 @@ class _ModifyingContext:
 
     def __enter__(self):
         self.history.begin()
-        self.before = [(record, data, saved(record)) for record, data in self.records]
+        # A record an enclosing context already watches is recorded by it, from
+        # before either began changing it. Recorded here too, undo would restore
+        # the outer context's before and then this one's, which comes later
+        watching = self.history._modifying
+        self.before = [(record, data, saved(record)) for record, data in self.records if id(record) not in watching]
+        watching.update(id(record) for record, _, _ in self.before)
         return self
 
     def __exit__(self, *exc):
         change_set = self.history._open[0]
         for record, data, before in self.before:
+            self.history._modifying.discard(id(record))
             if self.history._is_bound(record):
                 continue  # A bound record is diffed against its baseline when the set ends
             after = saved(record)

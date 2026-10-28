@@ -1,15 +1,8 @@
-import json
 import os
-from pathlib import Path
-import subprocess
-import sys
 import tempfile
 import unittest
 
-from app.tests.main_window_show import REPORT
-
-# This file is app/tests/test_main_window_show.py, two directories below the repo
-REPO_ROOT = str(Path(__file__).resolve().parents[2])
+from app.tests.main_window_harness import run_report
 
 
 class MainWindowShowTests(unittest.TestCase):
@@ -17,16 +10,9 @@ class MainWindowShowTests(unittest.TestCase):
     entry of the level editor's docks and every overworld node without changing
     anything, as test_editor_show checks the editor windows. Each run is a process
     of its own: see main_window_show.py."""
-    def shown_by_main_window(self, project: str) -> dict:
-        with tempfile.TemporaryDirectory() as work:
-            result = subprocess.run([sys.executable, '-m', 'app.tests.main_window_show', project, work],
-                                    cwd=REPO_ROOT, capture_output=True, text=True, timeout=600)
-        reports = [line[len(REPORT):] for line in result.stdout.splitlines() if line.startswith(REPORT)]
-        self.assertTrue(reports, 'No report. stdout:\n%s\nstderr:\n%s' % (result.stdout[-3000:], result.stderr[-3000:]))
-        return json.loads(reports[-1])
-
     def assert_shows_without_changing(self, project: str):
-        report = self.shown_by_main_window(project)
+        with tempfile.TemporaryDirectory() as work:
+            report = run_report('app.tests.main_window_show', project, work)
         self.assertEqual([], report['errors'])
         self.assertGreater(report['shown'], 0)
         self.assertEqual([], report['changed'])
