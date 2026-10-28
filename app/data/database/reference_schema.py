@@ -106,6 +106,11 @@ class Ref:
     # class's wexp gain per weapon type: a deletion drops the entry without
     # listing every class as affected
     listed: bool = True
+    # True when no two elements of the list holding the reference may name the
+    # same record, like a class's tags or an affinity's bonus per support rank:
+    # swapping a record onto one the list already names drops the element
+    # instead, as a dict key does
+    unique: bool = False
 
 
 @dataclass(frozen=True)
@@ -296,8 +301,8 @@ SCHEMA: Dict[type, Dict[str, FieldDeclarations]] = {
         'tier': NOT_REF,
         'movement_group': Ref(OtherType.MOVEMENT_TYPES),
         'promotes_from': Ref(DType.CLASSES),
-        'turns_into': Ref(DType.CLASSES, '[*]'),
-        'tags': Ref(DType.TAGS, '[*]'),
+        'turns_into': Ref(DType.CLASSES, '[*]', unique=True),
+        'tags': Ref(DType.TAGS, '[*]', unique=True),
         'max_level': NOT_REF,
         'bases': STAT_DICT,
         'growths': STAT_DICT,
@@ -324,7 +329,7 @@ SCHEMA: Dict[type, Dict[str, FieldDeclarations]] = {
         'icon_index': NOT_REF,
     },
     SupportRankBonus: {
-        'support_rank': Ref(DType.SUPPORT_RANKS),
+        'support_rank': Ref(DType.SUPPORT_RANKS, unique=True),
         'damage': NOT_REF,
         'resist': NOT_REF,
         'accuracy': NOT_REF,
@@ -335,7 +340,7 @@ SCHEMA: Dict[type, Dict[str, FieldDeclarations]] = {
         'defense_speed': NOT_REF,
     },
     SupportRankRequirement: {
-        'support_rank': Ref(DType.SUPPORT_RANKS),
+        'support_rank': Ref(DType.SUPPORT_RANKS, unique=True),
         'requirement': NOT_REF,
         'gate': NOT_REF,
         'damage': NOT_REF,
@@ -354,7 +359,7 @@ SCHEMA: Dict[type, Dict[str, FieldDeclarations]] = {
         'variant': NOT_REF,  # names a palette variant of the unit's own sprites, not a record
         'level': NOT_REF,
         'klass': Ref(DType.CLASSES),
-        'tags': Ref(DType.TAGS, '[*]'),
+        'tags': Ref(DType.TAGS, '[*]', unique=True),
         'bases': STAT_DICT,
         'growths': STAT_DICT,
         'stat_cap_modifiers': STAT_DICT,
@@ -362,7 +367,7 @@ SCHEMA: Dict[type, Dict[str, FieldDeclarations]] = {
         'learned_skills': Ref(DType.SKILLS, '[*][1]'),
         'unit_notes': NOT_REF,
         'wexp_gain': Ref(DType.WEAPONS, '{key}', listed=False),
-        'alternate_classes': Ref(DType.CLASSES, '[*]'),
+        'alternate_classes': Ref(DType.CLASSES, '[*]', unique=True),
         'portrait_nid': Ref(RType.PORTRAITS),
         'affinity': Ref(DType.AFFINITIES),
         'fields': NOT_REF,
@@ -447,7 +452,7 @@ SCHEMA: Dict[type, Dict[str, FieldDeclarations]] = {
         'roam_unit': Ref(DType.UNITS),
         'go_to_overworld': NOT_REF,
         'should_record': NOT_REF,
-        'tags': Ref(DType.TAGS, '[*]'),
+        'tags': Ref(DType.TAGS, '[*]', unique=True),
         'units': Nested(),
         'regions': Nested(),
         'unit_groups': Nested(),
@@ -482,7 +487,7 @@ SCHEMA: Dict[type, Dict[str, FieldDeclarations]] = {
     },
     UnitGroup: {
         'nid': NOT_REF,
-        'units': Ref(DType.UNITS, '[*]', local='units'),
+        'units': Ref(DType.UNITS, '[*]', local='units', unique=True),
         'positions': Ref(DType.UNITS, '{key}', local='units'),
     },
     AIGroup: {

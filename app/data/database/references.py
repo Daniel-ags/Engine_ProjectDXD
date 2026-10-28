@@ -344,6 +344,20 @@ class RefSite:
         return self._slot.get()
 
     @property
+    def entry(self) -> Element:
+        """The (container, element) the reference is part of: the element of the
+        last [*] in its path, or else the sub-record holding the field"""
+        return self._slot.element or self.record
+
+    @property
+    def unique(self) -> bool:
+        """Whether no two elements of the reference's container may name the same record"""
+        if self.ref:
+            return self.ref.unique
+        # A list or dict in a component; a component holding one nid is in no list
+        return self._slot.element is not None
+
+    @property
     def listed(self) -> bool:
         """Whether a deletion warning should name this reference's owner"""
         return self.owner is not None and (self.ref is None or self.ref.listed)
@@ -457,15 +471,27 @@ def owners(sites: Iterable[RefSite]) -> Dict[DType, List[Any]]:
     return result
 
 def rewrite(db, target: Target, old_nid: NID, new_nid: NID) -> List[RefSite]:
-    """Points every reference to old_nid at new_nid instead. Returns the references changed."""
+    """Points every reference to old_nid at new_nid instead. Returns the references changed.
+
+    In a unique list that already names new_nid, as a swap onto a tag the class
+    also has makes, the element naming old_nid is removed instead, so the list
+    keeps the one it had."""
     if not old_nid or old_nid == new_nid:
         return []
     sites = find_referrers(db, target, old_nid)
+    taken = set()  # The unique lists already naming new_nid
+    if any(site.unique for site in sites):
+        taken = {id(site.entry[0]) for site in find_referrers(db, target, new_nid) if site.unique}
     for site in sites:
         # Re-reading the value: a swap onto a dict key that already existed
         # removed an entry another site might have pointed at
         if site.value == old_nid:
-            site.set(new_nid)
+            if site.unique and id(site.entry[0]) in taken:
+                _remove(*site.entry)
+            else:
+                site.set(new_nid)
+                if site.unique:
+                    taken.add(id(site.entry[0]))
     return sites
 
 def clear(db, target: Target, nid: NID, fallback: Optional[NID] = None) -> List[RefSite]:

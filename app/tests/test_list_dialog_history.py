@@ -90,6 +90,31 @@ class ListDialogTests(HistoryCase):
         self.assertIn('Sword', DB.tags.keys())
         self.assertEqual(tags, DB.classes.get('Eirika_Lord').tags)
 
+    def test_deleting_a_tag_onto_one_a_class_has_leaves_it_once_and_undoes(self):
+        self.choose_swap('Mounted')
+        klass = DB.classes.get('Eirika_Great_Lord')
+        tags = klass.tags[:]
+        dialog = self.tags()
+
+        dialog.model.delete(DB.tags.keys().index('Horse'))
+
+        self.assertEqual(['Mounted', 'Sword'], klass.tags)
+        self.undo_once()
+        self.assertEqual(tags, klass.tags)
+
+    def test_deleting_a_support_rank_onto_one_with_its_own_rows_keeps_those_rows_and_undoes(self):
+        from app.editor.support_editor.support_ranks import SupportRankDialog
+        self.choose_swap('B')
+        bonus = DB.affinities.get('Fire').bonus
+        before = [(row.support_rank, row.damage) for row in bonus]
+        dialog = self.open(SupportRankDialog.create())
+
+        dialog.model.delete(DB.support_ranks.keys().index('C'))
+
+        self.assertEqual(['B', 'A'], [row.support_rank for row in DB.affinities.get('Fire').bonus])
+        self.undo_once()
+        self.assertEqual(before, [(row.support_rank, row.damage) for row in DB.affinities.get('Fire').bonus])
+
     def test_an_equation_edit_is_one_undo_step(self):
         from app.editor.equation_widget import EquationDialog
         expression = DB.equations.get('HIT').expression

@@ -538,6 +538,59 @@ class SwapTests(ReferenceTestCase):
 
         self.assertEqual(['Armor'], DB.classes.get('Eirika_Lord').tags)
 
+    def test_swapping_a_tag_onto_one_the_class_already_has_keeps_one(self):
+        references.rewrite(DB, DType.TAGS, 'Horse', 'Mounted')
+
+        self.assertEqual(['Mounted', 'Sword'], DB.classes.get('Eirika_Great_Lord').tags)
+
+    def test_swapping_a_class_onto_another_promotion_already_offered_keeps_one(self):
+        references.rewrite(DB, DType.CLASSES, 'Assassin', 'Swordmaster')
+
+        self.assertEqual(['Swordmaster'], DB.classes.get('Myrmidon').turns_into)
+
+    def test_swapping_a_unit_onto_another_member_of_its_group_keeps_one(self):
+        group = UnitGroup('Group', [UNIT, 'Seth'], {})
+        self.level.unit_groups.append(group)
+
+        references.rewrite(DB, DType.UNITS, UNIT, 'Seth')
+
+        self.assertEqual(['Seth'], group.units)
+
+    def test_swapping_a_support_rank_onto_one_with_its_own_row_keeps_that_row(self):
+        bonus = DB.affinities.get('Fire').bonus
+        kept_bonus = bonus[1]
+        requirements = DB.support_pairs.get('Eirika | Seth').requirements
+        kept_requirement = requirements[1]
+
+        references.rewrite(DB, DType.SUPPORT_RANKS, 'C', 'B')
+
+        self.assertEqual(['B', 'A'], [row.support_rank for row in bonus])
+        self.assertIs(kept_bonus, bonus[0])
+        self.assertEqual(['B', 'A'], [row.support_rank for row in requirements])
+        self.assertIs(kept_requirement, requirements[0])
+
+    def test_swapping_onto_an_entry_a_component_list_already_has_keeps_one(self):
+        prf = self.give_item('prf_affinity', ['Light', 'Dark'])
+
+        references.rewrite(DB, DType.AFFINITIES, 'Light', 'Dark')
+
+        self.assertEqual(['Dark'], prf.value)
+
+    def test_a_list_naming_the_old_record_twice_names_the_new_one_once(self):
+        DB.classes.get('Eirika_Lord').tags = ['Sword', 'Sword']
+
+        references.rewrite(DB, DType.TAGS, 'Sword', 'Armor')
+
+        self.assertEqual(['Armor'], DB.classes.get('Eirika_Lord').tags)
+
+    def test_a_list_that_allows_repeats_keeps_both_entries(self):
+        unit = DB.units.get(UNIT)
+        unit.starting_items = [[ITEM, False], ['Slim_Sword', False]]
+
+        references.rewrite(DB, DType.ITEMS, ITEM, 'Slim_Sword')
+
+        self.assertEqual([['Slim_Sword', False], ['Slim_Sword', False]], unit.starting_items)
+
     def test_swapping_a_weapon_rank_moves_item_components(self):
         references.rewrite(DB, DType.WEAPON_RANKS, 'E', 'D')
 
