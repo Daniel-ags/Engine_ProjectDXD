@@ -23,6 +23,10 @@ class MainWindowUndoTests(unittest.TestCase):
         self.assertEqual(dict(after_item, moved=False), after_unit)
         self.assertEqual(dict(after_unit, title=edited['title'][:-len(' Edited')]), after_title)
 
+        # The Undo menu item names what it would undo, and the status bar what it did
+        self.assertEqual('Undo edit to %s (Items)' % report['item'], report['undo_text'])
+        self.assertEqual('Undid edit to %s (Items)' % report['item'], report['feedback'])
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -64,6 +64,16 @@ class ItemEditorUndoTests(EditorUndoTestCase):
         self.dialog.redo()
         self.assertEqual('Renamed Sword', self.item.name)
 
+    def test_undo_and_redo_say_what_they_changed(self):
+        self.type_name('Renamed Sword')
+
+        self.dialog.undo()
+        self.assertEqual('Undid edit to %s (Items)' % ITEM, self.dialog.undo_feedback.text())
+        self.dialog.redo()
+        self.assertEqual('Redid edit to %s (Items)' % ITEM, self.dialog.undo_feedback.text())
+        self.dialog.redo()
+        self.assertEqual('Nothing to redo', self.dialog.undo_feedback.text())
+
     def test_closing_keeps_the_edits_and_undo_still_takes_them_back(self):
         old_name = self.item.name
         self.type_name('Renamed Sword')

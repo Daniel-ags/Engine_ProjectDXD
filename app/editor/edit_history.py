@@ -508,6 +508,70 @@ class EditHistory:
         """The change set redo would put back next"""
         return self._redo[-1] if self._redo else None
 
+    def describe(self, change_set: ChangeSet) -> str:
+        """What a change set changed, in a few words for the user, to follow "Undo"
+        or "Undid". Most change sets are labelled only 'Edit', so those are told by
+        the records they changed: "edit to Iron Sword (Items)", "edits to Iron Sword,
+        Steel Sword +3 (Items)", "adding Iron Sword (Items)". A labelled one, like a
+        rename, says how many records it changed besides its own."""
+        changed: Dict[int, Tuple[Data, Any]] = {}  # id(record) -> (catalog, record), in order
+        added, removed = set(), set()
+        reordered: List[Data] = []
+        grid = False
+        for delta in change_set.deltas:
+            if isinstance(delta, CatalogChange):
+                before = {id(member) for member in delta.before.members}
+                after = {id(member) for member in delta.after.members}
+                for member in delta.after.members + delta.before.members:
+                    if (id(member) in before) != (id(member) in after):
+                        (removed if id(member) in before else added).add(id(member))
+                        changed.setdefault(id(member), (delta.catalog, member))
+                if before == after:
+                    reordered.append(delta.catalog)
+            elif isinstance(delta, GridChange):
+                grid = True
+            else:
+                changed.setdefault(id(delta.record), (delta.catalog, delta.record))
+
+        if change_set.label != 'Edit':
+            what = change_set.label[:1].lower() + change_set.label[1:]
+            # A movement type renamed or deleted is a column of the grid, not a record
+            others = len(changed) - (0 if grid else 1)
+            if others > 0 and change_set.label.startswith(('Rename ', 'Delete ')):
+                what += ' (and %d %s naming it)' % (others, 'record' if others == 1 else 'records')
+            return what
+        if not changed:
+            if grid:
+                return 'edit to movement costs'
+            if reordered:
+                return 'reordering %s' % self.catalog_name(reordered[0])
+            return 'edit'
+        if added.issuperset(changed):
+            verb = 'adding'
+        elif removed.issuperset(changed):
+            verb = 'removing'
+        else:
+            verb = 'edit to' if len(changed) == 1 else 'edits to'
+        nids = [str(record.nid) for _, record in changed.values()]
+        what = '%s %s' % (verb, ', '.join(nids[:2]))
+        if len(nids) > 2:
+            what += ' +%d' % (len(nids) - 2)
+        catalogs = {id(data): data for data, _ in changed.values()}
+        if len(catalogs) == 1:
+            what += ' (%s)' % self.catalog_name(next(iter(catalogs.values())))
+        return what
+
+    def catalog_name(self, data: Data) -> str:
+        """A watched catalog's name, from its name on the database or resources"""
+        for dtype in references.OWNER_TYPES:
+            if references.catalog(self.db, dtype) is data:
+                name = dtype.name
+                break
+        else:
+            name = next(name for name in Resources.save_data_types if getattr(self.resources, name) is data)
+        # AI, SFX
+        return name.upper() if len(name) <= 3 else name.replace('_', ' ').title()
+
     def undo_to(self, mark: Optional[ChangeSet]) -> None:
         """Puts everything back as it was at mark and forgets what came after.
         A mark that history has since dropped off its end undoes as far as

@@ -10,7 +10,8 @@ The level editor's edits are a field typed in, finished by focus moving on, then
 unit moved on the map, finished by the mouse button's release. The first undo is
 Ctrl+Z pressed in a main window field with no typing of its own to undo. The report
 lists, after each undo, the level's title, whether the unit is where it was moved
-to, and the item's name, with any exception raised.
+to, and the item's name, with any exception raised, and what the Undo menu item and
+the status bar say of the first undo.
 """
 from app.tests.main_window_harness import open_main_window, report
 
@@ -61,6 +62,8 @@ def main(source_proj: str, work: str) -> dict:
                 'item': item.name}
 
     states = [state()]
+    window.update_undo_actions()  # As the Edit menu opening does
+    undo_text = window.undo_act.text()
     # The first undo is Ctrl+Z in a field of the main window that has no typing of its own to undo
     window.activateWindow()
     settle()
@@ -69,11 +72,13 @@ def main(source_proj: str, work: str) -> dict:
     QTest.keyClick(menu.win_condition.edit, Qt.Key_Z, Qt.ControlModifier)
     settle()
     states.append(state())
+    feedback = window.undo_feedback.text()
     for _ in range(2):
         HISTORY.undo()
         settle()
         states.append(state())
-    return {'states': states, 'errors': run.errors}
+    return {'states': states, 'errors': run.errors, 'item': item.nid,
+            'undo_text': undo_text, 'feedback': feedback}
 
 
 if __name__ == '__main__':

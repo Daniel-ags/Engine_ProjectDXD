@@ -5,6 +5,7 @@ from unittest.mock import patch
 from app.data.database.database import DB
 from app.data.database.database_types import DatabaseType as DType
 from app.data.database.items import ItemPrefab
+from app.data.database.reference_schema import OtherType
 from app.data.serialization.versions import CURRENT_SERIALIZATION_VERSION
 from app.editor import edit_history
 from app.editor.edit_history import HISTORY, MAX_CHANGE_SETS
@@ -247,6 +248,65 @@ class CascadeTests(HistoryTestCase):
         HISTORY.undo()
         self.assertEqual('0', event.level_nid)
         self.assertIs(event, DB.events.get_from_nid('0 ' + event.name))
+
+
+class DescribeTests(HistoryTestCase):
+    def describe_last(self) -> str:
+        return HISTORY.describe(HISTORY.last_change())
+
+    def test_an_edit_names_its_record_and_catalog(self):
+        self.unit.name = 'Somebody Else'
+        HISTORY.commit()
+        self.assertEqual('edit to %s (Units)' % UNIT, self.describe_last())
+        # Undone, it is described the same
+        self.assertEqual('edit to %s (Units)' % UNIT, HISTORY.describe(HISTORY.undo()))
+
+    def test_edits_to_many_records_name_the_first_two(self):
+        items = DB.items[:4]
+        with HISTORY.modifying([(item, DB.items) for item in items]):
+            for item in items:
+                item.desc = 'Changed'
+        self.assertEqual('edits to %s, %s +2 (Items)' % (items[0].nid, items[1].nid), self.describe_last())
+
+    def test_edits_in_several_catalogs_name_none(self):
+        item = DB.items[0]
+        with HISTORY.modifying([(item, DB.items)]):
+            self.unit.name = 'Somebody Else'
+            item.desc = 'Changed'
+        self.assertIn(self.describe_last(), ['edits to %s, %s' % (UNIT, item.nid), 'edits to %s, %s' % (item.nid, UNIT)])
+
+    def test_adding_and_reordering(self):
+        DB.items.append(ItemPrefab('New_Item', 'New Item', ''))
+        HISTORY.commit()
+        self.assertEqual('adding New_Item (Items)', self.describe_last())
+        DB.items.move_index(0, 3)
+        HISTORY.commit()
+        self.assertEqual('reordering Items', self.describe_last())
+
+    def test_the_movement_cost_grid(self):
+        DB.mcost.set((0, 0), DB.mcost.get((0, 0)) + 1)
+        HISTORY.commit()
+        self.assertEqual('edit to movement costs', self.describe_last())
+
+    def test_a_movement_type_renamed_counts_every_record_naming_it(self):
+        mtype = DB.mcost.unit_types[0]
+        users = [klass for klass in DB.classes if klass.movement_group == mtype]
+        self.assertTrue(users)
+        with HISTORY.change_set('Rename %s' % mtype):
+            DB.mcost.unit_types[0] = NEW
+            HISTORY.rewrite(OtherType.MOVEMENT_TYPES, mtype, NEW)
+        self.assertEqual('rename %s (and %d record%s naming it)' % (mtype, len(users), '' if len(users) == 1 else 's'),
+                         self.describe_last())
+
+    def test_a_rename_counts_the_records_naming_it(self):
+        item = DB.items.get(ITEM)
+        with HISTORY.change_set('Rename %s' % ITEM), HISTORY.modifying([(item, DB.items)]):
+            HISTORY.rewrite(DType.ITEMS, ITEM, NEW)
+            DB.items.change_key(ITEM, NEW)
+        # Eirika and whatever else names it
+        others = len({id(delta.record) for delta in HISTORY.last_change().deltas}) - 1
+        self.assertGreater(others, 1)
+        self.assertEqual('rename %s (and %d records naming it)' % (ITEM, others), self.describe_last())
 
 
 class MarkTests(HistoryTestCase):

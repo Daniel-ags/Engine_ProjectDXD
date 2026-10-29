@@ -24,7 +24,7 @@ from app.data.database.database import DB
 
 from app.editor import log_viewer, timer, error_viewer, reference_dialogs
 from app.editor.custom_widgets import ObjBox
-from app.editor.data_editor import EditHistoryDialog, handles_own_undo
+from app.editor.data_editor import EditHistoryDialog, UndoFeedback, handles_own_undo
 from app.editor.edit_history import HISTORY
 from app.editor.editor_windows import EditorWindows
 
@@ -163,6 +163,7 @@ class MainEditor(QMainWindow):
 
         self.history_changed = False
         HISTORY.listen(self.on_history_changed)
+        self.update_undo_actions()
         # A rename leaves event scripts as they are, so the user hears which lines still name the old nid
         HISTORY.listen_to_renames(reference_dialogs.warn_of_event_mentions)
         # The level and overworld editors change their records in place, which the
@@ -212,6 +213,9 @@ class MainEditor(QMainWindow):
             HISTORY.commit(origin=EditHistoryDialog.tab_holding(old))
 
     def on_history_changed(self, origin, change_set):
+        # A disabled action's shortcut does nothing, so the actions keep up with
+        # every change, not only when the menu opens
+        self.update_undo_actions()
         # Editor windows change the database beside this window. What this window
         # changed it shows already, and showing it again would drop its selections
         if origin is not None and self.holds(origin):
@@ -409,11 +413,24 @@ class MainEditor(QMainWindow):
 
     def undo(self):
         self.finish_editing()
-        HISTORY.undo()
+        self.undo_feedback.show_step(HISTORY.undo(), redo=False)
 
     def redo(self):
         self.finish_editing()
-        HISTORY.redo()
+        self.undo_feedback.show_step(HISTORY.redo(), redo=True)
+
+    def update_undo_actions(self):
+        """Names what Undo and Redo would change, as far as the history has committed,
+        and greys out whichever has nothing to do"""
+        def described(change_set) -> str:
+            # A menu takes & for a shortcut key
+            return HISTORY.describe(change_set).replace('&', '&&')
+
+        last, next_redo = HISTORY.last_change(), HISTORY.next_redo()
+        self.undo_act.setEnabled(last is not None)
+        self.undo_act.setText(_("Undo %s") % described(last) if last else _("Undo"))
+        self.redo_act.setEnabled(next_redo is not None)
+        self.redo_act.setText(_("Redo %s") % described(next_redo) if next_redo else _("Redo"))
 
     def edit_level(self):
         self.app_state_manager.change_and_broadcast(
@@ -443,6 +460,7 @@ class MainEditor(QMainWindow):
         file_menu.addAction(self.quit_act)
 
         edit_menu = QMenu(_("Edit"), self)
+        edit_menu.aboutToShow.connect(self.update_undo_actions)
         edit_menu.addAction(self.undo_act)
         edit_menu.addAction(self.redo_act)
         edit_menu.addSeparator()
@@ -521,6 +539,9 @@ class MainEditor(QMainWindow):
 
     def create_statusbar(self):
         self.status_bar = self.statusBar()
+        # Permanent, so no status message hides it
+        self.undo_feedback = UndoFeedback(self)
+        self.status_bar.addPermanentWidget(self.undo_feedback)
 
     def set_message(self, msg):
         if msg:

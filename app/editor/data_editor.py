@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import List
+from typing import List, Optional
 
 from PyQt5 import QtGui, sip
 from PyQt5.QtWidgets import QAbstractButton, QAbstractItemView, QAbstractSpinBox, QApplication, QComboBox, \
@@ -74,6 +74,24 @@ def handles_own_undo(widget, redo: bool) -> bool:
         return document.isRedoAvailable() if redo else document.isUndoAvailable()
     return False
 
+class UndoFeedback(QLabel):
+    """Says what an undo or redo just took back or put back, for a few seconds"""
+    SHOWN_FOR = 5000  # ms
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.clear_timer = QTimer(self)
+        self.clear_timer.setSingleShot(True)
+        self.clear_timer.timeout.connect(self.clear)
+
+    def show_step(self, change_set: Optional[ChangeSet], redo: bool) -> None:
+        """change_set is what HISTORY.undo or redo returned, None when there was nothing to do"""
+        if change_set is None:
+            self.setText(_("Nothing to redo") if redo else _("Nothing to undo"))
+        else:
+            self.setText((_("Redid %s") if redo else _("Undid %s")) % HISTORY.describe(change_set))
+        self.clear_timer.start(self.SHOWN_FOR)
+
 class EditHistoryDialog(QDialog):
     """
     A dialog whose edits go into the edit history. Closing it keeps them all: undo is
@@ -96,6 +114,8 @@ class EditHistoryDialog(QDialog):
 
     def start_history(self):
         self.history_running = True
+        # Beside the buttons, which each subclass places
+        self.undo_feedback = UndoFeedback(self)
         EditHistoryDialog.running.append(self)
         self.changes = []  # (origin, change set) of each change no tab shows yet
         app = QApplication.instance()
@@ -215,12 +235,12 @@ class EditHistoryDialog(QDialog):
 
     def undo(self):
         self.finish_editing()
-        HISTORY.undo()
+        self.undo_feedback.show_step(HISTORY.undo(), redo=False)
         self.show_changes()
 
     def redo(self):
         self.finish_editing()
-        HISTORY.redo()
+        self.undo_feedback.show_step(HISTORY.redo(), redo=True)
         self.show_changes()
 
 class SingleDatabaseEditor(EditHistoryDialog):
@@ -262,6 +282,7 @@ class SingleDatabaseEditor(EditHistoryDialog):
         self.setLayout(self.grid)
 
         self.buttonbox = self.button_box(picker)
+        self.grid.addWidget(self.undo_feedback, 1, 0)
         self.grid.addWidget(self.buttonbox, 1, 1)
 
     def history_tabs(self) -> list:
@@ -395,6 +416,7 @@ class SingleResourceEditor(EditHistoryDialog):
         self.setLayout(self.grid)
 
         self.buttonbox = self.button_box(picker)
+        self.grid.addWidget(self.undo_feedback, 1, 0)
         self.grid.addWidget(self.buttonbox, 1, 1)
 
         self.tab = tab.create(self, *args, **kwargs)
@@ -454,6 +476,7 @@ class MultiResourceEditor(SingleResourceEditor):
         self.setLayout(self.grid)
 
         self.buttonbox = self.button_box(picker=False)
+        self.grid.addWidget(self.undo_feedback, 1, 0)
         self.grid.addWidget(self.buttonbox, 1, 1)
 
         self.tab_bar = QTabWidget(self)
