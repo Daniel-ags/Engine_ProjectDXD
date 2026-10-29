@@ -9,6 +9,10 @@ from app.editor.data_editor import SingleDatabaseEditor
 from app.editor.event_editor import event_model, event_properties
 
 class EventDatabase(DatabaseTab):
+    # Its script highlighting checks commands against the event's level: its units,
+    # unit groups and map size
+    reads_maps = True
+
     @classmethod
     def create(cls, parent=None):
         data = DB.events

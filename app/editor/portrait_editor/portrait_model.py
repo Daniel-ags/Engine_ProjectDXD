@@ -22,9 +22,7 @@ def get_chibi(portrait_nid):
         return None
     if not res.pixmap:
         res.pixmap = QPixmap(res.full_path)
-    pixmap = res.pixmap.copy(*res.get_minimug())
-    pixmap = QPixmap.fromImage(editor_utilities.convert_colorkey(pixmap.toImage()))
-    return pixmap
+    return editor_utilities.cut_icon(res.pixmap, *res.get_minimug())
 
 def auto_frame_portrait(portrait: PortraitPrefab, progress_dialog: QProgressDialog = None):
     def test_similarity(im1: QImage, im2: QImage, size: tuple) -> int:

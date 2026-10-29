@@ -237,7 +237,8 @@ class EventCollection(QWidget):
     def show(self, event: EventPrefab):
         """Shows event in the form, and watches it for edits"""
         if self.display:
-            HISTORY.commit(origin=self.window)
+            # Showing writes nothing, so the bind's commit records the edits to the
+            # event shown before
             self.display.set_current(event)
             self.display.setEnabled(True)
             HISTORY.bind(event, self._data, self.window)
@@ -354,6 +355,15 @@ class EventCollection(QWidget):
                 self.__class__.__name__, 'last_event',
                 [project, current.nid, self.level_filter_box.edit.currentText()])
         return super().hideEvent(event)
+
+def show_text(edit: QPlainTextEdit, text: Optional[str], shown_again: bool) -> bool:
+    """Puts text in edit, unless edit shows it already for the event shown again.
+    Setting it again would move the cursor and scroll to the start and drop the
+    field's own undo. Returns whether it set the text."""
+    if shown_again and edit.toPlainText() == (text or ''):
+        return False
+    edit.setPlainText(text)
+    return True
 
 class EventProperties(QWidget):
     def __init__(self, parent, current=None):
@@ -626,6 +636,8 @@ class EventProperties(QWidget):
             self.text_box.set_function_hinter(EventScriptFunctionHinter)
 
     def set_current(self, current: EventPrefab):
+        # The tab shows its event again after every change in another window
+        shown_again = current is self.current
         self.current = current
         self.level_nid_box.edit.set_choices(["Global"] + DB.levels.keys())
         self.name_box.edit.setText(current.name)
@@ -640,21 +652,25 @@ class EventProperties(QWidget):
             self.trigger_box.edit.setValue(current.trigger)
         else:
             self.trigger_box.edit.setValue("None")
-        self.condition_box.edit.setPlainText(current.condition)
+        show_text(self.condition_box.edit, current.condition, shown_again)
         self.only_once_box.edit.setChecked(bool(current.only_once))
         self.priority_box.edit.setValue(current.priority)
 
         if self.current.version() == EventVersion.EVENT:
             if not self.current.source:
                 self.current.source = '\n'.join([str(cmd) for cmd in self.current.commands])
-            self.text_box.setPlainText(self.current.source)
+            script_kept = not show_text(self.text_box, self.current.source, shown_again)
             self.set_editor_language(self.current.version())
         else:
-            self.text_box.setPlainText(self.current.source)
+            script_kept = not show_text(self.text_box, self.current.source, shown_again)
             self.set_editor_language(self.current.version())
+        if script_kept:
+            # Its highlighting checks commands against the event's level, which may have changed
+            self.highlighter.rehighlight()
+        else:
+            # Reset red dot
+            self.text_box.debug_point_line_number = None
         self.set_test_event_button_visible()
-        # Reset red dot
-        self.text_box.debug_point_line_number = None
 
     def hideEvent(self, event):
         self.close_map()

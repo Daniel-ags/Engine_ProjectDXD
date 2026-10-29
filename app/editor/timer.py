@@ -2,7 +2,7 @@ import time
 
 from typing import Callable
 
-from PyQt5.QtWidgets import QApplication, QDockWidget, QWidget
+from PyQt5.QtWidgets import QDockWidget, QWidget
 from PyQt5.QtCore import QObject, QTimer, pyqtSignal
 
 from app import constants
@@ -59,7 +59,10 @@ class _TickGate(QObject):
         self.slot = slot
 
     def on_tick(self):
-        if in_active_window(self.parent()):
+        widget = self.parent()
+        # Called unbound, like QWidget.window below. A widget hidden behind another
+        # tab or editor redraws on the first tick after it shows again
+        if QWidget.isVisible(widget) and in_active_window(widget):
             self.slot()
 
 def in_active_window(widget: QWidget) -> bool:
@@ -71,7 +74,7 @@ def in_active_window(widget: QWidget) -> bool:
     return window.isActiveWindow()
 
 def connect_tick(widget: QWidget, slot: Callable[[], None]) -> None:
-    """Calls slot on each tick while widget is in the window being worked in. Windows
-    in the background, and windows closed, don't redraw."""
+    """Calls slot on each tick while widget is on show in the window being worked in.
+    Windows in the background, windows closed, and widgets hidden don't redraw."""
     gate = _TickGate(widget, slot)
     get_timer().tick_elapsed.connect(gate.on_tick)

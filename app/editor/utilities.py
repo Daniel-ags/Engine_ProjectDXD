@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from collections import OrderedDict
 from PyQt5 import QtGui
 from PyQt5.QtCore import Qt
 
-from typing import Dict, Set, Optional
+from typing import Callable, Dict, Hashable, Set, Optional
 from app.utilities.typing import Color3
 
 from app.constants import COLORKEY
@@ -14,6 +15,38 @@ from app.data.resources.default_palettes import blue as default_blue_palette
 qCOLORKEY = QtGui.qRgb(*COLORKEY)
 qEFFECT_COLORKEY = QtGui.qRgb(0, 0, 0)
 qAlpha = QtGui.qRgba(0, 0, 0, 0)
+
+class PixmapCache:
+    """Pixmaps made from others, most recently used last, for lists and maps that
+    ask for the same ones on every redraw. A key must hold everything its pixmap
+    is made from, so it never goes stale: a source pixmap by its cacheKey(), which
+    changes whenever the pixmap does. Callers share what it returns and never
+    paint on it."""
+    def __init__(self, size: int):
+        self.size = size
+        self.pixmaps: OrderedDict = OrderedDict()
+
+    def get(self, key: Hashable, make: Callable[[], QtGui.QPixmap]) -> QtGui.QPixmap:
+        pixmap = self.pixmaps.get(key)
+        if pixmap is not None:
+            self.pixmaps.move_to_end(key)
+            return pixmap
+        pixmap = make()
+        self.pixmaps[key] = pixmap
+        if len(self.pixmaps) > self.size:
+            self.pixmaps.popitem(last=False)
+        return pixmap
+
+    def clear(self):
+        self.pixmaps.clear()
+
+# Cut from icon sheets and portraits, with the colorkey made transparent
+ICON_CUTS = PixmapCache(4096)
+
+def cut_icon(sheet: QtGui.QPixmap, x: int, y: int, width: int, height: int) -> QtGui.QPixmap:
+    """The part of sheet at x, y, with its colorkey transparent"""
+    return ICON_CUTS.get((sheet.cacheKey(), x, y, width, height), lambda: QtGui.QPixmap.fromImage(
+        convert_colorkey(sheet.copy(x, y, width, height).toImage())))
 
 def rgb_convert(conversion: Dict[Color3, Color3]) -> Dict[QtGui.qRgb, QtGui.qRgb]:
     return {QtGui.qRgb(*k): QtGui.qRgb(*v) for k, v in conversion.items()}

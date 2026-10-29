@@ -38,6 +38,9 @@ class IconTab(QWidget):
     side_menu_enabled: bool = False
     # Whether the tab can show its data again after an undo changes it
     supports_undo = True
+    # Whether what it shows comes in part from levels, overworlds or tilemaps, so a
+    # map edit in the main window changes it (EditHistoryDialog.show_changes)
+    reads_maps = False
 
     def __init__(self, data, title, model, parent=None, initial_icon_nid=None):
         super().__init__(parent)

@@ -84,7 +84,7 @@ class TileSetEditor(QDialog):
         self.resize(*default_size)
 
         self.current: TileSet = current
-        # Undo and redo here reach only this editor's steps; Cancel takes them back
+        # Undo and redo here reach only this editor's steps
         self.session = EditSession(HISTORY)
         HISTORY.bind(self.current, RESOURCES.tilesets, self)
         self.current_tool = PaintTool.NoTool
@@ -121,9 +121,9 @@ class TileSetEditor(QDialog):
         self.setLayout(self.layout)
         self.layout.addWidget(self.main_splitter)
 
-        self.buttonbox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, Qt.Horizontal, self)
+        # Like every editor window, it keeps its edits, which undo takes back
+        self.buttonbox = QDialogButtonBox(QDialogButtonBox.Close, Qt.Horizontal, self)
         self.layout.addWidget(self.buttonbox)
-        self.buttonbox.accepted.connect(self.accept)
         self.buttonbox.rejected.connect(self.reject)
 
         self.check_brush()
@@ -248,22 +248,12 @@ class TileSetEditor(QDialog):
         self.load_image()
         self.view.update_view()
 
-    def accept(self):
+    def done(self, result):
+        # Close, Escape and the window's X all keep the edits
         self.commit_edit()
         HISTORY.unbind(self)
         self.save_geometry()
-        super().accept()
-
-    def reject(self):
-        self.commit_edit()
-        self.session.cancel()
-        HISTORY.unbind(self)
-        self.save_geometry()
-        super().reject()
-
-    def closeEvent(self, event):
-        self.save_geometry()
-        super().closeEvent(event)
+        super().done(result)
 
     def _type(self):
         return 'tileset_editor'

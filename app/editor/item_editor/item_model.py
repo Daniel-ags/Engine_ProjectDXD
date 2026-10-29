@@ -16,9 +16,7 @@ def get_pixmap(item):
         return None
     if not res.pixmap:
         res.pixmap = QPixmap(res.full_path)
-    pixmap = res.pixmap.copy(x*16, y*16, 16, 16)
-    pixmap = QPixmap.fromImage(editor_utilities.convert_colorkey(pixmap.toImage()))
-    return pixmap
+    return editor_utilities.cut_icon(res.pixmap, x*16, y*16, 16, 16)
 
 class ItemModel(DragDropCollectionModel):
     def data(self, index, role):

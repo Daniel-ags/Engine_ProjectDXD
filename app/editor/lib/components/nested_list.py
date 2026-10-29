@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Iterator, List, Optional, Tuple
+import functools
+from typing import Callable, Dict, Iterator, List, Optional, Set, Tuple
 
 from PyQt5 import QtCore
 from PyQt5.QtCore import QSize, QItemSelection, QModelIndex
@@ -14,13 +15,21 @@ from app.data.category import Categories
 from app.utilities import str_utils
 from app.utilities.typing import NID
 
+# Lists ask for these for every entry and folder each time they rebuild, so each is
+# made once; the folder's picture comes from disk
+@functools.lru_cache(maxsize=None)
 def create_empty_icon(w: int, h: int):
     pixmap = QPixmap(QSize(w, h))
     pixmap.fill(QtCore.Qt.transparent)
     return QIcon(pixmap)
 
+@functools.lru_cache(maxsize=None)
+def _folder_sprite(size: int) -> QPixmap:
+    return QPixmap(QImage('resources/editor_folder.png')).scaled(size, size)
+
 def create_folder_icon(contents_icon: Optional[QIcon], size: int) -> QIcon:
-    folder_sprite = QPixmap(QImage('resources/editor_folder.png')).scaled(size, size)
+    # A copy, to paint on
+    folder_sprite = _folder_sprite(size).copy()
     if contents_icon:
         contents_pixmap = contents_icon.pixmap(QSize(size // 2, size // 2))
         painter = QPainter(folder_sprite)
@@ -238,19 +247,56 @@ class LTNestedList(QWidget):
     def refresh_search_list(self, select_nid: Optional[NID] = None):
         """Rebuild the results so entries added or removed behind the filter show up."""
         self.on_filter_changed(self.search_box.text())
+        self.show_in_search_list(select_nid)
+
+    def show_in_search_list(self, nid: Optional[NID]):
         for i in range(self.search_list.count()):
-            if self.search_list.item(i).text() == select_nid:
+            if self.search_list.item(i).text() == nid:
                 self.search_list.setCurrentRow(i)
                 return
 
     def reset(self, list_entries: Optional[List[NID]], list_categories: Optional[Categories]):
+        """Builds the tree again from these entries, keeping its open folders, scroll,
+        selection and filter"""
         previous_selected_item_nid = self.get_selected_nid()
+        expanded = self.expanded_categories()
+        scroll = self.tree_widget.verticalScrollBar().value()
         self.tree_widget.clear()
         self._build_tree_widget_in_place(list_entries, list_categories, self.tree_widget.invisibleRootItem())
+        self.expand_categories(expanded)
         self.regenerate_icons(initial_generation=True)
+        # The scroll bar's range follows the rows once they are laid out
+        self.tree_widget.doItemsLayout()
+        self.tree_widget.verticalScrollBar().setValue(scroll)
+        # The results come from the tree, so they are built again too
+        self.on_filter_changed(self.search_box.text())
         should_select = self.find_item_by_nid(previous_selected_item_nid)
         if should_select:
             self.select_item(should_select)
+
+    def expanded_categories(self) -> Set[Tuple[str, ...]]:
+        """The path of each open folder"""
+        expanded = set()
+        def recurse(root: QTreeWidgetItem, path: Tuple[str, ...]):
+            for i in range(root.childCount()):
+                child = root.child(i)
+                if child.data(0, IsCategoryRole):
+                    child_path = path + (child.text(0),)
+                    if child.isExpanded():
+                        expanded.add(child_path)
+                    recurse(child, child_path)
+        recurse(self.tree_widget.invisibleRootItem(), ())
+        return expanded
+
+    def expand_categories(self, expanded: Set[Tuple[str, ...]]):
+        def recurse(root: QTreeWidgetItem, path: Tuple[str, ...]):
+            for i in range(root.childCount()):
+                child = root.child(i)
+                if child.data(0, IsCategoryRole):
+                    child_path = path + (child.text(0),)
+                    child.setExpanded(child_path in expanded)
+                    recurse(child, child_path)
+        recurse(self.tree_widget.invisibleRootItem(), ())
 
     def build_tree_widget(self, tree_widget: QTreeWidget, list_entries: Optional[List[NID]], list_categories: Optional[Categories]):
         self._build_tree_widget_in_place(list_entries, list_categories, tree_widget.invisibleRootItem())
@@ -414,6 +460,7 @@ class LTNestedList(QWidget):
             self.tree_widget.selectionModel().clearSelection()
             item.setSelected(True)
             self.tree_widget.scrollToItem(item)
+            self.show_in_search_list(item.text(0))
         else:
             if self.on_click_item:
                 self.on_click_item(None)

@@ -2,7 +2,6 @@ from PyQt5.QtWidgets import QWidget, QGridLayout, QListView, QPushButton, \
     QDialog
 from PyQt5.QtCore import QSize
 
-from app.editor import tilemap_editor
 from app.editor import tileset_editor
 from app.editor.tileset_editor import TileSetEditor
 from app.data.resources.resources import RESOURCES
@@ -67,6 +66,9 @@ from app.extensions.delete_list_view import DeleteListView
 class TileTab(QWidget):
     # Whether the tab can show its data again after an undo changes it
     supports_undo = True
+    # Whether what it shows comes in part from levels, overworlds or tilemaps, so a
+    # map edit in the main window changes it (EditHistoryDialog.show_changes)
+    reads_maps = False
 
     def __init__(self, data, title, model, parent=None):
         super().__init__(parent)
@@ -140,10 +142,13 @@ class TileSetDatabase(TileTab):
     def edit_current(self):
         current_tileset = self.current
         if current_tileset:
-            # It records each of its edits as an undo step, and its Cancel takes them back
+            # It records each of its edits as an undo step
             TileSetEditor(self, current_tileset).exec_()
 
 class TileMapDatabase(TileTab):
+    # It lists the tilemaps by their pictures
+    reads_maps = True
+
     @classmethod
     def create(cls, parent=None):
         data = RESOURCES.tilemaps
@@ -164,10 +169,11 @@ class TileMapDatabase(TileTab):
     def edit_current(self):
         current_tilemap = self.current
         if current_tilemap:
-            # It records each of its edits as an undo step, and its Cancel takes them
-            # back to where it opened or was last saved
+            # It records each of its edits as an undo step
             MapEditor(self, current_tilemap).exec_()
-            tilemap_editor.get_tilemap_pixmap(current_tilemap)
+            # Its picture in the list, which the edits may have changed
+            tile_model.create_tilemap_pixmap(current_tilemap)
+            self.update_list()
 
 def get_tilesets() -> tuple:
     window = SingleResourceEditor(TileSetDatabase, ["tilesets"], picker=True)

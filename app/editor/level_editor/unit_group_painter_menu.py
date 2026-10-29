@@ -50,11 +50,17 @@ class UnitGroupMenu(QWidget):
 
     def set_current_level(self, level_nid):
         level = DB.levels.get(level_nid)
+        same_level = self.current_level is not None and self.current_level.nid == level_nid
+        row = self.group_list.currentRow()
+        shown = self._data[row] if 0 <= row < len(self._data) else None
         self.current_level = level
         self._data = self.current_level.unit_groups
         self.group_list.clear()
         for group in self._data:
             self.group_list.add_group(group)
+        # The level shown again after a change elsewhere keeps the group it showed
+        if same_level and shown is not None and shown.nid in self._data:
+            self.group_list.setCurrentRow(self._data.index(shown.nid))
 
     def create_new_group(self):
         nid = str_utils.get_next_name('New Group', self._data.keys())

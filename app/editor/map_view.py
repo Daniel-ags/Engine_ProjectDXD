@@ -50,11 +50,28 @@ class SimpleMapView(QGraphicsView):
         self.screen_scale = 1
 
         self.working_image = None
+        # Asked to draw while hidden, which it does once it shows
+        self.stale = False
 
         self.current_mouse_pos = None
         self.region_select = None
 
         self.old_middle_pos = None
+
+    def update_view(self, _=None):
+        """Draws the map again. A view hidden, like the global editor's behind the
+        level editor's, draws once it shows instead: the main window refreshes
+        every map view after each change"""
+        if not self.isVisible():
+            self.stale = True
+            return
+        self.draw_view()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self.stale:
+            self.stale = False
+            self.draw_view()
 
     def center_on_pos(self, pos):
         self.centerOn(pos[0]*TILEWIDTH, pos[1]*TILEHEIGHT)
@@ -74,7 +91,7 @@ class SimpleMapView(QGraphicsView):
     def clear_scene(self):
         self.scene.clear()
 
-    def update_view(self, _=None):
+    def draw_view(self):
         if(self.current_level and not self.current_map):
             self.current_map = RESOURCES.tilemaps.get(
                 self.current_level.tilemap)
@@ -230,7 +247,7 @@ class GlobalModeLevelMapView(SimpleMapView):
                         else:
                             self.draw_unit(painter, unit, unit.starting_position)
 
-    def update_view(self, _=None):
+    def draw_view(self):
         if self.current_level and not self.current_map:
             self.current_map = RESOURCES.tilemaps.get(
                 self.current_level.tilemap)
@@ -335,7 +352,7 @@ class NewMapView(SimpleMapView):
                 return unit
         return None
 
-    def update_view(self, _=None):
+    def draw_view(self):
         if(self.current_level):
             self.current_map = RESOURCES.tilemaps.get(
                 self.current_level.tilemap)

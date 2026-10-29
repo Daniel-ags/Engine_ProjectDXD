@@ -56,6 +56,24 @@ class EditorTickTests(StagingEditorCase):
 
             self.assertEqual(0, portrait_tick.call_count)
 
+    def test_a_hidden_widget_hears_the_tick_only_once_shown_again(self):
+        # As the main window's global editor map sits hidden behind the level editor's
+        from app.editor.portrait_editor.new_portrait_properties import NewPortraitProperties
+        from app.editor.portrait_editor.new_portrait_tab import NewPortraitDatabase
+        with patch.object(NewPortraitProperties, 'tick') as portrait_tick:
+            portraits = self.open_shown(NewPortraitDatabase, 'portraits')
+            QApplication.setActiveWindow(portraits)
+            QApplication.processEvents()
+            properties = portraits.tab.right_frame
+            properties.hide()
+
+            self.tick()
+            self.assertEqual(0, portrait_tick.call_count)
+
+            properties.show()
+            self.tick()
+            self.assertEqual(1, portrait_tick.call_count)
+
 
     def test_the_class_list_redraws_its_map_sprites_only_when_their_frame_changes(self):
         from unittest.mock import PropertyMock

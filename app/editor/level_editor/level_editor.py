@@ -117,8 +117,8 @@ class LevelEditor(QMainWindow):
     def set_current_level(self, level_nid):
         level = DB.levels.get(level_nid)
         self.current_level = level
+        # Which draws it
         self.map_view.set_current_level(level)
-        self.update_view()
         # Its menus and dialogs edit the level in place, which the next commit records
         HISTORY.bind(level, DB.levels, self)
 

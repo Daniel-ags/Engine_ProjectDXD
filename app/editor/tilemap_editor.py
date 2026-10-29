@@ -585,7 +585,7 @@ class MapEditor(QDialog):
         self.resize(*default_size)
 
         self.current = current
-        # Undo and redo here reach only this editor's steps; Cancel takes them back
+        # Undo and redo here reach only this editor's steps
         self.session = EditSession(HISTORY)
         HISTORY.bind(self.current, RESOURCES.tilemaps, self)
         self.current_tool = PaintTool.NoTool
@@ -636,9 +636,9 @@ class MapEditor(QDialog):
         self.setLayout(self.layout)
         self.layout.addWidget(self.main_splitter)
 
-        self.buttonbox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, Qt.Horizontal, self)
+        # Like every editor window, it keeps its edits, which undo takes back
+        self.buttonbox = QDialogButtonBox(QDialogButtonBox.Close, Qt.Horizontal, self)
         self.layout.addWidget(self.buttonbox)
-        self.buttonbox.accepted.connect(self.accept)
         self.buttonbox.rejected.connect(self.reject)
 
         self.check_brush()
@@ -676,7 +676,6 @@ class MapEditor(QDialog):
         self.terrain_action.setCheckable(True)
 
         self.export_as_png_action = QAction(QIcon(f"{icon_folder}/export_as_png.png"), "E&xport Current Image as PNG", self, shortcut="X", triggered=self.export_as_png)
-        self.save_action = QAction(QIcon(f"{icon_folder}/save.png"), "Save", self, shortcut="Ctrl+S", triggered=self.save_current)
         self.undo_action = QAction("Undo", self, shortcut=QKeySequence.Undo, triggered=self.undo)
         self.redo_action = QAction("Redo", self, shortcut=QKeySequence.Redo, triggered=self.redo)
 
@@ -719,7 +718,6 @@ class MapEditor(QDialog):
         self.toolbar.addAction(self.erase_action)
         self.toolbar.addAction(self.resize_action)
         self.toolbar.addAction(self.terrain_action)
-        self.toolbar.addAction(self.save_action)
         self.toolbar.addAction(self.undo_action)
         self.toolbar.addAction(self.redo_action)
         self.toolbar.addAction(self.export_as_png_action)
@@ -775,16 +773,6 @@ class MapEditor(QDialog):
                 parent_dir = os.path.split(fn)[0]
                 self.settings.set_last_open_path(parent_dir)
 
-    def save_current(self):
-        """Keeps the edits so far. This editor's Cancel rewinds only to here, and the
-        tilemap dialog that opened it keeps them through its own Cancel. Saving the
-        project writes them to disk."""
-        if not self.current:
-            return
-        self.session.keep()
-        QMessageBox.information(self, "Changes Kept",
-                                "Tilemap changes kept. Save the project to write them to disk.")
-
     def update_view(self):
         self.view.update_view()
 
@@ -827,22 +815,12 @@ class MapEditor(QDialog):
     def get_tileset_coords(self):
         return self.tileset_menu.current_tileset, self.tileset_menu.get_selection_coords()
 
-    def accept(self):
+    def done(self, result):
+        # Close, Escape and the window's X all keep the edits
         self.commit_edit()
         HISTORY.unbind(self)
         self.save_geometry()
-        super().accept()
-
-    def reject(self):
-        self.commit_edit()
-        self.session.cancel()
-        HISTORY.unbind(self)
-        self.save_geometry()
-        super().reject()
-
-    def closeEvent(self, event):
-        self.save_geometry()
-        super().closeEvent(event)
+        super().done(result)
 
     def _type(self):
         return 'tilemap_editor'

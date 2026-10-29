@@ -254,6 +254,13 @@ class ChangeSet:
                 seen.append(delta.catalog)
         return seen
 
+    def only_edits_fields_of(self, catalogs: List[Data]) -> bool:
+        """Whether every change is to the fields of records in these catalogs: none
+        adds, removes, reorders or renames a record, or changes anything else"""
+        return all(isinstance(delta, RecordChange) and any(delta.catalog is c for c in catalogs)
+                   and not any(_may_rename(where) for where, _, _ in delta.changes)
+                   for delta in self.deltas)
+
     def undo(self):
         for delta in reversed(self.deltas):
             delta.undo()
@@ -265,6 +272,12 @@ class ChangeSet:
             delta.redo()
         for data in self.catalogs():
             rebuild_keys(data)
+
+
+def _may_rename(where: Where) -> bool:
+    """Whether a change at where may change a record's nid, which a database record's
+    saved form holds at the top and a resource's under 'record'"""
+    return where == ('nid',)[:len(where)] or where == ('record', 'nid')[:len(where)]
 
 
 class EditHistory:
@@ -306,13 +319,14 @@ class EditHistory:
         return id(data) in self._catalogs
 
     # === Listening ===
-    def listen(self, listener: Callable[[Any], None]) -> None:
-        """Calls listener(origin) after each change set is recorded, undone or redone.
-        origin is the view that made the change and already shows it, or None when
-        every view needs to show the database again, as after an undo."""
+    def listen(self, listener: Callable[[Any, ChangeSet], None]) -> None:
+        """Calls listener(origin, change_set) after each change set is recorded, undone
+        or redone. origin is the view that made the change and already shows it, or
+        None when every view needs to show the database again, as after an undo.
+        change_set holds what changed, undone or not."""
         self._listeners.append(listener)
 
-    def unlisten(self, listener: Callable[[Any], None]) -> None:
+    def unlisten(self, listener: Callable[[Any, ChangeSet], None]) -> None:
         self._listeners.remove(listener)
 
     def listen_to_renames(self, listener: Callable[[references.Target, NID, NID], None]) -> None:
@@ -322,9 +336,9 @@ class EditHistory:
     def unlisten_to_renames(self, listener: Callable[[references.Target, NID, NID], None]) -> None:
         self._rename_listeners.remove(listener)
 
-    def _announce(self, origin) -> None:
+    def _announce(self, origin, change_set: ChangeSet) -> None:
         for listener in self._listeners[:]:
-            listener(origin)
+            listener(origin, change_set)
 
     # === Recording ===
     def bind(self, record, data: Data, owner=None) -> None:
@@ -341,7 +355,13 @@ class EditHistory:
         self.commit(origin=owner)
         bindings = self._bound.setdefault(id(owner), {})
         if owner is not None:
+            kept = bindings.get(id(record))
             bindings.clear()
+            if watched and kept is not None and kept[0] is data and kept[1] is record:
+                # Shown again, as a tab does after every change elsewhere: the
+                # commit has brought its baseline up to date
+                bindings[id(record)] = kept
+                return
         if watched:
             bindings[id(record)] = (data, record, saved(record))
 
@@ -386,7 +406,7 @@ class EditHistory:
         if CHECK_UNRECORDED:
             self._check_unrecorded(change_set)
         if change_set.deltas:
-            self._announce(change_set.origin)
+            self._announce(change_set.origin, change_set)
 
     def change_set(self, label: str = 'Edit', origin=None) -> _ChangeSetContext:
         """with history.change_set('Delete Iron Sword'): ... records everything inside as one undo step.
@@ -461,7 +481,7 @@ class EditHistory:
         change_set.undo()
         self._redo.append(change_set)
         self.rebaseline()
-        self._announce(None)
+        self._announce(None, change_set)
         return change_set
 
     def redo(self) -> Optional[ChangeSet]:
@@ -472,7 +492,7 @@ class EditHistory:
         change_set.redo()
         self._undo.append(change_set)
         self.rebaseline()
-        self._announce(None)
+        self._announce(None, change_set)
         return change_set
 
     def mark(self) -> ChangeSet | None:
@@ -488,31 +508,29 @@ class EditHistory:
         """The change set redo would put back next"""
         return self._redo[-1] if self._redo else None
 
-    def holds(self, mark: Optional[ChangeSet]) -> bool:
-        """Whether undo_to can still reach mark. None, the empty history, it always can."""
-        return mark is None or any(change_set is mark for change_set in self._undo + self._redo)
-
     def undo_to(self, mark: Optional[ChangeSet]) -> None:
         """Puts everything back as it was at mark and forgets what came after.
         A mark that history has since dropped off its end undoes as far as
         history goes."""
         self.commit()
-        changed = False
+        # Everything undone or redone, for the listeners
+        changed = ChangeSet('Undo')
         if mark is not None and any(change_set is mark for change_set in self._redo):
             # Undone past the mark: redo up to it
             while self._undo[-1:] != [mark]:
                 change_set = self._redo.pop()
                 change_set.redo()
                 self._undo.append(change_set)
-                changed = True
+                changed.deltas.extend(change_set.deltas)
         else:
             while self._undo and self._undo[-1] is not mark:
-                self._undo.pop().undo()
-                changed = True
+                change_set = self._undo.pop()
+                change_set.undo()
+                changed.deltas.extend(change_set.deltas)
         self._redo.clear()
         self.rebaseline()
-        if changed:
-            self._announce(None)
+        if changed.deltas:
+            self._announce(None, changed)
 
     # === Files ===
     def keep_files(self, paths: Iterable[str]) -> None:
@@ -636,12 +654,10 @@ class EditHistory:
 class EditSession:
     """The undo steps of a modal editor, like the tilemap editor, from when it opens.
     Its undo and redo stay within them, never taking back what was done before it
-    opened, and its Cancel takes back every step since it opened, or since the
-    user last chose to keep them. Each step stays in the history once it closes."""
+    opened in a window it blocks. Each step stays in the history once it closes."""
     def __init__(self, history: EditHistory):
         self.history = history
         self.opened = history.mark()
-        self.kept = self.opened
         self.undone: List[ChangeSet] = []  # The steps this session undid, which it may redo
 
     def undo(self) -> bool:
@@ -663,16 +679,6 @@ class EditSession:
         self.history.redo()
         self.undone.pop()
         return True
-
-    def keep(self) -> None:
-        """Keeps the steps so far through Cancel"""
-        self.kept = self.history.mark()
-
-    def cancel(self) -> None:
-        """Takes back every step since the session opened, or was last kept. A kept
-        step undone and then dropped by a new edit is gone, so it goes back to where
-        the session opened."""
-        self.history.undo_to(self.kept if self.history.holds(self.kept) else self.opened)
 
 
 class _ChangeSetContext:

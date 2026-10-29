@@ -38,6 +38,9 @@ class NewEditorTab(QWidget, Generic[T]):
     icon_size = 32
     # Whether the tab can show its data again after an undo changes it
     supports_undo = True
+    # Whether what it shows comes in part from levels, overworlds or tilemaps, so a
+    # map edit in the main window changes it (EditHistoryDialog.show_changes)
+    reads_maps = False
 
     def __init__(self, parent, database: Database, resources: Resources = None) -> None:
         QWidget.__init__(self, parent)
@@ -154,7 +157,8 @@ class NewEditorTab(QWidget, Generic[T]):
             return
         curr_entry = self.data.get(entry_nid)
         if curr_entry:
-            HISTORY.commit(origin=self)
+            # Showing writes nothing, so the bind's commit records the edits to the
+            # entry shown before
             self.right_frame.set_current(curr_entry)
             HISTORY.bind(curr_entry, self.data, self)
 

@@ -211,7 +211,7 @@ class MainEditor(QMainWindow):
             # editor window's tab already shows its own
             HISTORY.commit(origin=EditHistoryDialog.tab_holding(old))
 
-    def on_history_changed(self, origin):
+    def on_history_changed(self, origin, change_set):
         # Editor windows change the database beside this window. What this window
         # changed it shows already, and showing it again would drop its selections
         if origin is not None and self.holds(origin):

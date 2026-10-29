@@ -178,12 +178,10 @@ class EffectAnimation(WithResources, Prefab):
         return self
 
 def copy_image(catalog: ManifestCatalog, anim, new_full_path: str):
-    """Writes anim's image to new_full_path, leaving anim pointing where it does. The
-    editors drop full_path from an animation whose frames they changed in memory."""
+    """Writes anim's image to new_full_path, leaving anim pointing where it does. An
+    animation added in the editor has no image until frames are imported into it."""
     if anim.full_path:
         catalog.make_copy(anim.full_path, new_full_path)
-    elif anim.pixmap:
-        anim.pixmap.save(new_full_path, "PNG")
 
 class CombatCatalog(ManifestCatalog, CategorizedCatalog):
     manifest = 'combat_anims.json'

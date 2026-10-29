@@ -28,9 +28,10 @@ class ObjBox(PropertyBox[ComboBox]):
         self.model = model(records(), parent)
         self.edit.setModel(self.model)
         # The records can change under the box before it refreshes -- a deletion
-        # moves every row below up one -- so its current text may already name
-        # another record. Remember what it chose instead
-        self.choice = self.edit.currentText()
+        # moves every row below up one -- so its current row may already be
+        # another record. Remember the record it chose instead: names can repeat
+        # (events of different levels), and a rename or undo keeps the record
+        self.choice = self.record_at(self.edit.currentIndex())
         self.edit.currentIndexChanged.connect(self.remember_choice)
         if button:
             b = QPushButton('...')
@@ -41,7 +42,16 @@ class ObjBox(PropertyBox[ComboBox]):
         self.edit.setValue(val)
 
     def remember_choice(self, index):
-        self.choice = self.edit.currentText()
+        self.choice = self.record_at(index)
+
+    def record_at(self, index: int):
+        """The record listed at index, or None"""
+        records = self.model._data
+        return records[index] if 0 <= index < len(records) else None
+
+    def index_of(self, record) -> int:
+        """Where record is listed, or -1"""
+        return next((i for i, other in enumerate(self.model._data) if other is record), -1)
 
     def refresh(self):
         """Lists the records as they are now, keeping the choice shown. Writes nothing:
@@ -52,8 +62,9 @@ class ObjBox(PropertyBox[ComboBox]):
         self.model.beginResetModel()
         self.model._data = self.records()
         self.model.endResetModel()
-        self.edit.setCurrentIndex(self.edit.findText(self.choice))
+        self.edit.setCurrentIndex(self.index_of(self.choice))
         self.edit.blockSignals(False)
+
 class UnitBox(ObjBox):
     def __init__(self, parent=None, button=False, exclude=None, title="Unit"):
         from app.editor.unit_editor.unit_model import UnitModel
@@ -118,12 +129,20 @@ class AffinityBox(ObjBox):
         from app.editor.support_editor.affinity_model import AffinityModel
         super().__init__("Affinity Type", AffinityModel, lambda: without(DB.affinities, exclude), parent, button)
 
-class MovementCostBox(ObjBox):
+class MovementTypeBox(ObjBox):
+    """A choice of one of the movement cost grid's types, which are their own names"""
+    def record_at(self, index: int):
+        return self.edit.itemText(index) if index >= 0 else None
+
+    def index_of(self, record) -> int:
+        return self.edit.findText(record) if record is not None else -1
+
+class MovementCostBox(MovementTypeBox):
     def __init__(self, parent=None, button=False):
         from app.editor.mcost_dialog import MovementCostModel
         super().__init__("Movement Cost", MovementCostModel, lambda: DB.mcost, parent, button)
 
-class MovementClassBox(ObjBox):
+class MovementClassBox(MovementTypeBox):
     def __init__(self, parent=None, button=False, title="Movement Class"):
         from app.editor.mcost_dialog import MovementClassModel
         super().__init__(title, MovementClassModel, lambda: DB.mcost, parent, button)

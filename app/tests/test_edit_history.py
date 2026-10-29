@@ -50,6 +50,23 @@ class ModifyTests(HistoryTestCase):
         HISTORY.undo()
         self.assertEqual(UNIT, self.unit.name)
 
+    def test_an_owner_showing_its_record_again_keeps_watching_it_without_copying_it(self):
+        owner = object()
+        HISTORY.bind(self.unit, DB.units, owner)
+        self.unit.name = 'Somebody Else'
+        with patch.object(edit_history, 'saved', side_effect=edit_history.saved) as copies:
+            # As a tab does after a change elsewhere: the edit so far is its own step
+            HISTORY.bind(self.unit, DB.units, owner)
+        self.assertEqual(0, copies.call_count)
+        self.assertTrue(HISTORY.can_undo())
+        self.unit.name = 'Another'
+        HISTORY.commit()
+
+        HISTORY.undo()
+        self.assertEqual('Somebody Else', self.unit.name)
+        HISTORY.undo()
+        self.assertEqual(UNIT, self.unit.name)
+
     def test_the_movement_cost_grid_is_restored_in_place(self):
         grid = DB.mcost
         cost = grid.get((0, 0))

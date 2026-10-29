@@ -79,12 +79,23 @@ class RegionMenu(QWidget):
 
     def set_current_level(self, level_nid):
         level = DB.levels.get(level_nid)
+        same_level = self.current_level is not None and self.current_level.nid == level_nid
+        shown = self.modify_region_widget.current
         self.current_level = level
         self._data = self.current_level.regions
         self.model._data = self._data
         self.model.update()
         self.modify_region_widget._data = self._data
-        if len(self._data):
+        if same_level and shown is not None and shown.nid in self._data:
+            # The level shown again after a change elsewhere keeps the region it showed,
+            # which an undo may have rebuilt, and the map stays where it is
+            self.modify_region_widget.setEnabled(True)
+            reg = self._data.get(shown.nid)
+            self.modify_region_widget.set_current(reg)
+            row = self._data.index(reg.nid)
+            if self.view.currentIndex().row() != row:
+                self.select(row)
+        elif len(self._data):
             self.modify_region_widget.setEnabled(True)
             reg = self._data[0]
             if reg.position:

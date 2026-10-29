@@ -156,6 +156,29 @@ class ItemEditorUndoTests(EditorUndoTestCase):
         self.assertEqual('Changed in another editor', self.item.name)
 
 
+class MultiTabEditorTests(EditorUndoTestCase):
+    def test_a_hidden_tab_shows_a_change_once_switched_to(self):
+        from app.editor.data_editor import MultiDatabaseEditor
+        from app.editor.support_editor.affinity_tab import AffinityDatabase
+        from app.editor.support_editor.support_pair_tab import SupportPairDatabase
+        dialog = MultiDatabaseEditor((SupportPairDatabase, AffinityDatabase))
+        self.addCleanup(dialog.stop_history)
+        self.addCleanup(dialog.hide)
+        shown, hidden = dialog.tabs
+        with patch.object(shown, 'reset', wraps=shown.reset) as shown_reset, \
+                patch.object(hidden, 'reset', wraps=hidden.reset) as hidden_reset:
+            with self.history.modifying([(DB.units.get(UNIT), DB.units)]):
+                DB.units.get(UNIT).name = 'Lady'  # As another window does
+            dialog.show_changes()  # Once the event that made the change is done
+
+            shown_reset.assert_called_once()
+            hidden_reset.assert_not_called()
+
+            dialog.tab_bar.setCurrentIndex(1)
+
+            hidden_reset.assert_called_once()
+
+
 class CsvImportUndoTests(EditorUndoTestCase):
     def test_importing_a_csv_is_one_undo_step_for_the_units_it_changes_and_adds(self):
         import os

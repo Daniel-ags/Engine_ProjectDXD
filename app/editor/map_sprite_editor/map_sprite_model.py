@@ -14,23 +14,38 @@ from app.data.resources.default_palettes import default_palettes
 from app.extensions.pixmap_replace_message_box import PixmapReplaceMessageBox
 from app.editor.settings import MainSettingsController
 from app.editor.base_database_gui import ResourceCollectionModel
+from app.editor.edit_history import HISTORY, ChangeSet
 from app.editor.file_manager.staging import STAGING
 import app.editor.utilities as editor_utilities
 from app.utilities import str_utils
 from app.utilities.typing import NID
 
 import logging
+from typing import List, Optional
+
+# Recoloring is slow, and lists and the map ask for the same icons on every repaint
+RECOLORED_ICONS = editor_utilities.PixmapCache(2048)
+
+def forget_recolored_icons(origin, change_set: ChangeSet):
+    # The icons are kept by their palette's nid, so a palette's colors changed in place
+    # leave them stale
+    if any(catalog is RESOURCES.combat_palettes for catalog in change_set.catalogs()):
+        RECOLORED_ICONS.clear()
+
+HISTORY.listen(forget_recolored_icons)
 
 def get_basic_icon(pixmap: QPixmap, num: int, active: bool = False, team: NID = 'player') -> QPixmap:
-    if active:
-        one_frame = pixmap.copy(num*64 + 16, 96 + 16, 32, 32)
-    else:
-        one_frame = pixmap.copy(num*64 + 16, 0 + 16, 32, 32)
-    # pixmap = pixmap.copy(16, 16, 32, 32)
-    one_frame = one_frame.toImage()
-    one_frame = color_shift_team(one_frame, team)
-    pixmap = QPixmap.fromImage(one_frame)
-    return pixmap
+    """The frame of pixmap recolored for team, shared with every caller asking for the same one"""
+    team_obj = DB.teams.get(team)
+    palette_nid = team_obj.map_sprite_palette if team_obj else None
+
+    def make() -> QPixmap:
+        if active:
+            one_frame = pixmap.copy(num*64 + 16, 96 + 16, 32, 32)
+        else:
+            one_frame = pixmap.copy(num*64 + 16, 0 + 16, 32, 32)
+        return QPixmap.fromImage(recolor(one_frame.toImage(), team_colors(team)))
+    return RECOLORED_ICONS.get((pixmap.cacheKey(), num, active, team, palette_nid), make)
 
 def get_map_sprite_icon(nid, num=0, current=False, team: NID = 'player', variant=None):
     res = None
@@ -46,19 +61,27 @@ def get_map_sprite_icon(nid, num=0, current=False, team: NID = 'player', variant
     pixmap = get_basic_icon(pixmap, num, current, team)
     return pixmap
 
-def color_shift_team(im: QImage, team: NID) -> QImage:
+def team_colors(team: NID) -> Optional[List]:
+    """The colors of team's map sprite palette, or None if it leaves map sprites blue"""
     team_obj = DB.teams.get(team)
     if team_obj and team_obj.map_sprite_palette:
         map_sprite_palette = RESOURCES.combat_palettes.get(team_obj.map_sprite_palette)
         if map_sprite_palette:
-            conversion_dict = {a: b for a, b in zip(default_palettes['map_sprite_blue'], map_sprite_palette.get_colors())}
-            color_transform = editor_utilities.rgb_convert(conversion_dict)
-            im = editor_utilities.color_convert(im, color_transform)
-        else:
-            logging.error("Map Sprite conversion unable to locate combat palette with nid: %s" % team_obj.map_sprite_palette)
+            return map_sprite_palette.get_colors()
+        logging.error("Map Sprite conversion unable to locate combat palette with nid: %s" % team_obj.map_sprite_palette)
+    return None
+
+def recolor(im: QImage, colors: Optional[List]) -> QImage:
+    if colors:
+        conversion_dict = {a: b for a, b in zip(default_palettes['map_sprite_blue'], colors)}
+        color_transform = editor_utilities.rgb_convert(conversion_dict)
+        im = editor_utilities.color_convert(im, color_transform)
     # Must convert colorkey last, or else color conversion doesn't work correctly
     im = editor_utilities.convert_colorkey(im)
     return im
+
+def color_shift_team(im: QImage, team: NID) -> QImage:
+    return recolor(im, team_colors(team))
 
 def gray_shift_team(im: QImage) -> QImage:
     map_sprite_palette = RESOURCES.combat_palettes.get('map_sprite_wait')

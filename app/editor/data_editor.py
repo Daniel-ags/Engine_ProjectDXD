@@ -1,16 +1,69 @@
 from __future__ import annotations
 
+import logging
 from typing import List
 
 from PyQt5 import QtGui, sip
-from PyQt5.QtWidgets import QApplication, QDialog, QGridLayout, QDialogButtonBox, QLineEdit, \
-    QPlainTextEdit, QTabWidget, QTextEdit, QSizePolicy
-from PyQt5.QtCore import QEvent, Qt, QTimer
+from PyQt5.QtWidgets import QAbstractButton, QAbstractItemView, QAbstractSpinBox, QApplication, QComboBox, \
+    QDialog, QGridLayout, QDialogButtonBox, QLabel, QLineEdit, QPlainTextEdit, QTabWidget, QTextEdit, \
+    QSizePolicy, QTreeWidget, QWidget
+from PyQt5.QtCore import QAbstractItemModel, QAbstractListModel, QEvent, QModelIndex, Qt, QTimer
 from PyQt5.QtGui import QKeySequence
 
-from app.editor.edit_history import HISTORY
+from app.data.database.database import DB
+from app.data.resources.resources import RESOURCES
+from app.editor.edit_history import CHECK_UNRECORDED, HISTORY, ChangeSet
 from app.editor.settings import MainSettingsController
 from app.editor.settings.preference_definitions import Preference
+
+def map_catalogs() -> list:
+    """The catalogs of what the main window's level, overworld and tilemap editors
+    edit, a change with every click on a map"""
+    return [DB.levels, DB.overworlds, RESOURCES.tilemaps]
+
+def widget_state(widget: QWidget) -> list:
+    """What widget and the widgets inside it show, as far as text and choices go"""
+    state = []
+    for child in [widget] + widget.findChildren(QWidget):
+        if isinstance(child, QLineEdit):
+            state.append(child.text())
+        elif isinstance(child, (QTextEdit, QPlainTextEdit)):
+            state.append(child.toPlainText())
+        elif isinstance(child, QComboBox):
+            state.append((child.currentText(), [child.itemText(i) for i in range(child.count())]))
+        elif isinstance(child, QAbstractSpinBox):
+            state.append(child.text())
+        elif isinstance(child, QAbstractButton) and child.isCheckable():
+            state.append(child.isChecked())
+        elif isinstance(child, QLabel):
+            state.append(child.text())
+        elif isinstance(child, QAbstractItemView) and child.model() is not None:
+            state.append(model_rows(child.model(), QModelIndex(), isinstance(child, QTreeWidget)))
+    return state
+
+def model_rows(model: QAbstractItemModel, parent: QModelIndex, tree: bool) -> list:
+    """What model shows under parent, row by row. Only a tree's rows are asked for rows
+    of their own: the editor's list models, tree views' columns among them, count
+    their rows whatever the parent. Its only trees are tree widgets."""
+    # A list model's columnCount is private to Qt, and it has one
+    columns = 1 if isinstance(model, QAbstractListModel) else model.columnCount(parent)
+    state = []
+    for row in range(model.rowCount(parent)):
+        for column in range(columns):
+            # The editor's models take the role without a default
+            state.append(model.data(model.index(row, column, parent), Qt.DisplayRole))
+        if tree:
+            state.append(model_rows(model, model.index(row, 0, parent), tree))
+    return state
+
+def check_shows_the_same(tab) -> None:
+    """LT_EDITOR_CHECK only: shows the database again in a tab that skipped doing so,
+    and logs whether that changed what it shows, which the skip would have missed"""
+    before = widget_state(tab)
+    tab.reset()
+    if widget_state(tab) != before:
+        logging.warning("LT_EDITOR_CHECK: %s skipped showing a map edit that changes what it shows; "
+                        "it reads maps", type(tab).__name__)
 
 def handles_own_undo(widget, redo: bool) -> bool:
     """Whether a focused text field has typing of its own to undo or redo"""
@@ -31,8 +84,11 @@ class EditHistoryDialog(QDialog):
     A picker, run modal to choose a record, has OK to choose the record it shows and
     Cancel to choose nothing in place of Close. Its edits stay either way.
 
-    Whenever the history changes, each tab shows the database again, unless the
-    change was the tab's own edit.
+    Whenever the history changes, the tab on show shows the database again, unless
+    the change was its own edit, or only edited fields of the main window's maps
+    (map_catalogs) and the tab reads none of them (its reads_maps). Those edits come
+    with every click on a map. A tab of a window with several shows the database
+    again when switched to.
     """
     undo_enabled = True
     # Every dialog whose history is running, to find the tab a widget is in
@@ -41,7 +97,7 @@ class EditHistoryDialog(QDialog):
     def start_history(self):
         self.history_running = True
         EditHistoryDialog.running.append(self)
-        self.change_origins = []  # Of the changes no tab shows yet
+        self.changes = []  # (origin, change set) of each change no tab shows yet
         app = QApplication.instance()
         app.focusChanged.connect(self.on_focus_changed)
         # A key press goes to the focused widget, or to the dialog when nothing in it
@@ -116,21 +172,28 @@ class EditHistoryDialog(QDialog):
         if (new is not None and self.isAncestorOf(new)) or (old is not None and self.isAncestorOf(old)):
             HISTORY.commit(origin=EditHistoryDialog.tab_holding(old))
 
-    def on_history_changed(self, origin):
+    def on_history_changed(self, origin, change_set: ChangeSet):
         # The change may still be under way -- a tab's own rename or delete --
         # so the tabs show it once the event that made it is done
-        if not self.change_origins:
+        if not self.changes:
             QTimer.singleShot(0, self.show_changes)
-        self.change_origins.append(origin)
+        self.changes.append((origin, change_set))
 
     def show_changes(self):
-        """Shows the database again in every tab that did not make all the changes"""
-        origins, self.change_origins = self.change_origins, []
+        """Shows the database again in the tab on show, unless no change can alter what
+        it shows. The others show it when switched to."""
+        changes, self.changes = self.changes, []
         if not self.history_running:
             return
-        for tab in self.history_tabs():
-            if not all(origin is tab for origin in origins):
-                tab.reset()
+        tab = self.current_history_tab()
+        if all(origin is tab for origin, _ in changes):
+            return
+        if all(origin is tab or (not tab.reads_maps and change_set.only_edits_fields_of(map_catalogs()))
+               for origin, change_set in changes):
+            if CHECK_UNRECORDED:
+                check_shows_the_same(tab)
+            return
+        tab.reset()
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.KeyPress and self.undo_enabled and self.isActiveWindow():

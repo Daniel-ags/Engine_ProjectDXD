@@ -206,6 +206,30 @@ class FormRefreshTests(unittest.TestCase):
         self.assertEqual((name, condition), (event.name, event.condition))
         self.assertIs(event, DB.events.get_from_nid(nid))
 
+    def test_the_event_script_keeps_its_cursor_and_typing_when_another_window_changes_the_database(self):
+        from PyQt5.QtGui import QTextCursor
+        from PyQt5.QtWidgets import QWidget
+        from app.editor.edit_history import HISTORY
+        dialog, form = self.event_editor()
+        text_box = form.text_box
+        cursor = text_box.textCursor()
+        cursor.movePosition(QTextCursor.End)
+        text_box.setTextCursor(cursor)
+        text_box.insertPlainText('\n')
+        HISTORY.commit(origin=form.window)
+        position = text_box.textCursor().position()
+
+        other_window = QWidget()
+        self.addCleanup(other_window.deleteLater)
+        # An edit to a level, which the tab reads, and one to an item, which it doesn't
+        for record, data in ((DB.levels[0], DB.levels), (DB.items[0], DB.items)):
+            HISTORY.bind(record, data, other_window)
+            record.name = record.name + 'X'
+            HISTORY.commit(origin=other_window)
+            self.app.processEvents()
+            self.assertEqual(position, text_box.textCursor().position())
+            self.assertTrue(text_box.document().isUndoAvailable())
+
     def test_an_event_renames_with_what_names_it_once_its_name_is_typed_and_undo_takes_it_back(self):
         from app.events.node_events import NodeMenuEvent
         dialog, form = self.event_editor()
@@ -363,6 +387,71 @@ class FormRefreshTests(unittest.TestCase):
         self.assertIs(second, options.modify_option_widget.current)
         self.assertEqual(node.menu_options.index('Second'), options.view.currentIndex().row())
         self.assertEqual('OnBoot', options.modify_option_widget.event_box.edit.currentText())
+
+    def test_an_event_box_keeps_its_event_though_another_level_has_one_named_alike(self):
+        from PyQt5.QtWidgets import QWidget
+        from app.editor.custom_widgets import EventBox
+        from app.events.event_prefab import EventPrefab
+        for level in DB.levels[:2]:
+            event = EventPrefab('Twin')
+            event.level_nid = level.nid
+            DB.events.append(event)
+        second = DB.events.get_from_nid('%s Twin' % DB.levels[1].nid)
+        parent = QWidget()
+        self.addCleanup(parent.deleteLater)
+        box = EventBox(parent)
+        box.edit.setCurrentIndex(DB.events.index(second.nid))
+
+        box.refresh()
+
+        self.assertIs(second, box.model._data[box.edit.currentIndex()])
+
+    def region_menu(self, level):
+        from app.editor.lib.state_editor.editor_state_manager import EditorStateManager
+        from app.editor.level_editor.region_painter_menu import RegionMenu
+        state_manager = EditorStateManager()
+        # The menu shows a level with regions only once told to: built showing one,
+        # its view selects the first region before it has the form to show it in
+        state_manager.state.selected_level = next(other.nid for other in DB.levels if not other.regions)
+        centered = []
+        map_view = SimpleNamespace(center_on_pos=centered.append)
+        menu = RegionMenu(state_manager, map_view)
+        self.addCleanup(menu.deleteLater)
+        state_manager.change_and_broadcast('selected_level', level.nid)
+        return menu, state_manager, centered
+
+    def test_the_region_menu_keeps_the_region_it_shows_when_the_main_window_resyncs(self):
+        from app.editor.edit_history import restore_in_place
+        level = DB.levels.get('1')
+        menu, state_manager, centered = self.region_menu(level)
+        shown = level.regions[1]
+        menu.select(1)
+        centered.clear()
+
+        restore_in_place(level, level.save())  # As an undo does
+        state_manager.change_and_broadcast('selected_level', level.nid)  # As the main window does after it
+
+        self.assertIsNot(shown, menu.modify_region_widget.current)
+        self.assertIs(level.regions.get(shown.nid), menu.modify_region_widget.current)
+        self.assertEqual(1, menu.view.currentIndex().row())
+        self.assertEqual([], centered)
+
+    def test_the_group_menu_keeps_the_group_it_shows_when_the_main_window_resyncs(self):
+        from app.editor.edit_history import restore_in_place
+        from app.editor.lib.state_editor.editor_state_manager import EditorStateManager
+        from app.editor.level_editor.unit_group_painter_menu import UnitGroupMenu
+        level = DB.levels.get('0')
+        state_manager = EditorStateManager()
+        menu = UnitGroupMenu(state_manager)
+        self.addCleanup(menu.deleteLater)
+        state_manager.change_and_broadcast('selected_level', level.nid)
+        menu.select_group(level.unit_groups[0])
+
+        restore_in_place(level, level.save())
+        state_manager.change_and_broadcast('selected_level', level.nid)
+
+        self.assertIs(level.unit_groups[0], menu.get_current())
+        self.assertEqual(0, menu.group_list.currentRow())
 
     def test_constants_class_lists_list_classes_as_they_are(self):
         from app.editor.constant_tab import ConstantDatabase, MainExpEquation

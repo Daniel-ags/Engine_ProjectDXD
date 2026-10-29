@@ -12,6 +12,9 @@ from app.extensions.delete_list_view import DeleteListView
 class PanoramaTab(QWidget):
     # Whether the tab can show its data again after an undo changes it
     supports_undo = True
+    # Whether what it shows comes in part from levels, overworlds or tilemaps, so a
+    # map edit in the main window changes it (EditHistoryDialog.show_changes)
+    reads_maps = False
 
     def __init__(self, data, title, model, parent=None):
         super().__init__(parent)

@@ -133,7 +133,8 @@ class Collection(QWidget):
         if not new_data:
             new_data = self._data[curr.row()]
         if self.display:
-            HISTORY.commit(origin=self.window)
+            # Showing writes nothing, so the bind's commit records the edits to the
+            # record shown before
             self.display.set_current(new_data)
             self.display.setEnabled(True)
             HISTORY.bind(new_data, self._data, self.window)
@@ -158,6 +159,9 @@ class DatabaseTab(QWidget):
     allow_copy_and_paste = False
     # Whether the tab can show its data again after an undo changes it
     supports_undo = True
+    # Whether what it shows comes in part from levels, overworlds or tilemaps, so a
+    # map edit in the main window changes it (EditHistoryDialog.show_changes)
+    reads_maps = False
 
     def __init__(self, data, title, right_frame, deletion_criteria, collection_model, parent,
                  button_text="Create %s", view_type=RightClickListView, collection_type=Collection):
