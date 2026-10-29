@@ -52,7 +52,7 @@ This will clone the repository to your machine, where you'll have access to it.
 
 ### AI-Free Branch
 
-The most updated versions of LT Maker utilize AI code. If you wish to avoid AI usage in code, due to ethical reasons or a desire to avoid disclosures such as on the Steam platform, it is possible to use a version of the engine that predates AI involvement. However, doing so will prevent you from benefiting from new engine features, optimizations, or bug fixes developed on the current version, as this earlier version of the engine will not receive any ongoing support.
+The most updated versions of LT Maker utilize AI code. If you wish to avoid AI usage in code, due to ethical reasons or a desire to avoid disclosures such as on the Itch.io platform, it is possible to use a version of the engine that predates AI involvement. However, doing so will prevent you from benefiting from new engine features, optimizations, or bug fixes developed on the current version, as this earlier version of the engine will not receive any ongoing support.
 
 If you wish to operate off of a version of the engine that does not have any AI-assisted development, use the following command immediately after the above cloning command.
 
