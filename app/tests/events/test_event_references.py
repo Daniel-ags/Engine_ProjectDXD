@@ -91,6 +91,26 @@ class EventMentionTests(unittest.TestCase):
 
         self.assertEqual([(1, True), (2, True)], self.mentions(DType.EVENTS, '0 Called'))
 
+    def test_only_lines_holding_the_name_alone_are_parsed(self):
+        from unittest.mock import patch
+        from app.events import event_references
+        self.event('Script', 'give_item;Seth;Slim_Sword', 'give_item;Eirika;Iron_Sword_2',
+                   'give_item;Eirika;Iron_Sword', 'end')
+
+        with patch.object(event_references, '_command', wraps=event_references._command) as command:
+            self.assertEqual([(3, True)], self.mentions(DType.ITEMS, 'Iron_Sword'))
+        self.assertEqual(['give_item;Eirika;Iron_Sword'], [args[0] for args, _ in command.call_args_list])
+
+    def test_an_argument_with_a_soft_line_break_is_read_as_parsed(self):
+        self.event('Script', 'give_item;Eirika;Iron _Sword')
+
+        self.assertEqual([(1, True)], self.mentions(DType.ITEMS, 'Iron_Sword'))
+
+    def test_a_list_entry_after_a_space_is_a_mention(self):
+        self.event('Script', 'shop;{unit};Slim_Sword, Iron_Sword')
+
+        self.assertEqual([(1, True)], self.mentions(DType.ITEMS, 'Iron_Sword'))
+
     def test_a_mention_says_where_it_is(self):
         self.event('Script', 'end', "if;has_item('Iron_Sword')")
 

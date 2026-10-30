@@ -8,7 +8,7 @@ holds the nid is a certain mention. Anywhere else, a line holding the nid as a
 quoted string (Python code, an `if;` condition, an `{eval:}`) may name it: there
 is no telling a unit from a portrait or a party of the same name there. A Python
 event's `$` command lines are read like classic commands, but an argument
-computed in Python names nothing knowable.
+computed in Python, or a string spelled with escapes, names nothing knowable.
 """
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ from app.data.database.reference_schema import Target
 from app.data.resources.resource_types import ResourceType as RType
 from app.events import event_commands
 from app.events.event_version import EventVersion
+from app.utilities.str_utils import SHIFT_NEWLINE
 from app.utilities.typing import NID
 
 # What each event argument type names
@@ -86,8 +87,8 @@ class EventMention:
 
 @functools.lru_cache(maxsize=20000)
 def _command(line: str, python: bool) -> Optional[event_commands.EventCommand]:
-    """The event command a line holds, if any. Cached, since a project's lines are
-    read again on every rename and most never change"""
+    """The event command a line holds, if any. Cached, since the lines holding a
+    common name (a main character's) are read again on every rename"""
     if python:
         if not line.strip().startswith('$'):
             return None
@@ -112,6 +113,13 @@ def _named(command: event_commands.EventCommand, target: Target) -> Iterator[str
         else:
             yield value
 
+def _holds_a_name(text: str, names: Set[str], alone: re.Pattern) -> bool:
+    """Whether text holds a name standing alone, as parsing would read it: an
+    argument's soft line breaks are taken out. A plain search finds most texts
+    holding none far faster than the pattern, whose look behind slows it"""
+    text = text.replace(SHIFT_NEWLINE, '')
+    return any(name in text for name in names) and alone.search(text) is not None
+
 def find_mentions(db, target: Target, nid: Optional[NID]) -> List[EventMention]:
     """Every event line that names, or may name, the record of target's kind called nid"""
     if not nid:
@@ -124,12 +132,21 @@ def find_mentions(db, target: Target, nid: Optional[NID]) -> List[EventMention]:
         names.add(nid.split(' ', 1)[1])
     quoted = re.compile('|'.join(r'''(['"])%s\%d''' % (re.escape(name), idx + 1)
                                  for idx, name in enumerate(sorted(names))))
+    # A name standing alone: arguments and quoted strings are set off by characters
+    # that are no part of a word (semicolons, commas, equals signs, quotes, spaces)
+    alone = re.compile('|'.join(r'(?<!\w)%s(?!\w)' % re.escape(name) for name in sorted(names)))
     mentions = []
     for event in db.events:
         if event.condition and quoted.search(event.condition):
             mentions.append(EventMention(event.nid, CONDITION_LINE, event.condition, False))
+        # Only a line holding a name can name the record, so the rest go unparsed:
+        # most of what a rename or deletion costs is a search of the scripts' text
+        if not _holds_a_name(event.source, names, alone):
+            continue
         python = event.version() != EventVersion.EVENT
         for idx, line in enumerate(event.source.split('\n')):
+            if not _holds_a_name(line, names, alone):
+                continue
             command = _command(line, python)
             if command and any(name in names for name in _named(command, target)):
                 mentions.append(EventMention(event.nid, idx + 1, line, True))
