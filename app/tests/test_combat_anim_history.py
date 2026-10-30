@@ -100,6 +100,47 @@ class CombatEditorHistoryTests(StagingEditorCase):
         self.dialog.redo()
         self.assertEqual(moved, self.assassin.weapon_anims[0].full_path)
 
+    def pick_slot(self, form, coord):
+        """Ctrl and a right click on the easel, picking up the slot at coord to move"""
+        from PyQt5.QtCore import QEvent, QPointF, Qt
+        from PyQt5.QtGui import QMouseEvent
+        easel = form.easel_widget
+        point = easel.mapFromScene(QPointF((coord[0] + .5) * easel.palette_size, (coord[1] + .5) * easel.palette_size))
+        with patch('app.editor.combat_animation_editor.new_palette_properties.QApplication.keyboardModifiers',
+                   return_value=Qt.ControlModifier):
+            easel.mousePressEvent(QMouseEvent(QEvent.MouseButtonPress, point, Qt.RightButton, Qt.RightButton, Qt.ControlModifier))
+
+    def test_autoselecting_a_map_sprite_frame_shows_one_in_a_teams_palette(self):
+        from app.data.resources.map_sprites import MapSprite
+        form = self.show_palette(DB.teams.get('enemy').map_sprite_palette)
+
+        with patch('app.editor.combat_animation_editor.new_palette_properties.QMessageBox.critical') as error:
+            form.autoselect_map_sprite_frame()
+
+        error.assert_not_called()
+        self.assertIsInstance(form.current_frame_set, MapSprite)
+        self.assertIsNotNone(form.current_frame)
+
+    def test_a_weapon_animations_palette_slot_can_be_picked_up_to_move(self):
+        form = self.show_palette('Assassin0_GenericBlue')
+        form.autoselect_frame()
+        coord = next(coord for coord in form.current_palette.colors if coord != (0, 0))
+
+        self.pick_slot(form, coord)
+
+        self.assertEqual(coord, form.easel_widget.current_coord)
+
+    def test_a_map_sprites_palette_slot_cannot_be_picked_up_to_move(self):
+        # Its pixels are the blue palette's colors, which name no slot
+        form = self.show_palette(DB.teams.get('enemy').map_sprite_palette)
+        form.autoselect_map_sprite_frame()
+        coord = next(coord for coord in form.current_palette.colors if coord != (0, 0))
+
+        self.pick_slot(form, coord)
+
+        self.assertIsNone(form.easel_widget.current_coord)
+        self.assertFalse(self.history.can_undo())
+
     def test_the_palette_editor_lets_go_of_a_frame_whose_animation_was_deleted(self):
         from PyQt5.QtWidgets import QApplication
         form = self.show_palette('Assassin0_GenericBlue')

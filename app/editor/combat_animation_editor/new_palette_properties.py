@@ -9,6 +9,7 @@ from PyQt5.QtGui import QColor, QPen, QPixmap, QImage, QPainter, qRgb
 from typing import List, Tuple
 
 from app.constants import WINWIDTH, WINHEIGHT
+from app.data.database.database import DB
 from app.data.resources import map_sprites
 from app.data.resources.resources import RESOURCES
 
@@ -222,10 +223,9 @@ class EaselWidget(QGraphicsView):
             return
 
         if event.button() == Qt.RightButton:
-            print(tile_pos)
             # Set current slot to this coord
             if (QApplication.keyboardModifiers() & Qt.ControlModifier):
-                if self.current_frame and self.window.current_frame_set and tile_pos in self.current_palette.colors:
+                if self.window.frame_uses_slots() and tile_pos in self.current_palette.colors:
                     self.current_coord = tile_pos
             # Set painting color to this coord
             else:
@@ -236,7 +236,7 @@ class EaselWidget(QGraphicsView):
             # If control is pressed, move current coord to new position
             if self.current_coord:
                 # Modify base frame if it exists
-                if self.current_frame and self.window.current_frame_set:
+                if self.window.frame_uses_slots():
                     self.window.move_slot(self.current_coord, tile_pos)
                     self.current_coord = None
             else:
@@ -350,10 +350,9 @@ class MapSpriteSelection(Dialog):
 
     @classmethod
     def autoget(cls, current_palette: Palette) -> tuple:
-        for map_sprite in RESOURCES.map_sprites:
-            palette_nids = [nid for name, nid in map_sprite.palettes]
-            if current_palette.nid in palette_nids:
-                return map_sprite.nid
+        # Every map sprite is shown in each team's map sprite palette
+        if RESOURCES.map_sprites and any(team.map_sprite_palette == current_palette.nid for team in DB.teams):
+            return RESOURCES.map_sprites[0].nid
         return None
 
 class NewPaletteProperties(QWidget):
@@ -471,6 +470,14 @@ class NewPaletteProperties(QWidget):
         if not frame_set:
             return None
         return next((frame for frame in frame_set.frames if frame.nid == self.frame_nid), None)
+
+    def frame_uses_slots(self) -> bool:
+        """Whether a frame is shown whose pixels name palette slots, so a slot can move:
+        a weapon animation's or an effect's. A map sprite's pixels are the colors of
+        the blue team's palette, matched in order"""
+        frame_set = self.current_frame_set
+        return self.current_frame is not None and frame_set is not None \
+            and not isinstance(frame_set, map_sprites.MapSprite)
 
     def show_frame(self, owner, owner_data, frame_set, frame):
         self.frame_owner, self.frame_owner_data = owner, owner_data
@@ -607,10 +614,11 @@ class NewPaletteProperties(QWidget):
         if not map_sprite_anim:
             QMessageBox.critical(self, "Autoselect Error", 'Could not find a good frame. Try using manual "Select".')
             return
+        # Its frames are cut from its sheets
+        new_map_sprite_properties.populate_map_sprite_pixmaps(map_sprite_anim)
         if not map_sprite_anim.frames:
             QMessageBox.critical(self, "Autoselect Error", 'Could not find a good frame. Try using manual "Select".')
             return
-        new_map_sprite_properties.populate_effect_pixmaps(map_sprite_anim)
         frame = map_sprite_anim.frames[0]
         if frame:
             self.show_frame(map_sprite_anim, RESOURCES.map_sprites, map_sprite_anim, frame)
