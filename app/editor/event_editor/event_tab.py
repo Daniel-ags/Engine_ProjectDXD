@@ -1,8 +1,10 @@
 from PyQt5.QtWidgets import QTableView
 
 from app.data.database.database import DB
+from app.data.resources.resources import RESOURCES
 
 from app.editor.base_database_gui import DatabaseTab
+from app.editor.edit_history import ChangeSet
 from app.extensions.custom_gui import TableView
 from app.editor.data_editor import SingleDatabaseEditor
 
@@ -12,6 +14,15 @@ class EventDatabase(DatabaseTab):
     # Its script highlighting checks commands against the event's level: its units,
     # unit groups and map size
     reads_maps = True
+
+    def reads_map_edit(self, change_set: ChangeSet) -> bool:
+        """Whether a map edit changes the shown event's level or that level's tilemap,
+        or any overworld: the script's overworld nodes are checked against them all"""
+        current = self.right_frame.current
+        level = DB.levels.get(current.level_nid) if current else None
+        read = [level, RESOURCES.tilemaps.get(level.tilemap)] if level else []
+        return any(delta.catalog is DB.overworlds or any(delta.record is record for record in read)
+                   for delta in change_set.deltas)
 
     @classmethod
     def create(cls, parent=None):

@@ -110,8 +110,9 @@ class EditHistoryDialog(QDialog):
 
     Whenever the history changes, the tab on show shows the database again, unless
     the change was its own edit, or only edited fields of the main window's maps
-    (map_catalogs) and the tab reads none of them (its reads_maps). Those edits come
-    with every click on a map. A tab of a window with several shows the database
+    (map_catalogs) and the tab reads none of them (its reads_maps) or none it reads
+    there (a tab that reads maps says which edits it reads with reads_map_edit). Those
+    edits come with every click on a map. A tab of a window with several shows the database
     again when switched to.
     """
     undo_enabled = True
@@ -214,7 +215,8 @@ class EditHistoryDialog(QDialog):
         tab = self.current_history_tab()
         if all(origin is tab for origin, _ in changes):
             return
-        if all(origin is tab or (not tab.reads_maps and change_set.only_edits_fields_of(map_catalogs()))
+        if all(origin is tab or (change_set.only_edits_fields_of(map_catalogs())
+                                 and not (tab.reads_maps and tab.reads_map_edit(change_set)))
                for origin, change_set in changes):
             if CHECK_UNRECORDED:
                 check_shows_the_same(tab)

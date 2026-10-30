@@ -67,7 +67,8 @@ class TileTab(QWidget):
     # Whether the tab can show its data again after an undo changes it
     supports_undo = True
     # Whether what it shows comes in part from levels, overworlds or tilemaps, so a
-    # map edit in the main window changes it (EditHistoryDialog.show_changes)
+    # map edit in the main window changes it (EditHistoryDialog.show_changes). Such a
+    # tab says which map edits do with reads_map_edit(change_set)
     reads_maps = False
 
     def __init__(self, data, title, model, parent=None):
@@ -148,6 +149,9 @@ class TileSetDatabase(TileTab):
 class TileMapDatabase(TileTab):
     # It lists the tilemaps by their pictures
     reads_maps = True
+
+    def reads_map_edit(self, change_set) -> bool:
+        return True
 
     @classmethod
     def create(cls, parent=None):

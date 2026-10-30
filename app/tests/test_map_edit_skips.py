@@ -128,7 +128,8 @@ class WindowTests(MapEditCase):
                 item.desc = 'Changed'
         self.assertEqual(1, self.resets(items, edit_item))
 
-    def test_a_map_edit_shows_in_the_events_window(self):
+    def open_events(self, event):
+        """The events window, showing event"""
         from PyQt5.QtWidgets import QWidget
         from app.editor.event_editor.event_tab import EventDatabase
         from app.editor.settings import MainSettingsController
@@ -139,7 +140,51 @@ class WindowTests(MapEditCase):
         with patch('app.editor.event_editor.event_properties.MainSettingsController',
                    lambda: MainSettingsController('lt_maker_tests', 'map_edit_skips')):
             events = self.open(EventDatabase, main_editor)
-        self.assertEqual(1, self.resets(events, self.move_unit))
+        events.tab.left_frame.filter_to_level_of(event)
+        events.tab.left_frame.view.setCurrentIndex(events.tab.view_index_of(event))
+        self.assertIs(event, events.tab.right_frame.current)
+        return events
+
+    def test_a_map_edit_to_the_shown_events_level_shows_in_the_events_window(self):
+        event = next(event for event in DB.events if event.level_nid)
+        level = DB.levels.get(event.level_nid)
+        events = self.open_events(event)
+
+        def rename_level():
+            with self.history.modifying([(level, DB.levels)]):
+                level.name = 'Changed'
+        self.assertEqual(1, self.resets(events, rename_level))
+
+    def test_a_map_edit_to_the_shown_events_tilemap_shows_in_the_events_window(self):
+        event = next(event for event in DB.events if event.level_nid)
+        tilemap = RESOURCES.tilemaps.get(DB.levels.get(event.level_nid).tilemap)
+        events = self.open_events(event)
+
+        def resize_tilemap():
+            with self.history.modifying([(tilemap, RESOURCES.tilemaps)]):
+                tilemap.width += 1
+        self.assertEqual(1, self.resets(events, resize_tilemap))
+
+    def test_a_map_edit_to_another_level_leaves_the_events_window_alone(self):
+        event = next(event for event in DB.events if event.level_nid and event.level_nid != self.level.nid)
+        events = self.open_events(event)
+        self.assertEqual(0, self.resets(events, self.move_unit))
+
+    def test_a_map_edit_leaves_the_events_window_showing_a_global_event_alone(self):
+        event = next(event for event in DB.events if not event.level_nid)
+        events = self.open_events(event)
+        self.assertEqual(0, self.resets(events, self.move_unit))
+
+    def test_an_overworld_edit_shows_in_the_events_window(self):
+        # Its script's overworld nodes are checked against every overworld
+        event = next(event for event in DB.events if not event.level_nid)
+        overworld = DB.overworlds[0]
+        events = self.open_events(event)
+
+        def rename_overworld():
+            with self.history.modifying([(overworld, DB.overworlds)]):
+                overworld.name = 'Changed'
+        self.assertEqual(1, self.resets(events, rename_overworld))
 
     def test_the_check_reports_a_tab_left_showing_something_else(self):
         from app.editor import data_editor
