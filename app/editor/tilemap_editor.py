@@ -20,7 +20,8 @@ from app.editor.tile_editor import autotiles
 from app.editor.icon_editor.icon_view import IconView
 from app.editor.terrain_painter_menu import TerrainPainterMenu
 from app.editor.base_database_gui import ResourceCollectionModel
-from app.editor.edit_history import HISTORY, EditSession
+from app.editor.data_editor import report_undo_failure
+from app.editor.edit_history import HISTORY, EditSession, UndoFailed
 from app.editor.file_manager.staging import STAGING
 from app.extensions.custom_gui import ResourceListView, Dialog, PropertyBox
 from app.extensions.tiled_view import DraggableTileImageView
@@ -782,13 +783,19 @@ class MapEditor(QDialog):
 
     def undo(self):
         self.commit_edit()
-        if self.session.undo():
-            self.show_tilemap_again()
+        try:
+            if self.session.undo():
+                self.show_tilemap_again()
+        except UndoFailed as failure:
+            report_undo_failure(self, failure)
 
     def redo(self):
         self.commit_edit()
-        if self.session.redo():
-            self.show_tilemap_again()
+        try:
+            if self.session.redo():
+                self.show_tilemap_again()
+        except UndoFailed as failure:
+            report_undo_failure(self, failure)
 
     def show_tilemap_again(self):
         """Shows the tilemap after an undo or redo, which restores it in place and so

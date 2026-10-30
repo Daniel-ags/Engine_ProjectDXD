@@ -2,7 +2,8 @@ from app import dark_theme
 from app.constants import TILEHEIGHT, TILEWIDTH
 from app.data.database.database import DB
 from app.data.resources.resources import RESOURCES
-from app.editor.edit_history import HISTORY, EditSession
+from app.editor.data_editor import report_undo_failure
+from app.editor.edit_history import HISTORY, EditSession, UndoFailed
 from app.editor.settings import MainSettingsController
 from app.editor.terrain_painter_menu import TerrainPainterMenu
 from app.editor.tilemap_editor import PaintTool
@@ -229,13 +230,19 @@ class TileSetEditor(QDialog):
 
     def undo(self):
         self.commit_edit()
-        if self.session.undo():
-            self.show_tileset_again()
+        try:
+            if self.session.undo():
+                self.show_tileset_again()
+        except UndoFailed as failure:
+            report_undo_failure(self, failure)
 
     def redo(self):
         self.commit_edit()
-        if self.session.redo():
-            self.show_tileset_again()
+        try:
+            if self.session.redo():
+                self.show_tileset_again()
+        except UndoFailed as failure:
+            report_undo_failure(self, failure)
 
     def load_image(self):
         """Loads the tileset's image, unless it has it: restoring a tileset in place,

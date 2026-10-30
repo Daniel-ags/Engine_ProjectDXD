@@ -363,6 +363,81 @@ class MarkTests(HistoryTestCase):
         self.assertEqual('4', self.unit.name)
 
 
+class FailedStepTests(HistoryTestCase):
+    """A step that no longer fits its records, as after an unrecorded change, fails
+    without changing anything"""
+    def two_record_step(self):
+        item = DB.items.get(ITEM)
+        with HISTORY.change_set('Two records'):
+            with HISTORY.modifying([(item, DB.items)]):
+                item.desc = 'Changed'
+            self.unit.name = 'Somebody Else'
+        step = HISTORY.last_change()
+        # Undone last, so the unit is undone before it fails
+        self.assertIs(item, step.deltas[0].record)
+        self.assertIs(self.unit, step.deltas[-1].record)
+        return item, step
+
+    def heard(self) -> list:
+        """What the history tells its listeners from now on"""
+        heard = []
+
+        def listener(origin, change_set):
+            heard.append(change_set)
+        HISTORY.listen(listener)
+        self.addCleanup(HISTORY.unlisten, listener)
+        return heard
+
+    def test_an_undo_that_fails_leaves_every_record_and_its_step_as_they_were(self):
+        item, step = self.two_record_step()
+        heard = self.heard()
+
+        with patch.object(step.deltas[0], 'undo', side_effect=KeyError('gone')), \
+                self.assertRaises(edit_history.UndoFailed) as failed:
+            HISTORY.undo()
+
+        self.assertIs(step, failed.exception.change_set)
+        self.assertEqual('Somebody Else', self.unit.name)
+        self.assertEqual('Changed', item.desc)
+        self.assertIs(step, HISTORY.last_change())
+        self.assertFalse(HISTORY.can_redo())
+        self.assertEqual([], heard)
+        # Once it fits again, it undoes
+        HISTORY.undo()
+        self.assertEqual(UNIT, self.unit.name)
+        self.assertNotEqual('Changed', item.desc)
+
+    def test_a_redo_that_fails_leaves_every_record_and_its_step_as_they_were(self):
+        item, step = self.two_record_step()
+        HISTORY.undo()
+        old_desc = item.desc
+
+        with patch.object(step.deltas[-1], 'redo', side_effect=KeyError('gone')), \
+                self.assertRaises(edit_history.UndoFailed):
+            HISTORY.redo()
+
+        self.assertEqual(UNIT, self.unit.name)
+        self.assertEqual(old_desc, item.desc)
+        self.assertIs(step, HISTORY.next_redo())
+        HISTORY.redo()
+        self.assertEqual('Somebody Else', self.unit.name)
+
+    def test_undo_to_stops_at_a_step_that_fails_with_the_steps_after_it_undone(self):
+        mark = HISTORY.mark()
+        item, step = self.two_record_step()
+        self.unit.name = 'Later'
+        HISTORY.commit()
+        heard = self.heard()
+
+        with patch.object(step.deltas[0], 'undo', side_effect=KeyError('gone')), \
+                self.assertRaises(edit_history.UndoFailed):
+            HISTORY.undo_to(mark)
+
+        self.assertEqual('Somebody Else', self.unit.name)
+        self.assertIs(step, HISTORY.last_change())
+        self.assertEqual(1, len(heard))
+
+
 class UnrecordedChangeTests(HistoryTestCase):
     def test_the_check_names_a_record_changed_behind_its_back(self):
         with patch.object(edit_history, 'CHECK_UNRECORDED', True):

@@ -262,16 +262,43 @@ class ChangeSet:
                    for delta in self.deltas)
 
     def undo(self):
-        for delta in reversed(self.deltas):
-            delta.undo()
-        for data in self.catalogs():
-            rebuild_keys(data)
+        """Undoes every change, or none: if one fails, those already undone are redone
+        before the failure goes on"""
+        undone = []
+        try:
+            for delta in reversed(self.deltas):
+                delta.undo()
+                undone.append(delta)
+        except Exception:
+            for delta in reversed(undone):
+                delta.redo()
+            raise
+        finally:
+            for data in self.catalogs():
+                rebuild_keys(data)
 
     def redo(self):
-        for delta in self.deltas:
-            delta.redo()
-        for data in self.catalogs():
-            rebuild_keys(data)
+        """Redoes every change, or none, as undo does"""
+        redone = []
+        try:
+            for delta in self.deltas:
+                delta.redo()
+                redone.append(delta)
+        except Exception:
+            for delta in reversed(redone):
+                delta.undo()
+            raise
+        finally:
+            for data in self.catalogs():
+                rebuild_keys(data)
+
+
+class UndoFailed(Exception):
+    """An undo or redo that could not be done. Its records are as they were before
+    it, and its step is where it was in the history"""
+    def __init__(self, change_set: ChangeSet, redo: bool):
+        super().__init__('Could not %s %s' % ('redo' if redo else 'undo', change_set.label))
+        self.change_set, self.redo = change_set, redo
 
 
 def _may_rename(where: Where) -> bool:
@@ -473,27 +500,42 @@ class EditHistory:
         return bool(self._redo)
 
     def undo(self) -> Optional[ChangeSet]:
-        """Undoes the last change set, whichever window made it"""
+        """Undoes the last change set, whichever window made it. Raises UndoFailed,
+        leaving everything as it was, if it cannot."""
         self.commit()
         if not self._undo:
             return None
-        change_set = self._undo.pop()
-        change_set.undo()
-        self._redo.append(change_set)
+        change_set = self._undo[-1]
+        self._step(change_set, redo=False)
+        self._redo.append(self._undo.pop())
         self.rebaseline()
         self._announce(None, change_set)
         return change_set
 
     def redo(self) -> Optional[ChangeSet]:
+        """Redoes the last change set undone, raising UndoFailed as undo does"""
         self.commit()
         if not self._redo:
             return None
-        change_set = self._redo.pop()
-        change_set.redo()
-        self._undo.append(change_set)
+        change_set = self._redo[-1]
+        self._step(change_set, redo=True)
+        self._undo.append(self._redo.pop())
         self.rebaseline()
         self._announce(None, change_set)
         return change_set
+
+    def _step(self, change_set: ChangeSet, redo: bool) -> None:
+        """Undoes or redoes change_set, which stays where it is if that fails. A step
+        fails when a record changed without being recorded so that the step no
+        longer fits it"""
+        try:
+            if redo:
+                change_set.redo()
+            else:
+                change_set.undo()
+        except Exception as error:
+            logging.exception("Could not %s %s", 'redo' if redo else 'undo', self.describe(change_set))
+            raise UndoFailed(change_set, redo) from error
 
     def mark(self) -> ChangeSet | None:
         """A point to come back to with undo_to"""
@@ -575,27 +617,32 @@ class EditHistory:
     def undo_to(self, mark: Optional[ChangeSet]) -> None:
         """Puts everything back as it was at mark and forgets what came after.
         A mark that history has since dropped off its end undoes as far as
-        history goes. With nothing done since mark, the redo steps stay."""
+        history goes. With nothing done since mark, the redo steps stay. A step that
+        cannot be undone or redone stops it there and raises UndoFailed."""
         self.commit()
         # Everything undone or redone, for the listeners
         changed = ChangeSet('Undo')
-        if mark is not None and any(change_set is mark for change_set in self._redo):
-            # Undone past the mark: redo up to it, then forget the steps undone past it
-            while self._undo[-1:] != [mark]:
-                change_set = self._redo.pop()
-                change_set.redo()
-                self._undo.append(change_set)
-                changed.deltas.extend(change_set.deltas)
-            self._redo.clear()
-        else:
-            # A step recorded since mark already cleared the redo steps
-            while self._undo and self._undo[-1] is not mark:
-                change_set = self._undo.pop()
-                change_set.undo()
-                changed.deltas.extend(change_set.deltas)
-        self.rebaseline()
-        if changed.deltas:
-            self._announce(None, changed)
+        # A step that fails stops it there, with the steps before it done
+        try:
+            if mark is not None and any(change_set is mark for change_set in self._redo):
+                # Undone past the mark: redo up to it, then forget the steps undone past it
+                while self._undo[-1:] != [mark]:
+                    change_set = self._redo[-1]
+                    self._step(change_set, redo=True)
+                    self._undo.append(self._redo.pop())
+                    changed.deltas.extend(change_set.deltas)
+                self._redo.clear()
+            else:
+                # A step recorded since mark already cleared the redo steps
+                while self._undo and self._undo[-1] is not mark:
+                    change_set = self._undo[-1]
+                    self._step(change_set, redo=False)
+                    self._undo.pop()
+                    changed.deltas.extend(change_set.deltas)
+        finally:
+            self.rebaseline()
+            if changed.deltas:
+                self._announce(None, changed)
 
     # === Files ===
     def keep_files(self, paths: Iterable[str]) -> None:

@@ -5,14 +5,14 @@ from typing import List, Optional
 
 from PyQt5 import QtGui, sip
 from PyQt5.QtWidgets import QAbstractButton, QAbstractItemView, QAbstractSpinBox, QApplication, QComboBox, \
-    QDialog, QGridLayout, QDialogButtonBox, QLabel, QLineEdit, QPlainTextEdit, QTabWidget, QTextEdit, \
+    QDialog, QGridLayout, QDialogButtonBox, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QTabWidget, QTextEdit, \
     QSizePolicy, QTreeWidget, QWidget
 from PyQt5.QtCore import QAbstractItemModel, QAbstractListModel, QEvent, QModelIndex, Qt, QTimer
 from PyQt5.QtGui import QKeySequence
 
 from app.data.database.database import DB
 from app.data.resources.resources import RESOURCES
-from app.editor.edit_history import CHECK_UNRECORDED, HISTORY, ChangeSet
+from app.editor.edit_history import CHECK_UNRECORDED, HISTORY, ChangeSet, UndoFailed
 from app.editor.settings import MainSettingsController
 from app.editor.settings.preference_definitions import Preference
 
@@ -79,6 +79,17 @@ def held_in_text_field(widget, event: QtGui.QKeyEvent) -> bool:
     runs out they go no further, where held keys would run on through the history into
     edits made in any window. A fresh press goes on to the history."""
     return event.isAutoRepeat() and isinstance(widget, (QLineEdit, QTextEdit, QPlainTextEdit))
+
+def report_undo_failure(parent, failure: UndoFailed) -> None:
+    """Tells the user an undo or redo could not be done, which left everything as it was"""
+    step = HISTORY.describe(failure.change_set)
+    if failure.redo:
+        title, text = _("Redo failed"), _("Could not redo %s. Nothing was changed, "
+                                          "and redo cannot go past it.") % step
+    else:
+        title, text = _("Undo failed"), _("Could not undo %s. Nothing was changed, "
+                                          "and undo cannot go past it.") % step
+    QMessageBox.critical(parent, title, text + "\n\n" + _("The error is in the editor's log."))
 
 class UndoFeedback(QLabel):
     """Says what an undo or redo just took back or put back, for a few seconds"""
@@ -245,12 +256,18 @@ class EditHistoryDialog(QDialog):
 
     def undo(self):
         self.finish_editing()
-        self.undo_feedback.show_step(HISTORY.undo(), redo=False)
+        try:
+            self.undo_feedback.show_step(HISTORY.undo(), redo=False)
+        except UndoFailed as failure:
+            report_undo_failure(self, failure)
         self.show_changes()
 
     def redo(self):
         self.finish_editing()
-        self.undo_feedback.show_step(HISTORY.redo(), redo=True)
+        try:
+            self.undo_feedback.show_step(HISTORY.redo(), redo=True)
+        except UndoFailed as failure:
+            report_undo_failure(self, failure)
         self.show_changes()
 
 class SingleDatabaseEditor(EditHistoryDialog):

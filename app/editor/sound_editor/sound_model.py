@@ -9,7 +9,8 @@ from app.data.resources.sounds import SFXPrefab, SongPrefab
 from app.data.resources.resources import RESOURCES
 from app.editor import reference_dialogs
 from app.editor.combat_animation_editor import combat_animation_model
-from app.editor.edit_history import HISTORY
+from app.editor.data_editor import report_undo_failure
+from app.editor.edit_history import HISTORY, UndoFailed
 from app.editor.file_manager.staging import STAGING
 from app.editor.settings import MainSettingsController
 from app.editor.table_model import TableModel
@@ -180,4 +181,7 @@ def modify_recorded(data, current: list, dialog: QDialog):
             HISTORY.modifying([(c, data) for c in current]):
         result = dialog.exec_()
     if result != QDialog.Accepted:
-        HISTORY.undo_to(mark)
+        try:
+            HISTORY.undo_to(mark)
+        except UndoFailed as failure:
+            report_undo_failure(dialog.parent(), failure)

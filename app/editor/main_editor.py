@@ -24,8 +24,9 @@ from app.data.database.database import DB
 
 from app.editor import log_viewer, timer, error_viewer, reference_dialogs
 from app.editor.custom_widgets import ObjBox
-from app.editor.data_editor import EditHistoryDialog, UndoFeedback, handles_own_undo, held_in_text_field
-from app.editor.edit_history import HISTORY
+from app.editor.data_editor import EditHistoryDialog, UndoFeedback, handles_own_undo, held_in_text_field, \
+    report_undo_failure
+from app.editor.edit_history import HISTORY, UndoFailed
 from app.editor.editor_windows import EditorWindows
 
 # components
@@ -415,11 +416,17 @@ class MainEditor(QMainWindow):
 
     def undo(self):
         self.finish_editing()
-        self.undo_feedback.show_step(HISTORY.undo(), redo=False)
+        try:
+            self.undo_feedback.show_step(HISTORY.undo(), redo=False)
+        except UndoFailed as failure:
+            report_undo_failure(self, failure)
 
     def redo(self):
         self.finish_editing()
-        self.undo_feedback.show_step(HISTORY.redo(), redo=True)
+        try:
+            self.undo_feedback.show_step(HISTORY.redo(), redo=True)
+        except UndoFailed as failure:
+            report_undo_failure(self, failure)
 
     def update_undo_actions(self):
         """Names what Undo and Redo would change, as far as the history has committed,

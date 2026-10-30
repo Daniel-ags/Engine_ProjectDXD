@@ -367,6 +367,22 @@ class LegacyEditorUndoTests(EditorUndoTestCase):
         self.assertEqual('Typed', name_box.text())
         self.assertEqual('Typed', self.tab.right_frame.current.name)
 
+    def test_an_undo_that_fails_is_reported_and_changes_nothing(self):
+        from app.editor import data_editor
+        from app.editor.edit_history import UndoFailed
+        faction = self.tab.right_frame.current
+        self.tab.right_frame.name_box.edit.setText('Somebody')
+        self.history.commit()
+        step = self.history.last_change()
+
+        with patch.object(self.history, 'undo', side_effect=UndoFailed(step, redo=False)), \
+                patch.object(data_editor.QMessageBox, 'critical') as critical:
+            self.dialog.undo()
+
+        critical.assert_called_once()
+        self.assertEqual('Undo failed', critical.call_args[0][1])
+        self.assertEqual('Somebody', faction.name)
+
     def test_held_keys_stop_once_a_fields_typing_runs_out(self):
         from PyQt5.QtCore import QEvent, Qt
         from PyQt5.QtGui import QKeyEvent
