@@ -367,6 +367,28 @@ class LegacyEditorUndoTests(EditorUndoTestCase):
         self.assertEqual('Typed', name_box.text())
         self.assertEqual('Typed', self.tab.right_frame.current.name)
 
+    def test_held_keys_stop_once_a_fields_typing_runs_out(self):
+        from PyQt5.QtCore import QEvent, Qt
+        from PyQt5.QtGui import QKeyEvent
+        from PyQt5.QtTest import QTest
+        self.dialog.show()
+        self.dialog.activateWindow()
+        self.app.processEvents()
+        faction = self.tab.right_frame.current
+        old_name = faction.name
+        name_box = self.tab.right_frame.name_box.edit
+        name_box.setFocus()
+        self.app.processEvents()
+        name_box.setText('Somebody')  # Leaves the field no typing to undo
+        self.history.commit()
+
+        held = QKeyEvent(QEvent.KeyPress, Qt.Key_Z, Qt.ControlModifier, '', True)
+        self.app.sendEvent(name_box, held)
+        self.assertEqual('Somebody', faction.name)
+
+        QTest.keyClick(name_box, Qt.Key_Z, Qt.ControlModifier)
+        self.assertEqual(old_name, faction.name)
+
     def test_renaming_in_the_id_box_with_its_cascade_and_name_is_one_undo_step(self):
         from PyQt5.QtCore import Qt
         from PyQt5.QtTest import QTest

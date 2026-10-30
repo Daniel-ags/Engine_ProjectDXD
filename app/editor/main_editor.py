@@ -24,7 +24,7 @@ from app.data.database.database import DB
 
 from app.editor import log_viewer, timer, error_viewer, reference_dialogs
 from app.editor.custom_widgets import ObjBox
-from app.editor.data_editor import EditHistoryDialog, UndoFeedback, handles_own_undo
+from app.editor.data_editor import EditHistoryDialog, UndoFeedback, handles_own_undo, held_in_text_field
 from app.editor.edit_history import HISTORY
 from app.editor.editor_windows import EditorWindows
 
@@ -194,10 +194,12 @@ class MainEditor(QMainWindow):
     def eventFilter(self, obj, event):
         if obj is self.key_widget and event.type() == QEvent.KeyPress:
             if event.matches(QKeySequence.Undo) and not handles_own_undo(obj, redo=False):
-                self.undo()
+                if not held_in_text_field(obj, event):
+                    self.undo()
                 return True
             if event.matches(QKeySequence.Redo) and not handles_own_undo(obj, redo=True):
-                self.redo()
+                if not held_in_text_field(obj, event):
+                    self.redo()
                 return True
         return super().eventFilter(obj, event)
 

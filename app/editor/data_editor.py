@@ -74,6 +74,12 @@ def handles_own_undo(widget, redo: bool) -> bool:
         return document.isRedoAvailable() if redo else document.isUndoAvailable()
     return False
 
+def held_in_text_field(widget, event: QtGui.QKeyEvent) -> bool:
+    """Whether the undo or redo keys are held down in a text field. Once its own typing
+    runs out they go no further, where held keys would run on through the history into
+    edits made in any window. A fresh press goes on to the history."""
+    return event.isAutoRepeat() and isinstance(widget, (QLineEdit, QTextEdit, QPlainTextEdit))
+
 class UndoFeedback(QLabel):
     """Says what an undo or redo just took back or put back, for a few seconds"""
     SHOWN_FOR = 5000  # ms
@@ -223,9 +229,11 @@ class EditHistoryDialog(QDialog):
                 redo = True
             else:
                 return super().eventFilter(obj, event)
-            if not self.current_history_tab().supports_undo or \
-                    handles_own_undo(QApplication.focusWidget(), redo):
+            focused = QApplication.focusWidget()
+            if not self.current_history_tab().supports_undo or handles_own_undo(focused, redo):
                 return super().eventFilter(obj, event)
+            if held_in_text_field(focused, event):
+                return True
             if redo:
                 self.redo()
             else:
