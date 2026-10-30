@@ -575,23 +575,24 @@ class EditHistory:
     def undo_to(self, mark: Optional[ChangeSet]) -> None:
         """Puts everything back as it was at mark and forgets what came after.
         A mark that history has since dropped off its end undoes as far as
-        history goes."""
+        history goes. With nothing done since mark, the redo steps stay."""
         self.commit()
         # Everything undone or redone, for the listeners
         changed = ChangeSet('Undo')
         if mark is not None and any(change_set is mark for change_set in self._redo):
-            # Undone past the mark: redo up to it
+            # Undone past the mark: redo up to it, then forget the steps undone past it
             while self._undo[-1:] != [mark]:
                 change_set = self._redo.pop()
                 change_set.redo()
                 self._undo.append(change_set)
                 changed.deltas.extend(change_set.deltas)
+            self._redo.clear()
         else:
+            # A step recorded since mark already cleared the redo steps
             while self._undo and self._undo[-1] is not mark:
                 change_set = self._undo.pop()
                 change_set.undo()
                 changed.deltas.extend(change_set.deltas)
-        self._redo.clear()
         self.rebaseline()
         if changed.deltas:
             self._announce(None, changed)

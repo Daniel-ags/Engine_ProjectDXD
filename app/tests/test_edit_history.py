@@ -339,6 +339,19 @@ class MarkTests(HistoryTestCase):
         self.assertEqual('Before', self.unit.name)
         self.assertFalse(HISTORY.can_redo())
 
+    def test_undo_to_a_mark_with_nothing_done_since_keeps_the_redo_steps(self):
+        # As a cancelled dialog that changed nothing does
+        self.unit.name = 'After'
+        HISTORY.commit()
+        HISTORY.undo()
+        mark = HISTORY.mark()
+
+        HISTORY.undo_to(mark)
+
+        self.assertTrue(HISTORY.can_redo())
+        HISTORY.redo()
+        self.assertEqual('After', self.unit.name)
+
     def test_history_keeps_its_last_hundred_steps(self):
         for idx in range(MAX_CHANGE_SETS + 5):
             self.unit.name = str(idx)
