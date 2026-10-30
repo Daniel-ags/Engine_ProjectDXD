@@ -66,6 +66,32 @@ def build_display(size):
 def get_screen_size():
     return pygame.display.get_surface().get_size()
 
+def has_display() -> bool:
+    return pygame.display.get_surface() is not None
+
+def convert_for_display(surf: pygame.Surface) -> pygame.Surface:
+    """
+    A copy of surf in the display's pixel format, keeping its per-pixel alpha
+    or its colorkey. An image loaded from a png has its own format, and blitting
+    it converts every pixel as it goes, many times slower than a converted one
+    """
+    if surf.get_flags() & pygame.SRCALPHA:
+        return surf.convert_alpha()
+    return surf.convert()
+
+def _can_scale_onto(surf: pygame.Surface, dest: pygame.Surface) -> bool:
+    """
+    Whether surf can be scaled straight onto dest. Scaling writes its pixels
+    over dest's, so surf must be opaque, with no alpha (SRCALPHA, which
+    set_alpha sets too) or colorkey to blend by, and in dest's own format, bit
+    depth included: a 24-bit surface has the same masks as a 32-bit one, and
+    scale refuses it
+    """
+    return (not surf.get_flags() & pygame.SRCALPHA
+            and surf.get_colorkey() is None
+            and surf.get_bitsize() == dest.get_bitsize()
+            and surf.get_masks() == dest.get_masks())
+
 def push_display(surf, size, new_surf):
     win_w, win_h = size
     base_w, base_h = surf.get_size()
@@ -77,14 +103,16 @@ def push_display(surf, size, new_surf):
     new_w = int(base_w * scale)
     new_h = int(base_h * scale)
 
-    scaled_surf = pygame.transform.scale(surf, (new_w, new_h))
-
     # Center view
     x = (win_w - new_w) // 2
     y = (win_h - new_h) // 2
 
-    # Render scaled surface
-    new_surf.blit(scaled_surf, (x, y))
+    if (new_w, new_h) == (base_w, base_h):
+        new_surf.blit(surf, (x, y))
+    elif _can_scale_onto(surf, new_surf):
+        pygame.transform.scale(surf, (new_w, new_h), new_surf.subsurface((x, y, new_w, new_h)))
+    else:
+        new_surf.blit(pygame.transform.scale(surf, (new_w, new_h)), (x, y))
 
 def update_display():
     pygame.display.update()

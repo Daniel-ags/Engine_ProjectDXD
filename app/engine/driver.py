@@ -11,6 +11,7 @@ from app.utilities import file_utils, utils
 
 from app.constants import WINWIDTH, WINHEIGHT, VERSION, FPS
 from app.engine import engine
+from app.engine.utils import garbage
 
 import app.engine.config as cf
 
@@ -34,6 +35,17 @@ def start(title, from_editor=False):
     icon = engine.image_load('favicon.ico')
     engine.set_icon(icon)
 
+    # Hack to get icon to show up in windows
+    try:
+        import ctypes
+        myappid = u'rainlash.lextalionis.ltmaker.current' # arbitrary string
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+    except:
+        print("Maybe not Windows? (but that's OK)")
+
+    engine.DISPLAYSURF = engine.build_display(engine.get_screensize(True))
+
+    # After the display is built, to convert the images to its pixel format
     from app.engine import sprites
     sprites.load_images()
 
@@ -48,21 +60,14 @@ def start(title, from_editor=False):
     # because they could have changed.
     battle_animation.battle_anim_registry.clear()
 
-    # Hack to get icon to show up in windows
-    try:
-        import ctypes
-        myappid = u'rainlash.lextalionis.ltmaker.current' # arbitrary string
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
-    except:
-        print("Maybe not Windows? (but that's OK)")
-
-    engine.DISPLAYSURF = engine.build_display(engine.get_screensize(True))
-    
     # must happen after pygame.display.set_mode
     # is called in engine.build_display
     from app.engine import fonts
     fonts.load_fonts()
-    
+
+    # The project's data is loaded by now, and lasts the whole session
+    garbage.settle()
+
     engine.update_time()
     engine.set_title(title + ' - v' + VERSION)
     print("Version: %s" % VERSION)
