@@ -28,6 +28,7 @@ from app.editor.file_manager.staging import STAGING
 import app.editor.combat_animation_editor.combat_animation_imports as combat_animation_imports
 import app.editor.combat_animation_editor.combat_animation_export as combat_animation_export
 from app.editor.component_editor_types import T
+from app.editor.edit_history import HISTORY
 from app.extensions.custom_gui import ComboBox
 
 import app.editor.utilities as editor_utilities
@@ -590,9 +591,11 @@ class NewCombatAnimProperties(QWidget):
             parent_dir = os.path.split(fns[-1])[0]
             self.settings.set_last_open_path(parent_dir)
 
-            for fn in fns:
-                if fn.endswith('-Script.txt'):
-                    combat_animation_imports.import_from_legacy(self.current, fn)
+            # The animation and the palettes the import adds colors to, as one undo step
+            with HISTORY.change_set('Import into %s' % self.current.nid, origin=self.window):
+                for fn in fns:
+                    if fn.endswith('-Script.txt'):
+                        combat_animation_imports.import_from_legacy(self.current, fn)
 
             # Reset
             self.set_current(self.current)

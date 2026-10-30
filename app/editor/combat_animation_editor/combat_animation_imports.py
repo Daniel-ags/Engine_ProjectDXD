@@ -9,6 +9,7 @@ from app.constants import COLORKEY
 from app.utilities import str_utils
 from app.data.resources.resources import RESOURCES
 from app.data.resources import combat_anims, combat_commands, combat_palettes
+from app.editor.edit_history import HISTORY
 
 from app.editor.combat_animation_editor.animation_import_utils import \
     convert_gba, simple_crop, split_doubles, find_empty_pixmaps, combine_identical_commands, stage_full_image,     update_anim_full_image
@@ -40,7 +41,9 @@ def populate_palettes(current, images, nid):
             new_colors = editor_utilities.assign_new_colors(orig_palette, palette_colors)
             if new_colors:
                 logging.debug("Adding %s to palette %s", new_colors, orig_palette_nid)
-                orig_palette.colors.update(new_colors)
+                # The palette is another record than the animation the editor shows
+                with HISTORY.modifying([(orig_palette, RESOURCES.combat_palettes)]):
+                    orig_palette.colors.update(new_colors)
         else:
             if palette_nid not in RESOURCES.combat_palettes:
                 # Need to create palette
