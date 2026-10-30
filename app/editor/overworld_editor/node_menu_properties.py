@@ -176,7 +176,6 @@ class ModifyOptionsWidget(QWidget):
             self.opt_nid_box.edit.setText(new_nid)
         self._data.update_nid(self.current, new_nid)
         self.window.update_list()
-        self.window.update_list()
 
     def sub_nid_changed(self, text):
         self.current.option_name = text
