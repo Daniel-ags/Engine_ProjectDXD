@@ -563,6 +563,55 @@ class StatTableTests(EditorUndoTestCase):
         self.assertNotIn(new_stat.nid, klass.growths)
         self.assertFalse(self.history.can_undo())
 
+    def stat_tables(self) -> list:
+        """Every stat table's entries, in order"""
+        tables = [list(row.items()) for record in list(DB.units) + list(DB.classes)
+                  for row in record.get_stat_lists()]
+        for mode in DB.difficulty_modes:
+            for name in ('player_bases', 'enemy_bases', 'boss_bases',
+                         'player_growths', 'enemy_growths', 'boss_growths'):
+                tables.append(list(getattr(mode, name).items()))
+        return tables
+
+    def show_stat(self, nid):
+        from app.editor.data_editor import SingleDatabaseEditor
+        from app.editor.stat_editor.stat_tab import StatTypeDatabase
+        dialog = self.open(SingleDatabaseEditor, StatTypeDatabase)
+        stat = DB.stats.get(nid)
+        dialog.tab.left_frame.view.setCurrentIndex(dialog.tab.view_index_of(stat))
+        self.assertIs(stat, dialog.tab.right_frame.current)
+        return dialog.tab.right_frame
+
+    def test_renaming_a_stat_renames_its_entry_in_every_stat_table_in_one_undo_step(self):
+        before = self.stat_tables()
+        self.assertTrue(any(key == 'STR' for table in before for key, _ in table))
+        properties = self.show_stat('STR')
+
+        properties.nid_box.edit.setText('POW')
+        properties.nid_done_editing()
+        self.history.commit()
+
+        # Each entry keeps its place and its value, and a table without one, as a
+        # table may be, gains none
+        self.assertEqual([[('POW' if key == 'STR' else key, value) for key, value in table] for table in before],
+                         self.stat_tables())
+        self.history.undo()
+        # Undo brings back each entry, though not its place in its table
+        self.assertEqual([dict(table) for table in before], [dict(table) for table in self.stat_tables()])
+        self.assertIn('STR', DB.stats.keys())
+        self.assertFalse(self.history.can_undo())
+
+    def test_finishing_the_id_unchanged_records_nothing_and_reads_no_stat_table(self):
+        from app.editor.stat_editor import stat_model
+        properties = self.show_stat('STR')
+        with patch.object(stat_model, 'stat_table_holders') as holders, \
+                patch.object(self.history, 'modifying', wraps=self.history.modifying) as modifying:
+            properties.nid_done_editing()
+            self.history.commit()
+        holders.assert_not_called()
+        modifying.assert_not_called()
+        self.assertFalse(self.history.can_undo())
+
 
 class MapAnimationFrameTimeTests(EditorUndoTestCase):
     def test_timing_a_frame_past_the_listed_times_gives_the_frames_between_one_each(self):

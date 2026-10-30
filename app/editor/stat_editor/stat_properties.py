@@ -5,7 +5,6 @@ from PyQt5.QtCore import Qt
 from app.data.database.database import DB
 from app.data.database.database_types import DatabaseType as DType
 from app.editor.edit_history import HISTORY
-from app.editor.stat_editor import stat_model
 
 from app.data.database.stats import StatPrefab
 from app.utilities import str_utils
@@ -77,7 +76,6 @@ class StatTypeProperties(QWidget):
             self.name_box.edit.setText(new_nid.replace('_', ' '))
         HISTORY.rename(self._data, self.current, new_nid, self.on_nid_changed)
         self.window.update_list()
-        stat_model.fill_stat_tables()
 
     def name_changed(self, text):
         self.current.name = text
