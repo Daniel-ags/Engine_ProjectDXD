@@ -733,7 +733,6 @@ class InfoMenuState(State):
                 self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
 
             elif stat == 'AID':
-<<<<<<<<< Temporary merge branch 1
                 if growths:
                     icons.draw_growth(surf, 'HP', self.unit, (111, 16 * true_idx + 24))
                     color = 'white'
@@ -745,10 +744,8 @@ class InfoMenuState(State):
                 else:
                     aid = equations.parser.rescue_aid(self.unit)
                     render_text(surf, ['text'], [str(aid)], ['white'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
-=========
-                aid = equations.parser.rescue_aid(self.unit)
+                    aid = equations.parser.rescue_aid(self.unit)
                 render_text(surf, ['text'], [str(aid)], ['blue'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
->>>>>>>>> Temporary merge branch 2
 
                 # Mount Symbols
                 for tag in self.unit.tags:
@@ -763,7 +760,6 @@ class InfoMenuState(State):
                     elif 'Mounted' in self.unit.tags:
                         aid_surf = engine.subsurface(SPRITES.get('aid_icons'), (0, 16, 16, 16))
                     else:
-<<<<<<<<< Temporary merge branch 1
                         if 'Dragon' in self.unit.tags:
                             aid_surf = engine.subsurface(SPRITES.get('aid_icons'), (0, 48, 16, 16))
                         elif 'Flying' in self.unit.tags:
@@ -776,13 +772,11 @@ class InfoMenuState(State):
                     render_text(surf, ['text'], [text_funcs.translate('Aid')], ['white'], (72, 16 * true_idx + 24))
                     desc = text_funcs.translate_and_text_evaluate('Aid_desc', unit=self.unit)
                     self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
-=========
-                        aid_surf = engine.subsurface(SPRITES.get('aid_icons'), (0, 0, 16, 16))
+                    aid_surf = engine.subsurface(SPRITES.get('aid_icons'), (0, 0, 16, 16))
                 surf.blit(aid_surf, (112, 16 * true_idx + 24))
                 render_text(surf, ['text'], [text_funcs.translate('Aid')], ['yellow'], (72, 16 * true_idx + 24))
                 desc = text_funcs.translate_and_text_evaluate('Aid_desc', unit=self.unit)
                 self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
->>>>>>>>> Temporary merge branch 2
 
             elif stat == 'RAT':
                 rat = str(equations.parser.rating(self.unit))
@@ -799,7 +793,6 @@ class InfoMenuState(State):
                 self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
 
             elif stat == 'GAUGE':
-<<<<<<<<< Temporary merge branch 1
                 if growths: #GAUGE replaces AID when pair up is in use.  HP growth will replace one of the two.
                     #Since AID and GAUGE are mutually exclusive, we shouldn't need to worry about ever displaying the growth twice.
                     icons.draw_growth(surf, 'HP', self.unit, (111, 16 * true_idx + 24))
@@ -815,13 +808,11 @@ class InfoMenuState(State):
                     render_text(surf, ['text'], [text_funcs.translate('GAUGE')], ['white'], (72, 16 * true_idx + 24))
                     desc = text_funcs.translate_and_text_evaluate('GAUGE_desc', unit=self.unit)
                     self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
-=========
                 gge = str(self.unit.get_guard_gauge())
                 render_text(surf, ['text'], [gge], ['blue'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
                 render_text(surf, ['text'], [text_funcs.translate('GAUGE')], ['yellow'], (72, 16 * true_idx + 24))
                 desc = text_funcs.translate_and_text_evaluate('GAUGE_desc', unit=self.unit)
                 self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
->>>>>>>>> Temporary merge branch 2
 
             elif stat == 'TALK':
                 if (len([talk for talk in game.talk_options if talk[0] == self.unit.nid and talk not in game.talk_hidden]) != 0):
