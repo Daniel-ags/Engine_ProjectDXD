@@ -36,18 +36,16 @@ class AudioController:
 
     def shutdown(self):
         """
-        Free mem and shutdown mixer
+        Stop and unload the track. The mixer stays up: the engine runs in the
+        editor's process for test play, its sound thread keeps its channels
+        across runs, and using a channel after pygame.mixer.quit crashes the process
         """
 
         if not pygame.mixer.get_init():
             return
 
-        try:
-            pygame.mixer.music.stop()
-        except pygame.error as e:
-            logging.error("Audio Controller | Error", e)
-
-        pygame.mixer.quit()
+        pygame.mixer.music.stop()
+        pygame.mixer.music.unload()
 
     def play(self):
         pygame.mixer.music.play(start=self.current_ms / 1000)
