@@ -1,8 +1,6 @@
 """
 Opens the real main window on a copy of a project, for a script run in a process of
-its own, since the main window writes the editor's settings (the current project,
-recent projects, window layouts), which are pointed at a temporary folder here
-before anything reads them, and holds on to the edit history's listeners and the
+its own, since the main window holds on to the edit history's listeners and the
 timer.
 
 A script's last line printed is REPORT followed by JSON, which run_report reads.
@@ -38,10 +36,6 @@ class MainWindowRun:
 def open_main_window(source_proj: str, work: str) -> MainWindowRun:
     """The main window, shown, on a copy of source_proj in work"""
     from app.tests import qt_headless  # noqa: F401 -- before any QApplication
-    from PyQt5.QtCore import QSettings
-    # Before the first settings controller exists
-    QSettings.setDefaultFormat(QSettings.IniFormat)
-    QSettings.setPath(QSettings.IniFormat, QSettings.UserScope, os.path.join(work, 'settings'))
     from PyQt5.QtWidgets import QApplication, QMessageBox
     from unittest.mock import patch
     app = QApplication(sys.argv)
@@ -77,7 +71,10 @@ def report(main: Callable[[str, str], dict]):
     """Runs main(project, work dir) from the command line and prints its report"""
     result = main(os.path.abspath(sys.argv[1]), os.path.abspath(sys.argv[2]))
     print(REPORT + json.dumps(result), flush=True)
-    # Skips tearing the window down, which only takes time
+    # Skips tearing the window down, which only takes time, and so qt_headless's
+    # removal of its settings folder at exit
+    from app.tests import qt_headless
+    shutil.rmtree(qt_headless.SETTINGS_DIR, ignore_errors=True)
     os._exit(0)
 
 
