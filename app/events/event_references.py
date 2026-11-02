@@ -64,6 +64,32 @@ KEYWORD_TARGETS: Dict[str, Tuple[Target, ...]] = {
     'Unit': (DType.UNITS,),
     'WeaponType': (DType.WEAPONS,),
 }
+# Argument types naming no record of a catalog. Every type a command uses is here or
+# in KEYWORD_TARGETS (test_event_references)
+NAMES_NO_RECORD = {
+    # Numbers, coordinates and sizes
+    'Color3', 'Float', 'FloatPosition', 'Integer', 'IntegerList', 'Intensity',
+    'PointList', 'PositionOffset', 'PositiveInteger', 'SaveSlot', 'Size', 'Speed',
+    'Time', 'Volume', 'WholeNumber', 'Width',
+    # Text and code, which is read for quoted strings instead
+    '*String', 'ArgList', 'BoolList', 'EvaluableString', 'Expression', 'ExpressionList',
+    'IllegalCharacterList', 'String', 'StringList',
+    # Options and styles
+    'Align', 'AlignOrPosition', 'AnimationType', 'Bool', 'CardinalDirection',
+    'CombatScript', 'DialogVariant', 'Direction', 'EntryType', 'FogOfWarColor',
+    'FogOfWarType', 'FontColor', 'GrowthMethod', 'HAlign', 'HighlightType',
+    'LayerTransition', 'MovementType', 'Orientation', 'PhaseMusic', 'Placement',
+    'RNGType', 'RegionType', 'RemoveType', 'ScreenPosition', 'ShakeType', 'ShopFlavor',
+    'Slide', 'SpecialMusicType', 'SpriteDirection', 'SpritePose', 'TableEntryType',
+    'Weather',
+    # Parts of a record, which have no catalog of their own
+    'Group', 'Layer', 'OverworldLocation', 'OverworldNodeMenuOption', 'OverworldNodeNID',
+    'Region', 'StartingGroup', 'UnitField',
+    # Names defined by the engine rather than the project
+    'Icon', 'ItemComponent', 'MaybeSprite', 'SkillComponent', 'Sprite',
+    # Any nid, which need not belong to a record
+    'Achievement', 'GeneralVar', 'Nid',
+}
 # Argument types holding several nids, delimited by commas
 LIST_TYPES = {'ItemList', 'KlassList'}
 # Argument types holding nid, value pairs, delimited by commas: `STR,2,DEF,-1`

@@ -5,10 +5,21 @@ from app.data.database.database import DB
 from app.data.database.database_types import DatabaseType as DType
 from app.data.resources.resource_types import ResourceType as RType
 from app.data.serialization.versions import CURRENT_SERIALIZATION_VERSION
+from app.events import event_commands
 from app.events.event_prefab import EventPrefab
-from app.events.event_references import CONDITION_LINE, find_mentions
+from app.events.event_references import CONDITION_LINE, KEYWORD_TARGETS, NAMES_NO_RECORD, find_mentions
 
 # testing_proj's own events name Eirika in level 1's New Event, and nothing else below
+
+
+class ArgumentTypeTests(unittest.TestCase):
+    def test_every_argument_type_says_whether_it_names_a_record(self):
+        used = {kind for command in event_commands.get_commands() for kind in command.get_keyword_types()}
+
+        self.assertEqual(set(), used - set(KEYWORD_TARGETS) - NAMES_NO_RECORD)
+
+    def test_no_argument_type_both_names_a_record_and_names_none(self):
+        self.assertEqual(set(), set(KEYWORD_TARGETS) & NAMES_NO_RECORD)
 
 
 class EventMentionTests(unittest.TestCase):
