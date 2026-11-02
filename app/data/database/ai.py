@@ -58,16 +58,6 @@ class AIPrefab(Prefab):
     def default(cls):
         return cls(None, 0)
 
-    def has_unit_spec(self, spec_type, spec_nid) -> bool:
-        for behaviour in self.behaviours:
-            if behaviour.has_unit_spec(spec_type, spec_nid):
-                return True
-        return False
-
-    def change_unit_spec(self, spec_type, old_nid, new_nid):
-        for behaviour in self.behaviours:
-            behaviour.change_unit_spec(spec_type, old_nid, new_nid)
-
     def guard_ai(self) -> bool:
         # Determines whether this AI will ever move
         # Used in game.boundary for graphics
@@ -98,17 +88,6 @@ class AIBehaviour(Prefab):
     @classmethod
     def default(cls):
         return cls.DoNothing()
-
-    def has_unit_spec(self, spec_type, spec_nid):
-        if self.target in ('Enemy', 'Ally', 'Unit'):
-            if self.target_spec and self.target_spec[0] == spec_type and self.target_spec[1] == spec_nid:
-                return True
-        return False
-
-    def change_unit_spec(self, spec_type, old_nid, new_nid):
-        if self.target in ('Enemy', 'Ally', 'Unit'):
-            if self.target_spec and self.target_spec[0] == spec_type and self.target_spec[1] == old_nid:
-                self.target_spec[1] = new_nid
 
     def guard_ai(self):
         return self.view_range == -1

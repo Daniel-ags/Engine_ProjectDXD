@@ -13,8 +13,9 @@ from app.data.database.database import DB, Database
 from app.data.resources.resources import RESOURCES, Resources
 from app.data.resources.base_catalog import ManifestCatalog
 from app.data.category import Categories, CategorizedCatalog
-from app.editor import timer
+from app.editor.custom_widgets import ObjBox
 from app.editor.data_editor import SingleDatabaseEditor
+from app.editor.edit_history import HISTORY
 from app.editor.lib.components.nested_list import LTNestedList
 from app.utilities import str_utils
 from app.utilities.typing import NID
@@ -35,18 +36,21 @@ class NewEditorTab(QWidget, Generic[T]):
     allow_copy_and_paste = False
     # Size of the icon beside each entry in the list. Shrink for data that has no icons
     icon_size = 32
+    # Whether what it shows comes in part from levels, overworlds or tilemaps, so a
+    # map edit in the main window changes it (EditHistoryDialog.show_changes). Such a
+    # tab says which map edits do with reads_map_edit(change_set)
+    reads_maps = False
 
     def __init__(self, parent, database: Database, resources: Resources = None) -> None:
         QWidget.__init__(self, parent)
         self.setWindowTitle(_('%s Editor') % self.properties_type.title)
         self._db = database
         self._res = resources
-        self.categories = self.data.categories
 
         self.left_frame = QWidget()
         left_frame_layout = QVBoxLayout()
         self.left_frame.setLayout(left_frame_layout)
-        self.tree_list = LTNestedList(self, self.data.keys(), self.categories, self.allow_rename,
+        self.tree_list = LTNestedList(self, self.data.keys(), self.data.categories, self.allow_rename,
                                       self.allow_duplicate, self.get_icon, self.get_foreground,
                                       self.on_select, self.resort_db, self.on_begin_rename,
                                       self.delete_from_db, self.create_new, self.duplicate, self.rename,
@@ -93,19 +97,38 @@ class NewEditorTab(QWidget, Generic[T]):
 
     @classmethod
     def edit(cls, parent=None):
-        timer.get_timer().stop_for_editor()  # Don't need these while running game
-        window = SingleDatabaseEditor(cls, parent)
-        window.exec_()
-        timer.get_timer().start_for_editor()
-        return window
+        """This tab's editor window, not yet shown"""
+        return SingleDatabaseEditor(cls, parent)
 
     def reset(self):
-        self.tree_list.reset(self.data.keys(), self.categories)
-        # The properties widget draws on data other tabs own -- a unit's stat columns
-        # come from DB.stats -- so re-push the current entry through it whenever this
-        # tab comes back into view
-        if self.right_frame.current:
-            self.right_frame.set_current(self.right_frame.current)
+        """Shows the database again, as it is now. The properties widget draws on data
+        other tabs own -- a unit's stat columns come from DB.stats -- and an undo may
+        have taken away or renamed the shown entry."""
+        current = self.right_frame.current
+        if current is not None and not any(entry is current for entry in self.data):
+            current = self.neighbour_of(current.nid)
+        for box in self.right_frame.findChildren(ObjBox):
+            box.refresh()
+        # Rebuilding the list drops its selection, and so the binding, so select
+        # the entry again by its nid
+        # Rearranging the list puts a new categories object on the catalog, so read it afresh
+        self.tree_list.reset(self.data.keys(), self.data.categories)
+        if current is not None:
+            self.tree_list.select_item(current.nid)
+        else:
+            self.on_select(None)
+
+    def neighbour_of(self, nid: NID):
+        """The entry the list showed below nid, or else above it, that is still in the
+        catalog: what takes the place of a shown entry something else deleted"""
+        shown, _ = self.tree_list.get_list_and_category_structure()
+        if nid not in shown:
+            return self.data[0] if self.data else None
+        idx = shown.index(nid)
+        for other in shown[idx + 1:] + shown[:idx][::-1]:
+            if other in self.data:
+                return self.data.get(other)
+        return None
 
     def attempt_change_nid(self, old_nid: NID, new_nid: NID) -> bool:
         if not new_nid:
@@ -115,22 +138,28 @@ class NewEditorTab(QWidget, Generic[T]):
         if self.data.get(new_nid):
             QMessageBox.warning(self, 'Warning', 'ID %s already in use' % new_nid)
             return False
-        self._on_nid_changed(old_nid, new_nid)
-        if isinstance(self.data, ManifestCatalog):
-            self.data.update_nid(self.data.get(old_nid), new_nid)
-        else:
-            self.data.change_key(old_nid, new_nid)
+        with HISTORY.change_set('Rename %s' % old_nid, origin=self), \
+                HISTORY.modifying([(self.data.get(old_nid), self.data)]):
+            self._on_nid_changed(old_nid, new_nid)
+            if isinstance(self.data, ManifestCatalog):
+                self.data.update_nid(self.data.get(old_nid), new_nid)
+            else:
+                self.data.change_key(old_nid, new_nid)
         self.tree_list.update_nid(old_nid, new_nid)
         self.tree_list.on_filter_changed(self.tree_list.search_box.text())
         return True
 
     def on_select(self, entry_nid: Optional[NID]):
         if not entry_nid:
+            HISTORY.bind(None, self.data, self)
             self.right_frame.set_current(None)
             return
         curr_entry = self.data.get(entry_nid)
         if curr_entry:
+            # Showing writes nothing, so the bind's commit records the edits to the
+            # entry shown before
             self.right_frame.set_current(curr_entry)
+            HISTORY.bind(curr_entry, self.data, self)
 
     def resort_db(self, entries: List[str], categories: Categories):
         self.data.categories = categories
@@ -143,9 +172,10 @@ class NewEditorTab(QWidget, Generic[T]):
     def delete_from_db(self, nid):
         if len(self.data) == 1:
             return False
-        if self._on_delete(nid):
-            self.data.remove_key(nid)
-            return True
+        with HISTORY.change_set('Delete %s' % nid, origin=self):
+            if self._on_delete(nid):
+                self.data.remove_key(nid)
+                return True
         return False
 
     def create_new(self, nid):
@@ -177,11 +207,12 @@ class NewEditorTab(QWidget, Generic[T]):
         if not orig_obj:
             QMessageBox.warning(self, 'Warning', 'ID %s not found' % old_nid)
             return False
-        self._on_nid_changed(old_nid, new_nid)
-        if isinstance(self.data, ManifestCatalog):
-            self.data.update_nid(self.data.get(old_nid), new_nid)
-        else:
-            self.data.change_key(old_nid, new_nid)
+        with HISTORY.change_set('Rename %s' % old_nid, origin=self), HISTORY.modifying([(orig_obj, self.data)]):
+            self._on_nid_changed(old_nid, new_nid)
+            if isinstance(self.data, ManifestCatalog):
+                self.data.update_nid(self.data.get(old_nid), new_nid)
+            else:
+                self.data.change_key(old_nid, new_nid)
         self.tree_list.on_filter_changed(self.tree_list.search_box.text())
         self.tree_list.select_item(new_nid)
         return True

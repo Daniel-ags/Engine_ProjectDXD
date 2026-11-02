@@ -14,9 +14,6 @@ from app.editor.combat_animation_editor.animation_import_utils import \
     remove_top_right_palette_indicator, find_empty_pixmaps, stretch_vertically
 from app.editor.combat_animation_editor.combat_effect_sound_table import SOUND_TABLE
 
-from app.editor.settings import MainSettingsController
-from app.editor.file_manager.project_file_backend import DEFAULT_PROJECT
-
 import app.editor.utilities as editor_utilities
 
 import logging
@@ -451,12 +448,5 @@ def import_effect_from_gba(fn: str, effect_name: str):
     RESOURCES.combat_effects.append(controller_effect)
     RESOURCES.combat_effects.append(foreground_effect)
     RESOURCES.combat_effects.append(background_effect)
-
-    # Need to save the full image somewhere
-    settings = MainSettingsController()
-    if os.path.basename(settings.get_current_project()) != DEFAULT_PROJECT:
-        path = os.path.join(settings.get_current_project(), 'resources', 'combat_effects')
-        RESOURCES.combat_effects.save_image(path, foreground_effect)
-        RESOURCES.combat_effects.save_image(path, background_effect)
 
     QMessageBox.information(None, "Spell Import Complete", f"Import of {fn} complete as {controller_effect.nid}")

@@ -4,6 +4,7 @@ Runs the test suite across several processes.
     python utilities/build_tools/run_tests_parallel.py              # everything
     python utilities/build_tools/run_tests_parallel.py city turn    # only modules whose name contains "city" or "turn"
     python utilities/build_tools/run_tests_parallel.py -j 4         # on four processes
+    python utilities/build_tools/run_tests_parallel.py --slow       # with the slow tests too
 
 Each test module runs whole, in one process, so its tests keep the order and the
 shared state they have in a serial run. Modules are handed out one at a time to
@@ -18,8 +19,9 @@ import sys
 import time
 import traceback
 import unittest
+from multiprocessing.connection import Connection, wait
 from pathlib import Path
-from typing import List, NamedTuple
+from typing import List, NamedTuple, Optional
 
 # This file is utilities/build_tools/run_tests_parallel.py, two directories below the repo
 REPO_ROOT = str(Path(__file__).resolve().parents[2])
@@ -80,6 +82,71 @@ def run_module(module: str) -> ModuleResult:
                         time.perf_counter() - start, output.getvalue())
 
 
+def worker_loop(connection: Connection):
+    """A worker process: runs each module it is sent, until it is sent None"""
+    prepare_worker()
+    while True:
+        module = connection.recv()
+        if module is None:
+            return
+        connection.send(run_module(module))
+
+
+class Worker():
+    """A process running one module at a time. A multiprocessing.Pool waits
+    forever on a module whose process died (a segfault in pygame); one process
+    per pipe says which module it was"""
+    def __init__(self):
+        self.connection, child_connection = multiprocessing.Pipe()
+        self.process = multiprocessing.Process(target=worker_loop, args=(child_connection,), daemon=True)
+        self.process.start()
+        # Only the child holds its end now, so the pipe ends when the child does
+        child_connection.close()
+        self.module: Optional[str] = None
+
+    def give(self, module: str):
+        self.module = module
+        self.connection.send(module)
+
+
+def run_modules(modules: List[str], jobs: int) -> List[ModuleResult]:
+    """Runs the modules on `jobs` processes, each handed a module once it is free"""
+    results: List[ModuleResult] = []
+    waiting = list(reversed(modules))  # popped from the end, so in order
+    workers = [Worker() for _ in range(jobs)]
+    while True:
+        for worker in workers:
+            if worker.module is None and waiting:
+                worker.give(waiting.pop())
+        busy = [worker for worker in workers if worker.module is not None]
+        if not busy:
+            break
+        ready = wait([worker.connection for worker in busy] + [worker.process.sentinel for worker in busy])
+        for worker in busy:
+            if worker.connection not in ready and worker.process.sentinel not in ready:
+                continue
+            try:
+                result = worker.connection.recv()
+            except (EOFError, OSError):
+                worker.process.join()
+                result = ModuleResult(
+                    worker.module, 0, 0, False, 0.0,
+                    "The test process running this module died (exit code %s). What it printed "
+                    "as it died, if anything, is above, where it named the test it was running\n"
+                    % worker.process.exitcode)
+            worker.module = None
+            results.append(result)
+            sys.stdout.write('.' if result.passed else 'F')
+            sys.stdout.flush()
+            if not worker.process.is_alive():
+                workers[workers.index(worker)] = Worker()
+    for worker in workers:
+        worker.connection.send(None)
+    for worker in workers:
+        worker.process.join()
+    return results
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run the test suite across several processes.")
     parser.add_argument('filters', nargs='*',
@@ -88,7 +155,12 @@ def main() -> int:
                         help="number of processes (default: %(default)s)")
     parser.add_argument('--slowest', type=int, default=0, metavar='N',
                         help="also list the N slowest modules")
+    parser.add_argument('--slow', action='store_true',
+                        help="also run the tests skipped unless LT_SLOW_TESTS is set")
     args = parser.parse_args()
+    if args.slow:
+        # The worker processes inherit it
+        os.environ['LT_SLOW_TESTS'] = '1'
 
     modules = find_test_modules()
     if args.filters:
@@ -108,12 +180,7 @@ def main() -> int:
         source_generator.generate_all()
 
     start = time.perf_counter()
-    results: List[ModuleResult] = []
-    with multiprocessing.Pool(jobs, initializer=prepare_worker) as pool:
-        for result in pool.imap_unordered(run_module, modules):
-            results.append(result)
-            sys.stdout.write('.' if result.passed else 'F')
-            sys.stdout.flush()
+    results = run_modules(modules, jobs)
     seconds = time.perf_counter() - start
     print()
 

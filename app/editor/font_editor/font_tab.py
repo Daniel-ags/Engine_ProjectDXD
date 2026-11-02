@@ -16,8 +16,7 @@ class FontDatabase(DatabaseTab):
 
     @classmethod
     def edit(cls, parent=None):
-        window = SingleResourceEditor(FontDatabase, ['fonts'], parent)
-        window.exec_()
+        return SingleResourceEditor(FontDatabase, ['fonts'], parent)
 
 
 # Testing

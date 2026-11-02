@@ -8,13 +8,13 @@ from app.data.resources.map_animations import MapAnimation
 from app.data.resources.resources import RESOURCES
 
 from app.utilities.data import Data
-from app.data.database.database import DB
-from app.data.database import item_components, components
-
-from app.extensions.custom_gui import DeletionTab, DeletionDialog
+from app.editor.edit_history import HISTORY
+from app.data.resources.resource_types import ResourceType as RType
+from app.editor import reference_dialogs
 
 from app.editor.settings import MainSettingsController
 from app.editor.base_database_gui import ResourceCollectionModel
+from app.editor.file_manager.staging import STAGING
 
 from app.utilities import str_utils
 
@@ -52,7 +52,7 @@ class MapAnimationModel(ResourceCollectionModel):
                     nid = os.path.split(fn)[-1][:-4]
                     pix = QPixmap(fn)
                     nid = str_utils.get_next_name(nid, [d.nid for d in RESOURCES.animations])
-                    new_animation = MapAnimation(nid, fn, pix)
+                    new_animation = MapAnimation(nid, STAGING.stage_file(fn), pix)
                     RESOURCES.animations.append(new_animation)
                 else:
                     QMessageBox.critical(self.window, "File Type Error!", "Map Animation must be PNG format!")
@@ -61,23 +61,9 @@ class MapAnimationModel(ResourceCollectionModel):
         return new_animation
 
     def delete(self, idx):
-        # Check to see what is using me?
         res = self._data[idx]
-        nid = res.nid
-        affected_items = item_components.get_items_using(item_components.ComponentType.MapAnimation, nid, DB)
-        if affected_items:
-            from app.editor.item_editor.item_model import ItemModel
-            model = ItemModel
-            msg = "Deleting Map Animation <b>%s</b> would affect these items."
-            deletion_tab = DeletionTab(affected_items, model, msg, "Items")
-            ok = DeletionDialog.inform([deletion_tab], self.window)
-            if ok:
-                pass
-            else:
-                return
-        super().delete(idx)
+        if reference_dialogs.check_delete(RType.ANIMATIONS, res.nid, 'Map Animation', self.window):
+            super().delete(idx)
 
     def on_nid_changed(self, old_nid, new_nid):
-        # What uses Animations
-        # Certain item components
-        components.swap_values(DB.items.values(), item_components.ComponentType.MapAnimation, old_nid, new_nid)
+        HISTORY.rewrite(RType.ANIMATIONS, old_nid, new_nid)

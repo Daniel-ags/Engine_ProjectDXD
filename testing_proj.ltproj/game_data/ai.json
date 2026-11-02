@@ -402,8 +402,8 @@
                 "action": "Move_to",
                 "target": "Ally",
                 "target_spec": [
-                    "Class",
-                    "Wagon"
+                    "Tag",
+                    "Convoy"
                 ],
                 "view_range": -4,
                 "invert_targeting": false,

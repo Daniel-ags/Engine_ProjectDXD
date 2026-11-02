@@ -9,6 +9,8 @@ from app.utilities.data import HasNid, Prefab
 from app.utilities.typing import NestedPrimitiveDict
 
 class SongPrefab(HasNid, WithResources, Prefab):
+    path_fields = ('full_path', 'intro_full_path', 'battle_full_path')
+
     def __init__(self, nid, full_path=None):
         self.nid = nid
         self.full_path = full_path

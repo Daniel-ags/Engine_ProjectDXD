@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from app.utilities import str_utils
 from app.utilities.data import Data
@@ -54,67 +54,6 @@ def convert_type_from_string(tstr: str, ttype: ComponentType):
         return float(tstr)
     else:
         return tstr
-
-
-def get_objs_using(objs: list, expose: ComponentType | Tuple[ComponentType, ComponentType],
-                   value: Any) -> list:
-    affected_items = []
-
-    def _check(expose_type: Tuple[ComponentType, ComponentType], subvalue: List[Any]) -> bool:
-        if expose_type[0] == ComponentType.List:
-            for i, val in enumerate(subvalue):
-                if val == value:
-                    return True
-        elif expose_type[0] in (ComponentType.Dict, ComponentType.FloatDict, ComponentType.StringDict):
-            for i, val in enumerate(subvalue):
-                if val[0] == value:
-                    return True
-        return False
-
-    for obj in objs:
-        for component in obj.components:
-            if component.expose == expose and component.value == value:
-                affected_items.append(obj)
-            elif isinstance(component.expose, tuple) and component.expose[1] == expose and \
-                    _check(component.expose, component.value):
-                affected_items.append(obj)
-            elif component.expose == ComponentType.NewMultipleOptions:
-                for key, expose_type in component.options.items():
-                    if expose_type == expose and component.value[key] == value:
-                        affected_items.append(obj)
-                        break
-                    elif isinstance(expose_type, tuple) and expose_type[1] == expose and \
-                            _check(expose_type, component.value[key]):
-                        affected_items.append(obj)
-                        break
-
-    return affected_items
-
-
-def swap_values(objs: list, expose: ComponentType | Tuple[ComponentType, ComponentType],
-                old_value: Any, new_value: Any) -> None:
-    def _swap(expose_type: Tuple[ComponentType, ComponentType], value: List[Any]) -> None:
-        if expose_type[0] == ComponentType.List:
-            for i, val in enumerate(value):
-                if val == old_value:
-                    value[i] = new_value
-        elif expose_type[0] in (ComponentType.Dict, ComponentType.FloatDict, ComponentType.StringDict):
-            for i, val in enumerate(value):
-                if val[0] == old_value:
-                    value[i][0] = new_value
-
-    for obj in objs:
-        for component in obj.components:
-            if component.expose == expose and component.value == old_value:
-                component.value = new_value
-            elif isinstance(component.expose, tuple) and component.expose[1] == expose:
-                _swap(component.expose, component.value)
-            elif component.expose == ComponentType.NewMultipleOptions:
-                for key, expose_type in component.options.items():
-                    if expose_type == expose and component.value[key] == old_value:
-                        component.value[key] = new_value
-                    elif isinstance(expose_type, tuple) and expose_type[1] == expose:
-                        _swap(expose_type, component.value[key])
 
 
 class Component():

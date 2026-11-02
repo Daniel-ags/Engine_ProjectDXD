@@ -1,5 +1,6 @@
 from app.editor.lib.components.validated_line_edit import NidLineEdit
 from app.editor.lib.components.database_delegate import DBNamesDelegate
+from app.editor.edit_history import HISTORY
 from typing import List
 
 from app.data.database import raw_data
@@ -27,7 +28,6 @@ class RawDataProperties(QWidget):
         right_section = QVBoxLayout()
 
         self.nid_box = PropertyBox("Raw ID", NidLineEdit, self)
-        self.nid_box.edit.textChanged.connect(self.nid_changed)
         self.nid_box.edit.editingFinished.connect(self.nid_done_editing)
         right_section.addWidget(self.nid_box)
 
@@ -63,18 +63,15 @@ class RawDataProperties(QWidget):
 
         total_section.setAlignment(Qt.AlignTop)
 
-    def nid_changed(self, text):
-        self.current.nid = text
-        self.window.update_list()
-
     def nid_done_editing(self):
         # Check validity of nid!
+        new_nid = self.nid_box.edit.text()
         other_nids = [d.nid for d in self._data.values() if d is not self.current]
-        if self.current.nid in other_nids:
-            QMessageBox.warning(self.window, 'Warning', 'NID %s already in use' % self.current.nid)
-            self.current.nid = str_utils.get_next_name(self.current.nid, other_nids)
-        self.window.left_frame.model.on_nid_changed(self._data.find_key(self.current), self.current.nid)
-        self._data.update_nid(self.current, self.current.nid)
+        if new_nid in other_nids:
+            QMessageBox.warning(self.window, 'Warning', 'NID %s already in use' % new_nid)
+            new_nid = str_utils.get_next_name(new_nid, other_nids)
+            self.nid_box.edit.setText(new_nid)
+        HISTORY.rename(self._data, self.current, new_nid, self.window.left_frame.model.on_nid_changed)
         self.window.update_list()
 
     def type_changed(self):

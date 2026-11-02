@@ -379,5 +379,65 @@ class SearchResultActionsTests(unittest.TestCase):
         widget.searchMenuRequested(QPoint(0, 10000))  # below the last row
 
 
+class ResetTests(unittest.TestCase):
+    '''
+    A tab resets its list whenever another window changes the database. The rebuilt
+    tree used to come back with every folder closed, and a filter kept showing the
+    results of the tree as it was before
+    '''
+
+    def setUp(self) -> None:
+        import sys
+        from PyQt5.QtWidgets import QApplication
+        self.app = QApplication.instance() or QApplication(sys.argv)
+
+        from app.editor.lib.components.nested_list import LTNestedList
+        self.LTNestedList = LTNestedList
+
+    def build(self):
+        return self.LTNestedList(
+            None,
+            list_entries=['Eirika', 'Seth', 'Franz', 'Gilliam', 'Vanessa'],
+            list_categories={'Franz': ['Knights'], 'Gilliam': ['Knights', 'Armored'], 'Vanessa': ['Fliers']})
+
+    def folder(self, widget, *path):
+        item = widget.tree_widget.invisibleRootItem()
+        for name in path:
+            item = next(item.child(i) for i in range(item.childCount()) if item.child(i).text(0) == name)
+        return item
+
+    def results(self, widget):
+        return [widget.search_list.item(i).text() for i in range(widget.search_list.count())]
+
+    def test_reset_keeps_the_open_folders_open(self):
+        widget = self.build()
+        self.folder(widget, 'Knights').setExpanded(True)
+        self.folder(widget, 'Knights', 'Armored').setExpanded(True)
+
+        widget.reset(*widget.get_list_and_category_structure())
+
+        self.assertTrue(self.folder(widget, 'Knights').isExpanded())
+        self.assertTrue(self.folder(widget, 'Knights', 'Armored').isExpanded())
+        self.assertFalse(self.folder(widget, 'Fliers').isExpanded())
+
+    def test_reset_shows_the_results_of_the_filter_again(self):
+        widget = self.build()
+        widget.search_box.setText('a')
+        widget.select_item('Vanessa')
+
+        widget.reset(['Eirika', 'Seth', 'Franz', 'Vanessa', 'Ephraim'], {'Vanessa': ['Fliers']})
+
+        self.assertEqual(['Eirika', 'Franz', 'Vanessa', 'Ephraim'], self.results(widget))
+        self.assertEqual('Vanessa', widget.search_list.currentItem().text())
+
+    def test_selecting_an_entry_marks_its_result(self):
+        widget = self.build()
+        widget.search_box.setText('a')
+
+        widget.select_item('Franz')
+
+        self.assertEqual('Franz', widget.search_list.currentItem().text())
+
+
 if __name__ == '__main__':
     unittest.main()

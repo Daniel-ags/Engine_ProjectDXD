@@ -2,7 +2,7 @@ import glob
 import logging
 import traceback
 
-from app.editor.data_editor import DB
+from app.data.database.database import DB
 from app.editor.settings import MainSettingsController
 from app.editor.settings.preference_definitions import Preference
 from app.engine import driver, engine, game_state

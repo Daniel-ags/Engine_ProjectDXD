@@ -12,6 +12,7 @@ from app.extensions.key_value_delegate import KeyValueDelegate, KeyValueDoubleLi
 from app.editor.icons import PushableIcon16, MapSpriteBox, UnitPortrait
 from app.editor.icon_editor import icon_tab
 from app.editor.lib.components.validated_line_edit import NidLineEdit
+from app.editor.edit_history import HISTORY
 
 from app.utilities.enums import Orientation
 from app.utilities.typing import NID
@@ -37,7 +38,6 @@ class NewCreditProperties(QWidget):
         self.on_icon_change = on_icon_change
 
         self.nid_box = PropertyBox("Unique ID", NidLineEdit, self)
-        self.nid_box.edit.textChanged.connect(self.nid_changed)
         self.nid_box.edit.editingFinished.connect(self.nid_done_editing)
 
         self.type_box = PropertyBox(("Type"), ComboBox, self)
@@ -77,18 +77,16 @@ class NewCreditProperties(QWidget):
 
         self.set_current(self.current)
 
-    def nid_changed(self, text):
-        self.current.nid = text
-
     def nid_done_editing(self):
         if self.current and self.cached_nid:
+            new_nid = self.nid_box.edit.text()
             self.nid_box.edit.blockSignals(True)  # message box causes focus loss which double triggers nid_done_editing
-            # Check validity of nid!
-            if self.attempt_change_nid and self.attempt_change_nid(self.cached_nid, self.current.nid):
-                self.cached_nid = self.current.nid
-            else:
-                self.current.nid = self.cached_nid
-                self.nid_box.edit.setText(self.cached_nid)
+            with HISTORY.change_set('Rename %s' % self.cached_nid, origin=self.window):
+                # Check validity of nid!
+                if self.attempt_change_nid and self.attempt_change_nid(self.cached_nid, new_nid):
+                    self.cached_nid = new_nid
+                else:
+                    self.nid_box.edit.setText(self.cached_nid)
             self.nid_box.edit.blockSignals(False)
 
     def type_changed(self, index):
@@ -127,7 +125,8 @@ class TextDesc(QWidget):
         self.layout = QVBoxLayout()
 
         self.header_box = PropertyBox("Header", QLineEdit, self)
-        self.header_box.edit.textChanged.connect(self.header_changed)
+        # Typed only: showing a credit with no header of its own shows its default one, which is not an edit
+        self.header_box.edit.textEdited.connect(self.header_changed)
 
         self.desc_box = PropertyBox("Description", QTextEdit, self)
         font_height = QFontMetrics(self.desc_box.edit.font())
@@ -160,13 +159,11 @@ class PanoramaDesc(QWidget):
         self.window = parent
         
         self.header_box = PropertyBox("Header", QLineEdit, self)
-        self.header_box.edit.textChanged.connect(self.header_changed)
+        # Typed only: showing a credit with no header of its own shows its default one, which is not an edit
+        self.header_box.edit.textEdited.connect(self.header_changed)
 
         self.panorama_box = PropertyBox("Contribution", ComboBox, self)
-        self.panorama_box.edit.addItem(QIcon(), 'None')
-        for panorama in RESOURCES.panoramas:
-            icon = QIcon(panorama.get_all_paths()[0])
-            self.panorama_box.edit.addItem(icon, panorama.nid)
+        self.list_panoramas()
         self.panorama_box.edit.setIconSize(QSize(240, 160))
         self.panorama_box.edit.currentIndexChanged.connect(self.panorama_changed)
 
@@ -186,6 +183,12 @@ class PanoramaDesc(QWidget):
         self.layout.addWidget(self.header_box)
         self.layout.addLayout(centered_layout)
         self.setLayout(self.layout)
+
+    def list_panoramas(self):
+        def icon_for(nid):
+            panorama = RESOURCES.panoramas.get(nid)
+            return QIcon(panorama.get_all_paths()[0]) if panorama else None
+        self.panorama_box.edit.set_choices(['None'] + RESOURCES.panoramas.keys(), icon_for)
 
     def panorama_changed(self, index):
         contrib = self.window.current.contrib
@@ -219,6 +222,7 @@ class PanoramaDesc(QWidget):
     def set_current(self, current):
         self.header_box.edit.setText(current.custom_header or current.header())
         
+        self.list_panoramas()
         try:
             self.panorama_box.edit.setValue(current.sub_nid)
         except: # spec isn't compatible
@@ -281,7 +285,8 @@ class IconDesc(QWidget):
         self.window = parent
         
         self.header_box = PropertyBox("Header", QLineEdit, self)
-        self.header_box.edit.textChanged.connect(self.header_changed)
+        # Typed only: showing a credit with no header of its own shows its default one, which is not an edit
+        self.header_box.edit.textEdited.connect(self.header_changed)
 
         if credit_type == ResourceType.PORTRAITS:
             self.icon_box = PropertyBox("Contribution", PortraitIcon, self)
@@ -358,7 +363,8 @@ class MapSpriteDesc(QWidget):
         self.window = parent
         
         self.header_box = PropertyBox("Header", QLineEdit, self)
-        self.header_box.edit.textChanged.connect(self.header_changed)
+        # Typed only: showing a credit with no header of its own shows its default one, which is not an edit
+        self.header_box.edit.textEdited.connect(self.header_changed)
 
         self.map_sprite_box = MapSpriteBox(self, self.window.current, display_width=160, orient=Orientation.VERTICAL)
         self.map_sprite_box.sourceChanged.connect(self.select_map_sprite)
@@ -416,7 +422,8 @@ class ListDesc(QWidget):
         self.layout = QVBoxLayout()
 
         self.header_box = PropertyBox("Header", QLineEdit, self)
-        self.header_box.edit.textChanged.connect(self.header_changed)
+        # Typed only: showing a credit with no header of its own shows its default one, which is not an edit
+        self.header_box.edit.textEdited.connect(self.header_changed)
 
         attrs = ("Author", "Contribution")
         self.desc_box = AppendMultiListWidget([], "List of Contributions", attrs, KeyValueDelegate, self, model=CreditListModel)

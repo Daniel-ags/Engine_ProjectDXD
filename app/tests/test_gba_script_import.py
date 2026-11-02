@@ -2,9 +2,8 @@ import os
 import shutil
 import tempfile
 import unittest
-from unittest.mock import MagicMock, patch
-
 from app.tests import qt_headless  # noqa: F401 -- before any QApplication
+from app.tests.staging_harness import use_temporary_staging
 
 GREEN = (168, 208, 160)   # the frames' transparent background, which becomes LT's colorkey
 DARK = (40, 40, 40)
@@ -59,6 +58,7 @@ class GBAScriptImportCropTests(unittest.TestCase):
     def setUp(self):
         self.folder = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.folder)
+        use_temporary_staging(self)
         write_frame(os.path.join(self.folder, 'Lance-0.png'), ordinary_frame)
         write_frame(os.path.join(self.folder, 'Lance-1.png'), critical_backdrop_frame)
         self.script = os.path.join(self.folder, 'Lance.txt')
@@ -69,7 +69,6 @@ class GBAScriptImportCropTests(unittest.TestCase):
         from app.data.resources import combat_anims
         from app.data.resources.resources import RESOURCES
         from app.editor.combat_animation_editor import combat_animation_imports
-        from app.editor.file_manager.project_file_backend import DEFAULT_PROJECT
 
         palettes_before = set(RESOURCES.combat_palettes.keys())
         def remove_new_palettes():
@@ -77,12 +76,8 @@ class GBAScriptImportCropTests(unittest.TestCase):
                 RESOURCES.combat_palettes.remove_key(nid)
         self.addCleanup(remove_new_palettes)
 
-        # Point the "current project" at the default one, so the import writes nothing to disk
-        settings = MagicMock()
-        settings.get_current_project.return_value = os.path.join(self.folder, DEFAULT_PROJECT)
         current = combat_anims.CombatAnimation('Test')
-        with patch.object(combat_animation_imports, 'MainSettingsController', return_value=settings):
-            combat_animation_imports.import_from_gba(current, self.script)
+        combat_animation_imports.import_from_gba(current, self.script)
         return current.weapon_anims.get('Lance')
 
     def test_frame_with_artwork_in_its_top_left_keeps_its_top_rows(self):

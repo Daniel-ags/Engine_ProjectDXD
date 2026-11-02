@@ -1,7 +1,7 @@
 from app.data.database.varslot import VarSlot, VarSlotCatalog
 from app.data.database.database import DB
 
-from app.extensions.list_dialogs import MultiAttrListDialog
+from app.editor.recorded_list_dialog import RecordedListDialog
 from app.extensions.list_models import MultiAttrListModel
 
 class GameVarSlotMultiModel(MultiAttrListModel):
@@ -33,7 +33,12 @@ class GameVarSlotMultiModel(MultiAttrListModel):
             DB.game_var_slots.get(data.nid).desc = new_value
             self._data.get(data.nid).desc = new_value
 
-class GameVarSlotDialog(MultiAttrListDialog):
+class GameVarSlotDialog(RecordedListDialog):
+    def recorded(self):
+        # The dialog lists copies, each with where the events use it, and writes
+        # every edit through to the slots themselves
+        return DB.game_var_slots
+
     @classmethod
     def create(cls, parent=None):
         def deletion_func(model, index):

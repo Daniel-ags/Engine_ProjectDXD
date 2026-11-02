@@ -1,53 +1,31 @@
 from app.data.database.database import DB
+from app.data.database.database_types import DatabaseType as DType
 
-from app.extensions.custom_gui import DeletionTab, DeletionDialog, PropertyBox, ComboBox
-from app.extensions.list_dialogs import MultiAttrListDialog
+from app.editor import reference_dialogs
+from app.editor.custom_widgets import ObjBox
+from app.editor.edit_history import HISTORY
+from app.editor.recorded_list_dialog import RecordedListDialog
 from app.extensions.list_models import MultiAttrListModel
+from app.utilities.data import Data
 
 class TagMultiModel(MultiAttrListModel):
     def delete(self, idx):
-        element = DB.tags[idx]
-        affected_units = [unit for unit in DB.units if element.nid in unit.tags]
-        affected_classes = [k for k in DB.classes if element.nid in k.tags]
-        deletion_tabs = []
-        if affected_units:
-            from app.editor.unit_editor.unit_model import UnitModel
-            model = UnitModel
-            msg = "Deleting Tag <b>%s</b> would affected these units" % element.nid
-            deletion_tabs.append(DeletionTab(affected_units, model, msg, "Units"))
-        if affected_classes:
-            from app.editor.class_editor.class_model import ClassModel
-            model = ClassModel
-            msg = "Deleting Tag <b>%s</b> would affected these classes" % element.nid
-            deletion_tabs.append(DeletionTab(affected_classes, model, msg, "Classes"))
-
-        if deletion_tabs:
-            combo_box = PropertyBox("Tag", ComboBox, self.window)
-            objs = [tag for tag in DB.tags if tag.nid != element.nid]
-            combo_box.edit.addItems([tag.nid for tag in objs])
-            obj_idx, ok = DeletionDialog.get_simple_swap(deletion_tabs, combo_box, self.window.window)
-            if ok:
-                swap = objs[obj_idx]
-                for unit in affected_units:
-                    unit.tags = [swap.nid if tag == element.nid else tag for tag in unit.tags]
-                for klass in affected_classes:
-                    klass.tags = [swap.nid if tag == element.nid else tag for tag in klass.tags]
-            else:
-                return
-        super().delete(idx)
+        element = self._data[idx]
+        others = Data([tag for tag in DB.tags if tag is not element])
+        with HISTORY.change_set('Delete %s' % element.nid):
+            if reference_dialogs.check_delete(DType.TAGS, element.nid, 'Tag', self.window,
+                                              lambda: ObjBox("Tag", reference_dialogs.NidListModel, lambda: others, self.window)):
+                super().delete(idx)
 
     def create_new(self):
         return self._data.add_new_default(DB)
 
     def on_attr_changed(self, data, attr, old_value, new_value):
         if attr == 'nid':
-            DB.tags.update_nid(data, new_value)
-            for unit in DB.units:
-                unit.tags = [new_value if elem == old_value else elem for elem in unit.tags]
-            for klass in DB.classes:
-                klass.tags = [new_value if elem == old_value else elem for elem in klass.tags]
+            self._data.update_nid(data, new_value)
+            HISTORY.rewrite(DType.TAGS, old_value, new_value)
 
-class TagDialog(MultiAttrListDialog):
+class TagDialog(RecordedListDialog):
     locked_vars = {'Lord', 'Boss', 'Required', 'Mounted', 'Flying', 'Armor', 'Dragon', 'AutoPromote',
                    'NoAutoPromote', 'Convoy', 'AdjConvoy', 'Tile', 'Blacklist', 'Protect'}
 

@@ -37,7 +37,7 @@ class GlobalEditor(QMainWindow):
         self.create_actions()
         self.set_icons()
 
-        timer.get_timer().tick_elapsed.connect(self.map_view.update_view)
+        timer.connect_tick(self, self.map_view.update_view)
         QtWidgets.qApp.focusChanged.connect(self.update_overworld_widget)
 
     def update_overworld_widget(self):
@@ -99,6 +99,9 @@ class GlobalEditor(QMainWindow):
         overworld = DB.overworlds.get(overworld_nid)
         self.current_level = overworld
         self.map_view.set_current_level(overworld, overworld=True)
+
+    def shows_overworld(self) -> bool:
+        return self.map_view.overworld_flag
 
     def create_actions(self):
         # menu actions

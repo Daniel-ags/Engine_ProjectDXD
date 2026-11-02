@@ -84,12 +84,6 @@
                                 ]
                             ],
                             [
-                                "sound",
-                                [
-                                    "Unsheathe"
-                                ]
-                            ],
-                            [
                                 "frame",
                                 [
                                     1,
@@ -143,12 +137,6 @@
                                 ]
                             ],
                             [
-                                "sound",
-                                [
-                                    "Heavy Wing Flap"
-                                ]
-                            ],
-                            [
                                 "wait",
                                 [
                                     1
@@ -199,12 +187,6 @@
                                 [
                                     1,
                                     "Sword_009"
-                                ]
-                            ],
-                            [
-                                "sound",
-                                [
-                                    "Weapon Push"
                                 ]
                             ],
                             [
@@ -331,12 +313,6 @@
                                 ]
                             ],
                             [
-                                "sound",
-                                [
-                                    "Sheathe"
-                                ]
-                            ],
-                            [
                                 "frame",
                                 [
                                     1,
@@ -376,12 +352,6 @@
                                 [
                                     1,
                                     "Sword_022"
-                                ]
-                            ],
-                            [
-                                "sound",
-                                [
-                                    "Step Back 1"
                                 ]
                             ],
                             [
@@ -441,12 +411,6 @@
                                 ]
                             ],
                             [
-                                "sound",
-                                [
-                                    "Heavy Wing Flap"
-                                ]
-                            ],
-                            [
                                 "frame",
                                 [
                                     1,
@@ -465,12 +429,6 @@
                                 [
                                     2,
                                     "Sword_031"
-                                ]
-                            ],
-                            [
-                                "sound",
-                                [
-                                    "Step Back 1"
                                 ]
                             ],
                             [
@@ -570,12 +528,6 @@
                                 ]
                             ],
                             [
-                                "sound",
-                                [
-                                    "Unsheathe"
-                                ]
-                            ],
-                            [
                                 "frame",
                                 [
                                     1,
@@ -594,12 +546,6 @@
                                 [
                                     2,
                                     "Sword_044"
-                                ]
-                            ],
-                            [
-                                "sound",
-                                [
-                                    "Weapon Push"
                                 ]
                             ],
                             [
@@ -628,12 +574,6 @@
                                 [
                                     4,
                                     "Sword_047"
-                                ]
-                            ],
-                            [
-                                "sound",
-                                [
-                                    "Weapon Pull"
                                 ]
                             ],
                             [
@@ -676,12 +616,6 @@
                                 [
                                     3,
                                     "Sword_052"
-                                ]
-                            ],
-                            [
-                                "sound",
-                                [
-                                    "Weapon Click"
                                 ]
                             ],
                             [
@@ -749,12 +683,6 @@
                                 "wait",
                                 [
                                     6
-                                ]
-                            ],
-                            [
-                                "sound",
-                                [
-                                    "Heavy Wing Flap"
                                 ]
                             ],
                             [
@@ -1008,12 +936,6 @@
                                 ]
                             ],
                             [
-                                "sound",
-                                [
-                                    "Step Back 1"
-                                ]
-                            ],
-                            [
                                 "frame",
                                 [
                                     1,
@@ -1070,12 +992,6 @@
                                 ]
                             ],
                             [
-                                "sound",
-                                [
-                                    "Heavy Wing Flap"
-                                ]
-                            ],
-                            [
                                 "frame",
                                 [
                                     1,
@@ -1094,12 +1010,6 @@
                                 [
                                     2,
                                     "Sword_031"
-                                ]
-                            ],
-                            [
-                                "sound",
-                                [
-                                    "Step Back 1"
                                 ]
                             ],
                             [
@@ -1199,12 +1109,6 @@
                                 ]
                             ],
                             [
-                                "sound",
-                                [
-                                    "Unsheathe"
-                                ]
-                            ],
-                            [
                                 "frame",
                                 [
                                     1,
@@ -1255,12 +1159,6 @@
                                 "wait",
                                 [
                                     8
-                                ]
-                            ],
-                            [
-                                "sound",
-                                [
-                                    "Heavy Wing Flap"
                                 ]
                             ],
                             [
@@ -1318,12 +1216,6 @@
                                 [
                                     1,
                                     "Sword_009"
-                                ]
-                            ],
-                            [
-                                "sound",
-                                [
-                                    "Weapon Push"
                                 ]
                             ],
                             [
@@ -1401,12 +1293,6 @@
                                 ]
                             ],
                             [
-                                "sound",
-                                [
-                                    "Sheathe"
-                                ]
-                            ],
-                            [
                                 "frame",
                                 [
                                     1,
@@ -1446,12 +1332,6 @@
                                 [
                                     1,
                                     "Sword_022"
-                                ]
-                            ],
-                            [
-                                "sound",
-                                [
-                                    "Step Back 1"
                                 ]
                             ],
                             [
@@ -1511,12 +1391,6 @@
                                 ]
                             ],
                             [
-                                "sound",
-                                [
-                                    "Heavy Wing Flap"
-                                ]
-                            ],
-                            [
                                 "frame",
                                 [
                                     1,
@@ -1535,12 +1409,6 @@
                                 [
                                     2,
                                     "Sword_031"
-                                ]
-                            ],
-                            [
-                                "sound",
-                                [
-                                    "Step Back 1"
                                 ]
                             ],
                             [
@@ -2654,12 +2522,6 @@
                                 ]
                             ],
                             [
-                                "sound",
-                                [
-                                    "Unsheathe"
-                                ]
-                            ],
-                            [
                                 "frame",
                                 [
                                     1,
@@ -2720,12 +2582,6 @@
                                 [
                                     2,
                                     "Sword_071"
-                                ]
-                            ],
-                            [
-                                "sound",
-                                [
-                                    "Sheathe"
                                 ]
                             ],
                             [
@@ -2762,12 +2618,6 @@
                                 ]
                             ],
                             [
-                                "sound",
-                                [
-                                    "Unsheathe"
-                                ]
-                            ],
-                            [
                                 "frame",
                                 [
                                     1,
@@ -2898,12 +2748,6 @@
                                 [
                                     2,
                                     "Sword_071"
-                                ]
-                            ],
-                            [
-                                "sound",
-                                [
-                                    "Sheathe"
                                 ]
                             ],
                             [
@@ -3254,12 +3098,6 @@
                                 ]
                             ],
                             [
-                                "sound",
-                                [
-                                    "Heavy Wing Flap"
-                                ]
-                            ],
-                            [
                                 "frame",
                                 [
                                     1,
@@ -3271,12 +3109,6 @@
                                 [
                                     3,
                                     "Frame6"
-                                ]
-                            ],
-                            [
-                                "sound",
-                                [
-                                    "Step Back 1"
                                 ]
                             ],
                             [
@@ -3371,12 +3203,6 @@
                                 ]
                             ],
                             [
-                                "sound",
-                                [
-                                    "Bow"
-                                ]
-                            ],
-                            [
                                 "frame",
                                 [
                                     10,
@@ -3388,12 +3214,6 @@
                                 [
                                     2,
                                     "Frame22"
-                                ]
-                            ],
-                            [
-                                "spell",
-                                [
-                                    "Arrow"
                                 ]
                             ],
                             [
@@ -3444,12 +3264,6 @@
                                 [
                                     6,
                                     "Frame26"
-                                ]
-                            ],
-                            [
-                                "sound",
-                                [
-                                    "Foot Step"
                                 ]
                             ],
                             [
@@ -3521,12 +3335,6 @@
                                 ]
                             ],
                             [
-                                "sound",
-                                [
-                                    "Heavy Wing Flap"
-                                ]
-                            ],
-                            [
                                 "frame",
                                 [
                                     1,
@@ -3538,12 +3346,6 @@
                                 [
                                     3,
                                     "Frame6"
-                                ]
-                            ],
-                            [
-                                "sound",
-                                [
-                                    "Step Back 1"
                                 ]
                             ],
                             [
@@ -3596,12 +3398,6 @@
                                 ]
                             ],
                             [
-                                "sound",
-                                [
-                                    "Heavy Spear Spin"
-                                ]
-                            ],
-                            [
                                 "frame",
                                 [
                                     3,
@@ -3623,12 +3419,6 @@
                                 ]
                             ],
                             [
-                                "sound",
-                                [
-                                    "Heavy Spear Spin"
-                                ]
-                            ],
-                            [
                                 "frame",
                                 [
                                     3,
@@ -3647,12 +3437,6 @@
                                 [
                                     3,
                                     "Crit4"
-                                ]
-                            ],
-                            [
-                                "sound",
-                                [
-                                    "Heavy Spear Spin"
                                 ]
                             ],
                             [
@@ -3691,12 +3475,6 @@
                                 ]
                             ],
                             [
-                                "sound",
-                                [
-                                    "Bow"
-                                ]
-                            ],
-                            [
                                 "frame",
                                 [
                                     6,
@@ -3708,12 +3486,6 @@
                                 [
                                     2,
                                     "Frame22"
-                                ]
-                            ],
-                            [
-                                "spell",
-                                [
-                                    "Arrow"
                                 ]
                             ],
                             [
@@ -3764,12 +3536,6 @@
                                 [
                                     6,
                                     "Frame26"
-                                ]
-                            ],
-                            [
-                                "sound",
-                                [
-                                    "Foot Step"
                                 ]
                             ],
                             [
@@ -4314,19 +4080,6 @@
                 ]
             }
         ],
-        "palettes": [
-            [
-                "GenericBlue",
-                "Assassin0_GenericBlue"
-            ],
-            [
-                "GenericRed",
-                "Assassin0_GenericRed"
-            ],
-            [
-                "Jakin",
-                "Assassin0_Jakin"
-            ]
-        ]
+        "palettes": []
     }
 ]

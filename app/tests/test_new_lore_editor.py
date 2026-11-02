@@ -99,7 +99,6 @@ class NewLoreEditorTests(unittest.TestCase):
         from PyQt5.QtCore import QSize
         from app.data.category import Categories
         self.db.lore.categories = Categories.load({'Eirika': 'People'})
-        self.tab.categories = self.db.lore.categories
         self.tab.reset()
         tree = self.tab.tree_list.tree_widget
         self.assertEqual(tree.iconSize(), QSize(16, 16))

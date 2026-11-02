@@ -24,10 +24,11 @@ from app.editor.combat_animation_editor.palette_menu import PaletteMenu
 from app.editor.combat_animation_editor.timeline_menu import TimelineMenu
 from app.editor.combat_animation_editor.frame_selector import FrameSelector
 from app.editor.combat_animation_editor.combat_animation_model import palette_swap
-from app.editor.file_manager.project_file_backend import DEFAULT_PROJECT
+from app.editor.file_manager.staging import STAGING
 import app.editor.combat_animation_editor.combat_animation_imports as combat_animation_imports
 import app.editor.combat_animation_editor.combat_animation_export as combat_animation_export
 from app.editor.component_editor_types import T
+from app.editor.edit_history import HISTORY
 from app.extensions.custom_gui import ComboBox
 
 import app.editor.utilities as editor_utilities
@@ -79,7 +80,6 @@ class NewCombatAnimProperties(QWidget):
         self.info_form = QFormLayout()
 
         self.nid_box = NidLineEdit()
-        self.nid_box.textChanged.connect(self.nid_changed)
         self.nid_box.editingFinished.connect(self.nid_done_editing)
 
         theme = dark_theme.get_theme()
@@ -279,7 +279,7 @@ class NewCombatAnimProperties(QWidget):
         self.setLayout(final_section)
         final_section.addWidget(self.main_splitter)
 
-        timer.get_timer().tick_elapsed.connect(self.tick)
+        timer.connect_tick(self, self.tick)
 
     def tick(self):
         self.draw_frame()
@@ -330,13 +330,12 @@ class NewCombatAnimProperties(QWidget):
                 self.export_all_frames(fn_dir)
                 QMessageBox.information(self, "Export Complete", "Export of frames complete!")
 
-    def nid_changed(self, text):
-        self.current.nid = text
-
     def nid_done_editing(self):
-        if not self.attempt_change_nid(self.cached_nid, self.current.nid):
-            self.current.nid = self.cached_nid
-        self.cached_nid = self.current.nid
+        new_nid = self.nid_box.text()
+        if self.attempt_change_nid(self.cached_nid, new_nid):
+            self.cached_nid = new_nid
+        else:
+            self.nid_box.setText(self.cached_nid)
 
     def ask_permission(self, obj, text: str) -> bool:
         ret = QMessageBox.warning(self, "Deletion Warning",
@@ -592,9 +591,11 @@ class NewCombatAnimProperties(QWidget):
             parent_dir = os.path.split(fns[-1])[0]
             self.settings.set_last_open_path(parent_dir)
 
-            for fn in fns:
-                if fn.endswith('-Script.txt'):
-                    combat_animation_imports.import_from_legacy(self.current, fn)
+            # The animation and the palettes the import adds colors to, as one undo step
+            with HISTORY.change_set('Import into %s' % self.current.nid, origin=self.window):
+                for fn in fns:
+                    if fn.endswith('-Script.txt'):
+                        combat_animation_imports.import_from_legacy(self.current, fn)
 
             # Reset
             self.set_current(self.current)
@@ -662,6 +663,8 @@ class NewCombatAnimProperties(QWidget):
 
     def set_current(self, current):
         self.stop()
+        # Shown again after an undo or another tab's change, it keeps its weapon and pose
+        shown = (self.weapon_box.currentText(), self.pose_box.currentText()) if current is self.current else None
         if not current:
             self.setEnabled(False)
         else:
@@ -695,6 +698,13 @@ class NewCombatAnimProperties(QWidget):
             else:
                 self.has_pose(False)
                 self.timeline_menu.clear_pose()
+
+            if shown:
+                weapon_nid, pose_nid = shown
+                if weapon_nid in self.current.weapon_anims:
+                    self.weapon_box.setValue(weapon_nid)
+                    if pose_nid in self.current.weapon_anims.get(weapon_nid).poses:
+                        self.pose_box.setValue(pose_nid)
 
     def get_current_palette(self):
         return self.palette_menu.get_palette()
@@ -871,7 +881,7 @@ class NewCombatAnimProperties(QWidget):
             anim = combat_anims.CombatAnimation.restore(data)
             for weapon_anim in anim.weapon_anims:
                 short_path = "%s-%s.png" % (anim.nid, weapon_anim.nid)
-                weapon_anim.set_full_path(os.path.join(fn_dir, short_path))
+                weapon_anim.set_full_path(STAGING.stage_file(os.path.join(fn_dir, short_path)))
             anim.nid = str_utils.get_next_name(anim.nid, RESOURCES.combat_anims.keys())
             # Update any palette references that changed
             for idx, palette in enumerate(anim.palettes[:]):
@@ -1006,15 +1016,6 @@ class NewCombatAnimProperties(QWidget):
             else:
                 QMessageBox.critical(self, "Missing Pose", "Missing Stand or Attack pose!")
                 return
-
-            proj_dir = self.settings.get_current_project()
-            if not proj_dir or os.path.basename(proj_dir) == DEFAULT_PROJECT:
-                pass
-            else:
-                # Make sure to save beforehand so that we use the modified effect when testing
-                resource_dir = os.path.join(proj_dir, 'resources')
-                data_dir = os.path.join(resource_dir, 'combat_anims')
-                RESOURCES.combat_anims.save_resources(data_dir)
 
             left_palette_name, left_palette, right_palette_name, right_palette = self.get_test_palettes(self.current)
 

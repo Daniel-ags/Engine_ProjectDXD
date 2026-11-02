@@ -1,6 +1,6 @@
 from app.data.database.database import DB
 
-from app.extensions.list_dialogs import MultiAttrListDialog
+from app.editor.recorded_list_dialog import RecordedListDialog
 from app.extensions.list_models import MultiAttrListModel
 
 from app.editor.base_database_gui import find_filter_keyword
@@ -30,7 +30,7 @@ class TranslationMultiModel(MultiAttrListModel):
         except Exception as e:
             print(e)
 
-class TranslationDialog(MultiAttrListDialog):
+class TranslationDialog(RecordedListDialog):
     @classmethod
     def create(cls):
         dlg = cls(DB.translations, "Translation", ("nid", "text"),

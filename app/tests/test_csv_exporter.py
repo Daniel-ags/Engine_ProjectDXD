@@ -36,9 +36,9 @@ Seth,Seth,30,14,7,13,12,13,11,11,8,8,90,50,25,45,45,25,40,0,0,30,181,181,0,0,0,0
             klass_db.append(self.db.classes[i])
         dmp = csv.klass_db_to_csv(klass_db)
         self.assertEqual(dmp,
-"""NAME,NID,HP_base,STR_base,MAG_base,SKL_base,SPD_base,LCK_base,DEF_base,CON_base,MOV_base,RES_base,LEAD_base,HP_growth,STR_growth,MAG_growth,SKL_growth,SPD_growth,LCK_growth,DEF_growth,CON_growth,MOV_growth,RES_growth,LEAD_growth,Sword,Lance,Axe,Bow,Staff,Light,Anima,Dark,Default
-Citizen,Citizen,10,0,0,0,0,0,0,5,5,0,0,65,0,0,0,0,0,0,0,0,0,0,False,False,False,False,False,False,False,False,False
-Lord,Eirika_Lord,16,4,2,8,9,0,3,5,5,0,0,90,45,22,40,45,40,15,0,0,20,0,True,False,False,False,False,False,False,False,False
+"""NAME,NID,HP_base,STR_base,MAG_base,SKL_base,SPD_base,LCK_base,DEF_base,CON_base,MOV_base,RES_base,HP_growth,STR_growth,MAG_growth,SKL_growth,SPD_growth,LCK_growth,DEF_growth,CON_growth,MOV_growth,RES_growth,Sword,Lance,Axe,Bow,Staff,Light,Anima,Dark,Default
+Citizen,Citizen,10,0,0,0,0,0,0,5,5,0,65,0,0,0,0,0,0,0,0,0,False,False,False,False,False,False,False,False,False
+Lord,Eirika_Lord,16,4,2,8,9,0,3,5,5,0,90,45,22,40,45,40,15,0,0,20,True,False,False,False,False,False,False,False,False
 """
 )
 

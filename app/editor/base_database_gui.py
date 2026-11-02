@@ -7,13 +7,14 @@ import json
 from PyQt5.QtWidgets import QLineEdit, QTextEdit, QWidget, QHBoxLayout, QGridLayout, QPushButton, \
     QSizePolicy, QSplitter, QMessageBox, QApplication, QAbstractItemView
 from PyQt5.QtCore import QSize, Qt, pyqtSignal, QModelIndex
-from PyQt5.QtCore import QAbstractListModel
+from PyQt5.QtCore import QAbstractListModel, QAbstractProxyModel
 from app.data.database.components import Component
-from app.editor import timer
+from app.editor.custom_widgets import ObjBox
 
 from app.utilities.data import Prefab
 from app.extensions.custom_gui import RightClickListView
 from app.editor.data_editor import SingleDatabaseEditor
+from app.editor.edit_history import HISTORY
 
 from app.utilities import str_utils
 
@@ -121,16 +122,22 @@ class Collection(QWidget):
             print(e)
 
     def on_item_changed(self, curr, prev):
-        if self._data:
-            new_data = curr.internalPointer()  # Internal pointer is way too powerful
-            if not new_data:
-                if self._data:
-                    new_data = self._data[curr.row()]
-                elif self.display:
-                    self.display.setEnabled(False)
+        if not self._data:
+            # An undo can take away a catalog's only record: the form shows nothing
+            # to edit, and nothing it shows is watched
             if self.display:
-                self.display.set_current(new_data)
-                self.display.setEnabled(True)
+                self.display.setEnabled(False)
+            HISTORY.bind(None, self._data, self.window)
+            return
+        new_data = curr.internalPointer()  # Internal pointer is way too powerful
+        if not new_data:
+            new_data = self._data[curr.row()]
+        if self.display:
+            # Showing writes nothing, so the bind's commit records the edits to the
+            # record shown before
+            self.display.set_current(new_data)
+            self.display.setEnabled(True)
+            HISTORY.bind(new_data, self._data, self.window)
 
     def set_display(self, disp):
         self.display = disp
@@ -150,6 +157,10 @@ class DatabaseTab(QWidget):
     allow_import_from_lt = False
     allow_import_from_csv = False
     allow_copy_and_paste = False
+    # Whether what it shows comes in part from levels, overworlds or tilemaps, so a
+    # map edit in the main window changes it (EditHistoryDialog.show_changes). Such a
+    # tab says which map edits do with reads_map_edit(change_set)
+    reads_maps = False
 
     def __init__(self, data, title, right_frame, deletion_criteria, collection_model, parent,
                  button_text="Create %s", view_type=RightClickListView, collection_type=Collection):
@@ -187,25 +198,53 @@ class DatabaseTab(QWidget):
         pass
 
     def reset(self):
-        """
-        Whenever the tab is changed, make sure to update the tab display
-        Makes sure that current is what is being displayed
-        """
-        if self.right_frame.current:
+        """Shows the database again, as it is now: when the tab comes into view, and
+        after an undo or another tab changed it"""
+        # Filter proxies over the model need warning before the layout changes
+        self.left_frame.model.layoutAboutToBeChanged.emit()
+        self.left_frame.model.layoutChanged.emit()
+        for box in self.right_frame.findChildren(ObjBox):
+            box.refresh()
+        current = self.right_frame.current
+        if current is not None and not any(entry is current for entry in self._data):
+            # What was shown was taken away, so show whatever now has its place
+            view = self.left_frame.view
+            row = max(min(view.currentIndex().row(), view.model().rowCount() - 1), 0)
+            index = view.model().index(row, 0)
+            view.setCurrentIndex(index)
+            self.left_frame.on_item_changed(index, None)
+        elif current is not None:
+            # The list keeps its row, which an undo that brings back a record
+            # above the shown one gives to another record
+            index = self.view_index_of(current)
+            if index.isValid():
+                self.left_frame.view.setCurrentIndex(index)
             self.right_frame.setEnabled(True)
-            self.right_frame.set_current(self.right_frame.current)
+            self.right_frame.set_current(current)
         else:
             self.right_frame.setEnabled(False)
+
+    def view_index_of(self, record) -> QModelIndex:
+        """Where the list shows record, through any filter proxies between the list and
+        its model; invalid if a filter hides it"""
+        row = next(i for i, entry in enumerate(self._data) if entry is record)
+        proxies = []
+        model = self.left_frame.view.model()
+        while isinstance(model, QAbstractProxyModel):
+            proxies.append(model)
+            model = model.sourceModel()
+        index = model.index(row, 0)
+        for proxy in reversed(proxies):
+            index = proxy.mapFromSource(index)
+        return index
 
     def on_tab_close(self):
         pass
 
     @classmethod
     def edit(cls, parent=None):
-        timer.get_timer().stop_for_editor()  # Don't need these while running game
-        window = SingleDatabaseEditor(cls, parent)
-        window.exec_()
-        timer.get_timer().start_for_editor()
+        """This tab's editor window, not yet shown"""
+        return SingleDatabaseEditor(cls, parent)
 
     def copy_data(self):
         clipboard = QApplication.clipboard()
@@ -380,11 +419,9 @@ class ResourceCollectionModel(DragDropCollectionModel):
         if role == Qt.EditRole and self.drop_to is None:
             if value:
                 item = self._data[index.row()]
-                old_nid = item.nid
                 nids = [d.nid for d in self._data if d is not item]
                 nid = str_utils.get_next_name(value, nids)
-                self._data.update_nid(item, nid)
-                self.on_nid_changed(old_nid, nid)
+                HISTORY.rename(self._data, item, nid, self.on_nid_changed)
         return True
 
     def flags(self, index):

@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 import shutil
 import filecmp
-from typing import List, Set, Type, TypeVar, Union
+from typing import List, Set, Tuple, Type, TypeVar, Union
 
 from app.data.resources.resource_prefab import WithResources
 from app.utilities.data import Data, Prefab
@@ -24,33 +24,32 @@ class ManifestCatalog(Data[M]):
             new_resource.set_full_path(os.path.join(loc, new_resource.nid + self.filetype))
             self.append(new_resource)
 
-    def update_nid(self, val: M, nid: NID, set_nid=True):
-        used_resources = val.used_resources()
-        super().update_nid(val, nid, set_nid)
-        if not used_resources:
-            return
-        val.set_full_path(os.path.join(os.path.dirname(used_resources[0]), val.nid + self.filetype))
-        new_resource_paths = val.used_resources()
-        for old_resource, new_resource in zip(used_resources, new_resource_paths):
-            if old_resource and new_resource and old_resource != new_resource:
-                try:
-                    self.make_copy(old_resource, new_resource)
-                except shutil.SameFileError:
-                    os.rename(old_resource, new_resource)
-
-    def save_resources(self, loc):
+    def save_resources(self, loc, repoint=True):
+        """Copies each resource's files into loc under its nid and, with repoint, points
+        it at them. Until then an imported or renamed resource points at its files
+        wherever they are."""
         for datum in self:
-            original_resources = datum.used_resources()
-            datum.set_full_path(os.path.join(loc, datum.nid + self.filetype))
-            new_resource_locs = datum.used_resources()
-            for old_loc, new_loc in zip(original_resources, new_resource_locs):
-                if not old_loc:
-                    continue
-                if os.path.abspath(old_loc) != os.path.abspath(new_loc):
-                    try:
-                        self.make_copy(old_loc, new_loc)
-                    except shutil.SameFileError:  # windows filesystem doesn't distinguish between capitals
-                        os.rename(old_loc, new_loc)
+            copies = self._copies(datum, loc)
+            if repoint:
+                datum.set_full_path(os.path.join(loc, datum.nid + self.filetype))
+            for old_loc, new_loc in copies:
+                try:
+                    self.make_copy(old_loc, new_loc)
+                except shutil.SameFileError:  # windows filesystem doesn't distinguish between capitals
+                    os.rename(old_loc, new_loc)
+
+    def save_copies(self, loc) -> List[Tuple[Path, Path]]:
+        """The (from, to) file copies save_resources(loc) makes"""
+        return [copy for datum in self for copy in self._copies(datum, loc)]
+
+    def _copies(self, datum: M, loc) -> List[Tuple[Path, Path]]:
+        original_paths = datum.file_paths()
+        original_resources = datum.used_resources()
+        datum.set_full_path(os.path.join(loc, datum.nid + self.filetype))
+        new_resource_locs = datum.used_resources()
+        datum.set_file_paths(original_paths)
+        return [(old_loc, new_loc) for old_loc, new_loc in zip(original_resources, new_resource_locs)
+                if old_loc and os.path.abspath(old_loc) != os.path.abspath(new_loc)]
 
     def make_copy(self, old_full_path, new_full_path):
         if os.path.exists(old_full_path):

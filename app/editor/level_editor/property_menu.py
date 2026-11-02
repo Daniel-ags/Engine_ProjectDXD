@@ -1,7 +1,9 @@
 from app.editor.lib.components.validated_line_edit import NidLineEdit
 from functools import partial
 
+from app.editor.edit_history import HISTORY
 from app.data.database.database import DB
+from app.data.database.database_types import DatabaseType as DType
 from app.editor import timer
 from app.editor.custom_widgets import PartyBox, UnitBox
 from app.editor.sound_editor import sound_tab
@@ -76,7 +78,6 @@ class PropertiesMenu(QWidget):
         form.setAlignment(Qt.AlignTop)
 
         self.nid_box = PropertyBox("Level ID", NidLineEdit, self)
-        self.nid_box.edit.textChanged.connect(self.nid_changed)
         self.nid_box.edit.editingFinished.connect(self.nid_done_editing)
         form.addWidget(self.nid_box)
 
@@ -161,7 +162,7 @@ class PropertiesMenu(QWidget):
         self.state_manager.subscribe_to_key(
             PropertiesMenu.__name__, 'selected_level', self.set_current)
 
-        timer.get_timer().tick_elapsed.connect(self.tick)
+        timer.connect_tick(self, self.tick)
 
     def tick(self):
         if DB.constants.value('overworld'):
@@ -210,27 +211,20 @@ class PropertiesMenu(QWidget):
         self.loss_condition.edit.setText(current.objective['loss'])
         self.overworld_box.edit.setChecked(bool(current.go_to_overworld))
 
-    def nid_changed(self, text):
-        self.current.nid = text
-        self.state_manager.change_and_broadcast('ui_refresh_signal', None)
-
     def nid_done_editing(self):
+        new_nid = self.nid_box.edit.text()
         other_nids = [
             level.nid for level in DB.levels if level is not self.current]
-        if self.current.nid in other_nids:
+        if new_nid in other_nids:
             QMessageBox.warning(
-                self, 'Warning', 'Level ID %s already in use' % self.current.nid)
-            self.current.nid = str_utils.get_next_int(
-                self.current.nid, other_nids)
-        self.on_nid_changed(DB.levels.find_key(
-            self.current), self.current.nid)
-        DB.levels.update_nid(self.current, self.current.nid)
+                self, 'Warning', 'Level ID %s already in use' % new_nid)
+            new_nid = str_utils.get_next_int(new_nid, other_nids)
+            self.nid_box.edit.setText(new_nid)
+        HISTORY.rename(DB.levels, self.current, new_nid, self.on_nid_changed)
         self.state_manager.change_and_broadcast('ui_refresh_signal', None)
 
     def on_nid_changed(self, old_nid, new_nid):
-        for event in DB.events:
-            if event.level_nid == old_nid:
-                event.level_nid = new_nid
+        HISTORY.rewrite(DType.LEVELS, old_nid, new_nid)
 
     def title_changed(self, text):
         self.current.name = text
@@ -284,7 +278,7 @@ class PropertiesMenu(QWidget):
             self.state_manager.change_and_broadcast('ui_refresh_signal', None)
 
     def access_units(self):
-        unit, ok = new_unit_tab.get(self.current.roam_unit)
+        unit, ok = new_unit_tab.get(self.current.roam_unit, self)
         if unit and ok:
             self.current.roam_unit = unit.nid
             self.unit_box.edit.setValue(self.current.roam_unit)
@@ -312,6 +306,8 @@ class PropertiesMenu(QWidget):
             self.tag_box.edit.clear()
             self.tag_box.edit.addItems(DB.tags.keys())
             self.tag_box.edit.setCurrentTexts(self.current.tags)
+            # Without the tags the dialog deleted
+            self.tags_changed()
         else:
             pass
 

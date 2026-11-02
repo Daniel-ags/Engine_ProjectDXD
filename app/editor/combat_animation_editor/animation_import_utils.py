@@ -2,6 +2,7 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from PyQt5.QtGui import QImage, QPixmap, QPainter, QColor, qRgb
 
+from app.editor.file_manager.staging import STAGING
 import app.editor.utilities as editor_utilities
 
 def convert_gba(pixmap: QPixmap) -> QPixmap:
@@ -121,6 +122,15 @@ def combine_identical_commands(pose):
         new_timeline.append(last_command)
     pose.timeline = new_timeline
 
+def stage_full_image(anim, sprite_sheet: QPixmap):
+    """Points a weapon or effect animation at a staged file holding its new sprite
+    sheet, and drops the images the engine cut from the old one"""
+    anim.full_path = STAGING.write_file('%s.png' % anim.nid, sprite_sheet.save)
+    anim.pixmap = sprite_sheet
+    anim.image = None
+    for frame in anim.frames:
+        frame.image = None
+
 def update_anim_full_image(anim):
     """
     Takes the frames of the weapon animation and collates them into a spritesheet
@@ -154,5 +164,4 @@ def update_anim_full_image(anim):
         x, y, width, height = frame.rect
         painter.drawPixmap(x, y, frame.pixmap)
     painter.end()
-    anim.pixmap = new_pixmap
-    anim.full_path = None  # So we can save our changes
+    stage_full_image(anim, new_pixmap)

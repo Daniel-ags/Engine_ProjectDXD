@@ -50,11 +50,17 @@ class UnitGroupMenu(QWidget):
 
     def set_current_level(self, level_nid):
         level = DB.levels.get(level_nid)
+        same_level = self.current_level is not None and self.current_level.nid == level_nid
+        row = self.group_list.currentRow()
+        shown = self._data[row] if 0 <= row < len(self._data) else None
         self.current_level = level
         self._data = self.current_level.unit_groups
         self.group_list.clear()
         for group in self._data:
             self.group_list.add_group(group)
+        # The level shown again after a change elsewhere keeps the group it showed
+        if same_level and shown is not None and shown.nid in self._data:
+            self.group_list.setCurrentRow(self._data.index(shown.nid))
 
     def create_new_group(self):
         nid = str_utils.get_next_name('New Group', self._data.keys())
@@ -137,7 +143,6 @@ class GroupWidget(QWidget):
         self.setLayout(self.layout)
 
         self.nid_box = NidLineEdit(self)
-        self.nid_box.textChanged.connect(self.nid_changed)
         self.nid_box.editingFinished.connect(self.nid_done_editing)
         self.layout.addWidget(self.nid_box, 0, 0)
 
@@ -172,25 +177,23 @@ class GroupWidget(QWidget):
 
         self.layout.addWidget(self.view, 2, 0, 1, 3)
 
-        timer.get_timer().tick_elapsed.connect(self.tick)
+        timer.connect_tick(self, self.tick)
 
         self.set_current(self.current)
 
     def tick(self):
         self.model.layoutChanged.emit()
 
-    def nid_changed(self, text: str):
-        self.current.nid = text
-
     def nid_done_editing(self):
+        new_nid = self.nid_box.text()
         other_nids = [d.nid for d in self._data.values()
                       if d is not self.current]
-        if self.current.nid in other_nids:
+        if new_nid in other_nids:
             QMessageBox.warning(self.window, 'Warning',
-                                'Group ID %s already in use' % self.current.nid)
-        self.current.nid = str_utils.get_next_name(
-            self.current.nid, other_nids)
-        self._data.update_nid(self.current, self.current.nid)
+                                'Group ID %s already in use' % new_nid)
+            new_nid = str_utils.get_next_name(new_nid, other_nids)
+            self.nid_box.setText(new_nid)
+        self._data.update_nid(self.current, new_nid)
 
     @property
     def current_level(self):

@@ -28,6 +28,7 @@ class NodePropertiesMenu(QWidget):
         self.state_manager.subscribe_to_key(NodePropertiesMenu.__name__, 'selected_node', self.select_node)
 
     def select_node(self, node_nid):
+        same_node = self.current_node is not None and self.current_node.nid == node_nid
         current_overworld = DB.overworlds.get(self.state_manager.state.selected_overworld)
         if(current_overworld):
             self.current_node = current_overworld.overworld_nodes.get(node_nid)
@@ -39,7 +40,7 @@ class NodePropertiesMenu(QWidget):
 
             self.set_components_active(True)
             self.event_box.show()
-            self.event_box.on_node_changed()
+            self.event_box.on_node_changed(same_node)
             self.nid_box.edit.setText(self.current_node.nid)
             self.title_box.edit.setText(self.current_node.name)
             self.map_icon_selector.set_map_icon_object(RESOURCES.map_icons.get(self.current_node.icon))
@@ -69,24 +70,20 @@ class NodePropertiesMenu(QWidget):
             self.current_node.name = text
             self.state_manager.change_and_broadcast('ui_refresh_signal', None)
 
-    def nid_changed(self, text):
-        if(self.current_node):
-            self.current_node.nid = text
-            self.state_manager.change_and_broadcast('ui_refresh_signal', None)
-
     def nid_done_editing(self):
+        new_nid = self.nid_box.edit.text()
         other_nids = []
         for overworld in DB.overworlds:
             for node in overworld.overworld_nodes:
                 if node is not self.current_node:
                     other_nids.append(node.nid)
-        if self.current_node.nid in other_nids:
+        if new_nid in other_nids:
             QMessageBox.warning(
-                self, 'Warning', 'Node ID %s already in use' % self.current_node.nid)
-            self.current_node.nid = str_utils.get_next_int(
-                self.current_node.nid, other_nids)
+                self, 'Warning', 'Node ID %s already in use' % new_nid)
+            new_nid = str_utils.get_next_int(new_nid, other_nids)
+            self.nid_box.edit.setText(new_nid)
         for overworld in DB.overworlds:
-            overworld.overworld_nodes.update_nid(self.current_node, self.current_node.nid)
+            overworld.overworld_nodes.update_nid(self.current_node, new_nid)
         self.state_manager.change_and_broadcast('ui_refresh_signal', None)
 
 
@@ -100,7 +97,6 @@ class NodePropertiesMenu(QWidget):
         self.layout.setAlignment(Qt.AlignTop)
 
         self.nid_box = PropertyBox("Node ID", NidLineEdit, self)
-        self.nid_box.edit.textChanged.connect(self.nid_changed)
         self.nid_box.edit.editingFinished.connect(self.nid_done_editing)
         self.layout.addWidget(self.nid_box)
 
@@ -109,6 +105,7 @@ class NodePropertiesMenu(QWidget):
         self.layout.addWidget(self.title_box)
 
         self.level_box = PropertyBox("Level", QComboBox, self)
+        self.level_box.edit.activated.connect(self.level_changed)
         self.layout.addWidget(self.level_box)
 
         self.map_icon_selector = NodeIconSelector(self.node_icon_changed)
@@ -121,7 +118,6 @@ class NodePropertiesMenu(QWidget):
         level_combo_box.clear()
         for level in DB.levels.values():
             level_combo_box.addItem(level.name, level.nid)
-        level_combo_box.activated.connect(self.level_changed)
         return level_combo_box
 
 class NodeIconSelector(QWidget):
