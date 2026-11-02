@@ -57,7 +57,7 @@ The most updated versions of LT Maker utilize AI code. If you wish to avoid AI u
 If you wish to operate off of a version of the engine that does not have any AI-assisted development, use the following command immediately after the above cloning command.
 
 ```
-git checkout -b preai 31646671857c7a35b1acebbe07027f72c664bcd4
+git checkout -b preai 35cdb35264951cb0e799a1647cdd57b74ba1cf16
 ```
 
 You can then switch between the branches by using the below commands:

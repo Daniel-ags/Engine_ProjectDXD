@@ -1148,6 +1148,10 @@ class MenuState(MapState):
                     game.state.change('move')
                     game.cursor.construct_arrows(game.cursor.path[::-1])
 
+        elif event == 'AUX':
+            if self.menu.next_help_page():
+                get_sound_thread().play_sfx('Select 6')
+
         elif event == 'INFO':
             if self.menu.info_flag:
                 get_sound_thread().play_sfx('Info Out')
@@ -1377,6 +1381,10 @@ class ItemState(MapState):
             else:
                 get_sound_thread().play_sfx('Error')
 
+        elif event == 'AUX':
+            if self.menu.next_help_page():
+                get_sound_thread().play_sfx('Select 6')
+
         elif event == 'INFO':
             self.menu.toggle_info()
             if self.menu.info_flag:
@@ -1463,6 +1471,10 @@ class SubItemChildState(MapState):
                 game.memory['parent_menu'] = self.menu
                 game.memory['is_subitem_child_menu'] = True
                 game.state.change('item_child')
+
+        elif event == 'AUX':
+            if self.menu.next_help_page():
+                get_sound_thread().play_sfx('Select 6')
 
         elif event == 'INFO':
             self.menu.toggle_info()
@@ -1741,6 +1753,10 @@ class ItemDiscardState(MapState):
                 game.memory['option_menu'] = self.menu
                 game.state.change('option_child')
 
+        elif event == 'AUX':
+            if self.menu.next_help_page():
+                get_sound_thread().play_sfx('Select 6')
+
         elif event == 'INFO':
             self.menu.toggle_info()
 
@@ -1863,6 +1879,10 @@ class WeaponChoiceState(MapState):
             game.memory['item'] = selection
             game.state.change('combat_targeting')
 
+        elif event == 'AUX':
+            if self.menu.next_help_page():
+                get_sound_thread().play_sfx('Select 6')
+
         elif event == 'INFO':
             if self.menu.info_flag:
                 get_sound_thread().play_sfx('Info Out')
@@ -1950,6 +1970,10 @@ class SpellChoiceState(WeaponChoiceState):
             game.memory['item'] = selection
             game.state.change('combat_targeting')
 
+        elif event == 'AUX':
+            if self.menu.next_help_page():
+                get_sound_thread().play_sfx('Select 6')
+
         elif event == 'INFO':
             if self.menu.info_flag:
                 get_sound_thread().play_sfx('Info Out')
@@ -2030,6 +2054,10 @@ class AbilityMultiItemChoiceState(WeaponChoiceState):
             game.memory['item'] = selection
             game.state.change('combat_targeting')
 
+        elif event == 'AUX':
+            if self.menu.next_help_page():
+                get_sound_thread().play_sfx('Select 6')
+
         elif event == 'INFO':
             if self.menu.info_flag:
                 get_sound_thread().play_sfx('Info Out')
@@ -2086,6 +2114,10 @@ class AbilitySubmenuChoiceState(MapState):
             idx = self.menu.get_current_index()
             get_sound_thread().play_sfx('Select 1')
             self.select_callback(self.cur_unit, self.abilities[idx])
+
+        elif event == 'AUX':
+            if self.menu.next_help_page():
+                get_sound_thread().play_sfx('Select 6')
 
         elif event == 'INFO':
             if self.menu.info_flag:
@@ -2626,6 +2658,10 @@ class ItemTargetingState(State):
                 self.item.data['target_item'] = target_item
                 game.state.back()
                 return 'repeat'
+
+        elif event == 'AUX':
+            if self.menu.next_help_page():
+                get_sound_thread().play_sfx('Select 6')
 
         elif event == 'INFO':
             self.menu.toggle_info()
@@ -3220,6 +3256,10 @@ class ShopState(State):
                     self.state = 'close'
                     self.current_msg = self.get_dialog(self.leave_message)
 
+        elif event == 'AUX':
+            if self.menu.next_help_page():
+                get_sound_thread().play_sfx('Select 6')
+
         elif event == 'INFO':
             if self.state == 'buy' or self.state == 'sell' or self.state == 'preview':
                 self.menu.toggle_info()
@@ -3400,6 +3440,10 @@ class RepairShopState(ShopState):
                 self.current_msg = self.get_dialog(self.again_message)
                 game.state.change('transition_pop')
 
+        elif event == 'AUX':
+            if self.menu.next_help_page():
+                get_sound_thread().play_sfx('Select 6')
+
         elif event == 'INFO':
             self.menu.toggle_info()
             if self.menu.info_flag:
@@ -3455,6 +3499,10 @@ class UnlockSelectState(MapState):
                 get_sound_thread().play_sfx('Select 1')
                 game.memory['unlock_item'] = self.menu.get_current()
                 game.state.back()
+
+        elif event == 'AUX':
+            if self.menu.next_help_page():
+                get_sound_thread().play_sfx('Select 6')
 
         elif event == 'INFO':
             self.menu.toggle_info()

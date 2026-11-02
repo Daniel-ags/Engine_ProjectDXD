@@ -132,6 +132,10 @@ class TradeState(MapState):
                 get_sound_thread().play_sfx('Select 1')
                 self.menu.set_selected_option()
 
+        elif event == 'AUX':
+            if self.menu.next_help_page():
+                get_sound_thread().play_sfx('Select 6')
+
         elif event == 'INFO':
             if self.menu.selecting_hand[0] == 0:
                 info_flag = self.menu.menu1.info_flag
