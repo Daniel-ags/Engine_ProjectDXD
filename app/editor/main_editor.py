@@ -475,14 +475,14 @@ class MainEditor(QMainWindow):
 
         edit_menu = QMenu(_("Edit"), self)
         edit_menu.aboutToShow.connect(self.update_undo_actions)
-        edit_menu.addAction(self.undo_act)
-        edit_menu.addAction(self.redo_act)
-        edit_menu.addSeparator()
         for action in self.database_actions.values():
             edit_menu.addAction(action)
         edit_menu.addSeparator()
         for action in self.resource_actions.values():
             edit_menu.addAction(action)
+        edit_menu.addSeparator()
+        edit_menu.addAction(self.undo_act)
+        edit_menu.addAction(self.redo_act)
 
         test_menu = QMenu(_("Test"), self)
         test_menu.addAction(self.test_current_act)
