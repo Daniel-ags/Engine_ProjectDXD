@@ -20,6 +20,7 @@ from app.engine.objects.unit import UnitObject
 from app.engine.game_state import game
 from app.engine.game_menus import menu_options
 from app.engine.game_menus.menu_components.generic_menu.cursor_hand import slide_hand
+from app.engine.info_menu import multi_desc
 from app.engine.achievements import Achievement
 from app.engine.graphics.text.text_renderer import fix_tags
 from app.engine.text_evaluator import TextEvaluator
@@ -229,6 +230,14 @@ class Simple():
 
     def toggle_info(self):
         self.info_flag = not self.info_flag
+
+    def next_help_page(self) -> bool:
+        """If the help box is up, turns it to its next page. Returns whether it turned"""
+        return self.info_flag and self.turn_help_page()
+
+    def turn_help_page(self) -> bool:
+        help_box = self.options[self.current_index].help_box
+        return bool(help_box) and help_box.next_page()
 
     def create_options(self, options, info_descs=None):
         self.options.clear()
@@ -514,7 +523,7 @@ class Choice(Simple):
                     if info_descs:
                         desc = info_descs[idx]
                         if isinstance(desc, ItemObject): # Uses special item description for items
-                            option.help_box = help_menu.ItemHelpDialog(desc)
+                            option.help_box = multi_desc.PagedHelpDialog(help_menu.ItemHelpDialog(desc), desc, multi_desc.PageType.ITEM, self.owner)
                         elif desc:
                             option.help_box = help_menu.HelpDialog(desc)
                     self.options.append(option)
@@ -1055,6 +1064,10 @@ class Trade(Simple):
             self.menu1.toggle_info()
         else:
             self.menu2.toggle_info()
+
+    def next_help_page(self) -> bool:
+        menu = self.menu1 if self.selecting_hand[0] == 0 else self.menu2
+        return menu.next_help_page()
 
     def update(self):
         self.menu1.update()
@@ -1742,6 +1755,12 @@ class Convoy():
             self.inventory.vert_draw_info(surf)
         else:
             self.get_menu().vert_draw_info(surf)
+
+    def next_help_page(self) -> bool:
+        if not self.info_flag:
+            return False
+        menu = self.inventory if self.selection_index == 0 else self.get_menu()
+        return menu.turn_help_page()
         return surf
 
     def set_takes_input(self, val):
@@ -1970,6 +1989,11 @@ class Market(Convoy):
     def draw_info(self, surf):
         self.menus[self.order[self.selection_index - 1]].vert_draw_info(surf)
         return surf
+
+    def next_help_page(self) -> bool:
+        if not self.info_flag:
+            return False
+        return self.menus[self.order[self.selection_index - 1]].turn_help_page()
 
     def set_takes_input(self, val):
         self.takes_input = val

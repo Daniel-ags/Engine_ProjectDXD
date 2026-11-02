@@ -6,9 +6,7 @@ from typing import Callable, Dict, List, Optional
 
 from app.constants import TILEHEIGHT, WINHEIGHT
 from app.engine import engine, help_menu, menus
-from app.engine.dialog import DialogState
-from app.engine.graphics.text.text_renderer import render_text
-from app.utilities.enums import HAlignment
+from app.engine.info_menu.multi_desc import draw_page_number
 
 info_states = ('personal_data', 'equipment', 'support_skills', 'notes')
 
@@ -219,16 +217,8 @@ class InfoGraph():
 
             self.current_bb.help_box.draw(surf, pos, right)
             if self.current_bb.is_multiple() and len(self.current_bb._help_box) > 1:
-                # If the help_box has no dlg, then we don't need to wait for it to transition in.
-                if not self.current_bb.help_box.dlg or \
-                    (self.current_bb.help_box.dlg and 
-                     self.current_bb.help_box.dlg.state != DialogState.TRANSITION_IN):
-                    pos = self.current_bb.help_box.top_left(pos)
-                    if box_at_top:
-                        pos = (pos[0] + self.current_bb.help_box.get_width() - 16, pos[1] + self.current_bb.help_box.get_height() - 8)
-                    else:
-                        pos = (pos[0] + self.current_bb.help_box.get_width() - 16, pos[1] - 4)
-                    render_text(surf, ['small-yellow'], ['%d/%d' % (self.current_bb._page + 1, len(self.current_bb._help_box))], [], pos, HAlignment.RIGHT)
+                draw_page_number(surf, self.current_bb.help_box, self.current_bb.help_box.top_left(pos), box_at_top,
+                                 self.current_bb._page, len(self.current_bb._help_box))
         elif self.last_bb and self.last_bb.help_box.is_closing():
             # As on the GBA, the help box let go of shrinks away
             pos = (max(0, self.last_bb.aabb[0] - 32), self.last_bb.aabb[1] + 13)

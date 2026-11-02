@@ -4,6 +4,7 @@ from app.data.database.database import DB
 from app.engine.sound import get_sound_thread
 from app.engine.fonts import FONT
 from app.engine.game_menus import menu_options
+from app.engine.info_menu import multi_desc
 from app.engine.state import MapState
 
 from app.engine import engine, text_funcs, menus, action, \
@@ -45,13 +46,14 @@ class SkillOption(menu_options.BasicOption):
         return main_color
 
     def get_help_box(self):
+        owner = game.get_unit(self.skill.owner_nid)
         text = text_funcs.translate_and_text_evaluate(
             self.skill.desc,
-            unit=game.get_unit(self.skill.owner_nid),
+            unit=owner,
             self=self.skill,
             local_args={'skill': self.skill})
         # The option draws the skill's name itself, so the help box does not need to
-        return help_menu.HelpDialog(text)
+        return multi_desc.PagedHelpDialog(help_menu.HelpDialog(text), self.skill, multi_desc.PageType.SKILL, owner)
 
     def draw(self, surf, x, y):
         icon = icons.get_icon(self.skill)
@@ -112,6 +114,10 @@ class FeatChoiceState(MapState):
             else:
                 get_sound_thread().play_sfx('Info In')
             self.menu.toggle_info()
+
+        elif event == 'AUX':
+            if self.menu.next_help_page():
+                get_sound_thread().play_sfx('Select 6')
 
         elif event == 'INFO':
             get_sound_thread().play_sfx('Select 2')
