@@ -36,8 +36,6 @@ class NewEditorTab(QWidget, Generic[T]):
     allow_copy_and_paste = False
     # Size of the icon beside each entry in the list. Shrink for data that has no icons
     icon_size = 32
-    # Whether the tab can show its data again after an undo changes it
-    supports_undo = True
     # Whether what it shows comes in part from levels, overworlds or tilemaps, so a
     # map edit in the main window changes it (EditHistoryDialog.show_changes). Such a
     # tab says which map edits do with reads_map_edit(change_set)

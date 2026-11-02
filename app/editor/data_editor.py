@@ -243,7 +243,7 @@ class EditHistoryDialog(QDialog):
             else:
                 return super().eventFilter(obj, event)
             focused = QApplication.focusWidget()
-            if not self.current_history_tab().supports_undo or handles_own_undo(focused, redo):
+            if handles_own_undo(focused, redo):
                 return super().eventFilter(obj, event)
             if held_in_text_field(focused, event):
                 return True

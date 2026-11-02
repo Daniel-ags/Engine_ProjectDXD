@@ -36,8 +36,6 @@ class IconSheetList(QListWidget):
 
 class IconTab(QWidget):
     side_menu_enabled: bool = False
-    # Whether the tab can show its data again after an undo changes it
-    supports_undo = True
     # Whether what it shows comes in part from levels, overworlds or tilemaps, so a
     # map edit in the main window changes it (EditHistoryDialog.show_changes). Such a
     # tab says which map edits do with reads_map_edit(change_set)
