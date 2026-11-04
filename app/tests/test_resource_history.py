@@ -190,6 +190,32 @@ class ResourceHistoryTests(unittest.TestCase):
                 dialog.stop_history()
                 dialog.hide()
 
+    def test_the_sound_player_stops_ticking_once_its_window_is_deleted(self):
+        import sys
+        import time
+        from PyQt5.QtCore import QEvent, QCoreApplication
+        from app.editor.data_editor import SingleResourceEditor
+        from app.editor.sound_editor.sound_tab import SFXDatabase
+        self.assertTrue(len(RESOURCES.sfx) > 0)
+        errors = []
+        excepthook = patch.object(sys, 'excepthook', lambda *exc_info: errors.append(exc_info[1]))
+        excepthook.start()
+        self.addCleanup(excepthook.stop)
+        dialog = SingleResourceEditor(SFXDatabase, ['sfx'])
+        dialog.tab.view.selectRow(0)
+        self.assertIsNotNone(dialog.tab.sound_player_widget.current_track_name)
+
+        dialog.stop_history()
+        dialog.close()
+        dialog.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        # Longer than the player's 100 ms tick
+        end = time.time() + 0.3
+        while time.time() < end:
+            self.app.processEvents()
+
+        self.assertEqual([], errors)
+
     def test_a_font_field_undoes(self):
         # A font is a slots dataclass, which keeps its fields outside __dict__
         from app.editor.font_editor.font_tab import FontDatabase
