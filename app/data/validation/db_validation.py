@@ -2,6 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from app.data.database import references
 from app.data.database.components import Component, ComponentType
 from app.data.database.database import Database
 from app.data.database.database_types import DatabaseType as DType
@@ -20,6 +21,27 @@ from app.events.python_eventing.analyzer import PyEventAnalyzer
 from app.events import event_commands
 from app.events.regions import Region
 from app.utilities.typing import NID
+
+# The references the checks below report as errors, by owner type and path, so a
+# reference to nothing there is not reported again as a warning
+CHECKED_REFERENCES = {
+    (DType.ITEMS, 'components'),
+    (DType.SKILLS, 'components'),
+    (DType.UNITS, 'klass'),
+    (DType.UNITS, 'alternate_classes[*]'),
+    (DType.UNITS, 'starting_items[*][0]'),
+    (DType.UNITS, 'learned_skills[*][1]'),
+    (DType.LEVELS, 'tilemap'),
+    (DType.LEVELS, 'bg_tilemap'),
+    (DType.LEVELS, 'party'),
+    (DType.LEVELS, 'music{*}'),
+    (DType.LEVELS, 'roam_unit'),
+    (DType.LEVELS, 'units[*].ai'),
+    (DType.LEVELS, 'units[*].roam_ai'),
+    (DType.LEVELS, 'units[*].starting_items[*][0]'),
+    (DType.LEVELS, 'units[*].starting_skills[*]'),
+    (DType.LEVELS, 'units[*].starting_traveler'),
+}
 
 @dataclass
 class ValidationResult():
@@ -190,6 +212,66 @@ class DBChecker():
                 all_errors += alz.verify_event(event.nid, event.source)
         return ValidationResult(all_errors)
 
+    def validate_references(self) -> ValidationResult:
+        """Every reference the reference schema declares that names nothing, as a
+        warning, except those the checks above report as errors"""
+        res = ValidationResult()
+        for site in references.dangling(self.db, self.resources):
+            if (site.owner_type, site.where) in CHECKED_REFERENCES:
+                continue
+            if site.owner is not None:
+                warn = ltdb.Error(site.owner_type, site.owner.nid).to_warn().field(site.where)
+            else:
+                # A reference the catalog holds itself, as the teams hold their alliances
+                warn = ltdb.Error(site.owner_type, site.where).to_warn()
+            res.warnings.append(warn.tmplt.not_type(site.target, site.value))
+        return res
+
+    def validate_resource_references(self) -> ValidationResult:
+        """Every reference a resource holds that names nothing, as a warning. The
+        reference schema covers only the database's records, so these are read here:
+        the palettes and the effects and sounds of combat animations and effects,
+        and the tilesets and terrain of tilemaps and tilesets."""
+        res = ValidationResult()
+
+        def warn(rtype: ResourceType, nid: NID, where: str, target: LTType, value) -> None:
+            res.warnings.append(ltdb.Error(rtype, nid).to_warn().field(where).tmplt.not_type(target, value))
+
+        def check_anim(rtype: ResourceType, anim, poses_by_where) -> None:
+            for palette_name, palette_nid in anim.palettes:
+                # A palette entry without a palette is left by deleting the project's last palette
+                if palette_nid not in self.resources.combat_palettes:
+                    warn(rtype, anim.nid, 'palettes:%s' % palette_name, ResourceType.COMBAT_PALETTES, palette_nid)
+            for where, poses in poses_by_where:
+                for pose in poses:
+                    for command in pose.timeline:
+                        # An effect deleted from under a command leaves None, which plays nothing
+                        if command.has_effect() and command.value[0] is not None and \
+                                command.value[0] not in self.resources.combat_effects:
+                            warn(rtype, anim.nid, '%s:%s' % (where, pose.nid), ResourceType.COMBAT_EFFECTS, command.value[0])
+                        if command.has_sound() and command.value[0] not in self.resources.sfx:
+                            warn(rtype, anim.nid, '%s:%s' % (where, pose.nid), ResourceType.SFX, command.value[0])
+
+        for combat_anim in self.resources.combat_anims:
+            check_anim(ResourceType.COMBAT_ANIMS, combat_anim,
+                       [(weapon_anim.nid, weapon_anim.poses) for weapon_anim in combat_anim.weapon_anims])
+        for effect_anim in self.resources.combat_effects:
+            check_anim(ResourceType.COMBAT_EFFECTS, effect_anim, [('poses', effect_anim.poses)])
+        for tilemap in self.resources.tilemaps:
+            for tileset_nid in tilemap.tilesets:
+                if tileset_nid not in self.resources.tilesets:
+                    warn(ResourceType.TILEMAPS, tilemap.nid, 'tilesets', ResourceType.TILESETS, tileset_nid)
+            for layer in tilemap.layers:
+                for tileset_nid in sorted({tile.tileset_nid for tile in layer.sprite_grid.values()} -
+                                          set(self.resources.tilesets.keys())):
+                    warn(ResourceType.TILEMAPS, tilemap.nid, 'layer %s' % layer.nid, ResourceType.TILESETS, tileset_nid)
+                for terrain_nid in sorted(set(layer.terrain_grid.values()) - set(self.db.terrain.keys())):
+                    warn(ResourceType.TILEMAPS, tilemap.nid, 'layer %s' % layer.nid, DType.TERRAIN, terrain_nid)
+        for tileset in self.resources.tilesets:
+            for terrain_nid in sorted(set(tileset.terrain_grid.values()) - set(self.db.terrain.keys())):
+                warn(ResourceType.TILESETS, tileset.nid, 'terrain_grid', DType.TERRAIN, terrain_nid)
+        return res
+
     def _val_or_err(self, nids: List[NID] | NID, dtype: LTType, parent_error: ltdb.Error, optional=True) -> List[ltdb.Error]:
         if not isinstance(nids, list):
             nids = [nids]
@@ -209,6 +291,8 @@ class DBChecker():
         all_warnings += self.validate_items_and_skills().warnings
         all_warnings += self.validate_levels().warnings
         all_warnings += self.validate_units().warnings
+        all_warnings += self.validate_references().warnings
+        all_warnings += self.validate_resource_references().warnings
         return all_warnings
 
     def repair(self):

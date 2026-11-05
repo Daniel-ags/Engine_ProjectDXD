@@ -56,6 +56,10 @@ class HelpDialog():
     def get_height(self):
         return self.help_surf.get_height()
 
+    def next_page(self) -> bool:
+        """Turns to the next page, returning whether there was one to turn to"""
+        return False
+
     def _wrap_at(self, styled: str, width: int) -> Tuple[int, int]:
         '''Wrap `styled` in a throwaway dialog of the given box width and
         return (num_lines, widest_rendered_line). Uses the dialog's own

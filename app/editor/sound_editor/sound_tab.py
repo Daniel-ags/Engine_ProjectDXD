@@ -11,6 +11,11 @@ from app.editor.sound_editor.sound_player import SoundPlayer
 
 
 class SoundTab(QWidget):
+    # Whether what it shows comes in part from levels, overworlds or tilemaps, so a
+    # map edit in the main window changes it (EditHistoryDialog.show_changes). Such a
+    # tab says which map edits do with reads_map_edit(change_set)
+    reads_maps = False
+
     def __init__(self, data, title, model, view, parent=None):
         super().__init__(parent)
         self.window = parent
@@ -73,7 +78,9 @@ class SoundTab(QWidget):
             self.view.setCurrentIndex(last_index)
 
     def reset(self):
-        pass
+        # The proxy model over the table needs warning before the layout changes
+        self.model.layoutAboutToBeChanged.emit()
+        self.model.layoutChanged.emit()
 
     def update_list(self):
         pass
@@ -130,7 +137,7 @@ class MusicDatabase(SoundTab):
         self.model.autofill()
 
 def get_sfx():
-    window = SingleResourceEditor(SFXDatabase, ['sfx'])
+    window = SingleResourceEditor(SFXDatabase, ['sfx'], picker=True)
     result = window.exec_()
     if result == QDialog.Accepted:
         selected_sfx = window.tab.get_selected()
@@ -139,7 +146,7 @@ def get_sfx():
         return None, False
 
 def get_music():
-    window = SingleResourceEditor(MusicDatabase, ['music'])
+    window = SingleResourceEditor(MusicDatabase, ['music'], picker=True)
     result = window.exec_()
     if result == QDialog.Accepted:
         selected_music = window.tab.get_selected()

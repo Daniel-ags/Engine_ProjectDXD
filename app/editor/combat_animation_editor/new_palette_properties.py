@@ -2,13 +2,14 @@ import os
 
 from PyQt5.QtWidgets import QWidget, QHBoxLayout, QFileDialog, QVBoxLayout, \
     QGraphicsView, QGraphicsScene, QLineEdit, QSizePolicy, QPushButton, \
-    QMessageBox, QDialog, QAction, QApplication
+    QMessageBox, QDialog, QApplication
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QPen, QPixmap, QImage, QPainter, qRgb
 
 from typing import List, Tuple
 
 from app.constants import WINWIDTH, WINHEIGHT
+from app.data.database.database import DB
 from app.data.resources import map_sprites
 from app.data.resources.resources import RESOURCES
 
@@ -19,10 +20,12 @@ from app.utilities import str_utils
 from app.extensions.custom_gui import PropertyBox, ComboBox, Dialog
 from app.editor.combat_animation_editor.frame_selector import FrameSelector
 from app.editor.combat_animation_editor import combat_animation_model, new_combat_effect_properties, new_combat_animation_properties, palette_model
+from app.editor.combat_animation_editor.animation_import_utils import stage_full_image
 from app.editor.combat_animation_editor.color_editor import ColorEditorWidget
+from app.editor.edit_history import HISTORY
 from app.editor.map_sprite_editor import new_map_sprite_properties, map_sprite_model
 from app.editor.lib.components.validated_line_edit import NidLineEdit
-from app.data.resources.combat_anims import Frame
+from app.data.resources.combat_anims import CombatAnimation, Frame
 from app.data.resources.combat_palettes import Palette
 from app.editor.icon_editor.icon_view import IconView
 from app.editor.component_editor_types import T
@@ -34,158 +37,36 @@ import app.editor.utilities as editor_utilities
 
 import logging
 
-class UndoStack():
-    def __init__(self):
-        self.current_idx = -1
-        self._list = []
+def change_palette_color(palette: Palette, coord: tuple, new_color: QColor):
+    """Paints a palette slot, giving its old color to the slot that held the new one"""
+    new_color = new_color.getRgb()[:3]
+    old_color = palette.colors.get(coord)
+    if old_color:
+        for other_coord, color in palette.colors.items():
+            if color == new_color:
+                palette.colors[other_coord] = old_color
+                break
+    palette.colors[coord] = new_color
 
-    def clear(self):
-        self.current_idx = -1
-        self._list.clear()
-
-    def append(self, val):
-        self._list = self._list[:self.current_idx + 1]
-        self._list.append(val)
-        self.current_idx += 1
-
-    def undo(self):
-        if not self._list or self.current_idx < 0:
-            return
-        command = self._list[self.current_idx]
-        command.undo()
-        self.current_idx -= 1
-        if self.current_idx >= 0 and command.can_stack(self._list[self.current_idx]):
-            self.undo()
-
-    def redo(self):
-        if not self._list or self.current_idx >= len(self._list) - 1:
-            return
-        self.current_idx += 1
-        command = self._list[self.current_idx]
-        command.redo()
-        if self.current_idx < len(self._list) - 1 and command.can_stack(self._list[self.current_idx + 1]):
-            self.redo()
-
-palette_commands = UndoStack()
-
-class CommandChangePaletteColor():
-    nid = 'change_palette_color'
-
-    def __init__(self, palette: Palette, coord: tuple, new_color: QColor):
-        self.palette = palette
-        self.coord = coord
-        self.new_color = new_color.getRgb()[:3]
-        self.old_color = self.palette.colors.get(self.coord)
-
-        self.swap_coord = None
-        if self.new_color in self.palette.colors.values():
-            for coord, color in self.palette.colors.items():
-                if color == self.new_color and self.old_color:
-                    self.swap_coord = coord
-                    break
-
-    def redo(self):
-        if self.swap_coord:
-            self.palette.colors[self.swap_coord] = self.old_color
-        self.palette.colors[self.coord] = self.new_color
-
-    def undo(self):
-        if self.swap_coord:
-            self.palette.colors[self.swap_coord] = self.new_color
-
-        if self.old_color is not None:
-            self.palette.colors[self.coord] = self.old_color
-        else:
-            del self.palette.colors[self.coord]
-
-    def can_stack(self, other) -> bool:
-        return self.nid == other.nid and self.palette == other.palette and self.coord == other.coord
-
-class CommandChangePaletteSlot():
-    nid = 'change_palette_slot'
-
-    def __init__(self, palette: Palette, frame_set, coord: tuple, new_coord: tuple):
-        self.palette = palette
-        self.frame_set = frame_set
-        self.old_coord = coord
-        self.new_coord = new_coord
-
-        self.swap_coord = False
-        if self.new_coord in self.palette.colors:
-            self.swap_coord = True
-
-    def redo(self):
-        print(self.swap_coord)
-        if self.swap_coord:
-            # old_color = self.palette.colors[self.old_coord]
-            # new_color = self.palette.colors[self.new_coord]
-            # self.palette.colors[self.old_coord] = new_color
-            # self.palette.colors[self.new_coord] = old_color
-            temp_coord = (255, 255)
-            convert_dict = {qRgb(0, *self.old_coord): qRgb(0, *temp_coord),
-                            qRgb(0, *self.new_coord): qRgb(0, *self.old_coord)}
-            second_convert_dict = {qRgb(0, *temp_coord): qRgb(0, *self.new_coord)}
-            for frame in self.frame_set.frames:
-                frame.pixmap = editor_utilities.color_convert_pixmap(frame.pixmap, convert_dict)
-                frame.pixmap = editor_utilities.color_convert_pixmap(frame.pixmap, second_convert_dict)
-            self.frame_set.pixmap = editor_utilities.color_convert_pixmap(self.frame_set.pixmap, convert_dict)
-            self.frame_set.pixmap = editor_utilities.color_convert_pixmap(self.frame_set.pixmap, second_convert_dict)
-
-        else:
-            # color = self.palette.colors[self.old_coord]
-            # self.palette.colors[self.new_coord] = color
-            # del self.palette.colors[self.old_coord]
-            convert_dict = {qRgb(0, *self.old_coord): qRgb(0, *self.new_coord)}
-            for frame in self.frame_set.frames:
-                frame.pixmap = editor_utilities.color_convert_pixmap(frame.pixmap, convert_dict)
-            # Propagate changes up to main anim
-            self.frame_set.pixmap = editor_utilities.color_convert_pixmap(self.frame_set.pixmap, convert_dict)
-        self.frame_set.full_path = None  # So it saves the new pixmap
-
-    def undo(self):
-        if self.swap_coord:
-            # old_color = self.palette.colors[self.old_coord]
-            # new_color = self.palette.colors[self.new_coord]
-            # self.palette.colors[self.old_coord] = old_color
-            # self.palette.colors[self.new_coord] = new_color
-            temp_coord = (255, 255)
-            # Swap back
-            convert_dict = {qRgb(0, *self.old_coord): qRgb(0, *temp_coord),
-                            qRgb(0, *self.new_coord): qRgb(0, *self.old_coord)}
-            second_convert_dict = {qRgb(0, *temp_coord): qRgb(0, *self.new_coord)}
-            for frame in self.frame_set.frames:
-                frame.pixmap = editor_utilities.color_convert_pixmap(frame.pixmap, convert_dict)
-                frame.pixmap = editor_utilities.color_convert_pixmap(frame.pixmap, second_convert_dict)
-            self.frame_set.pixmap = editor_utilities.color_convert_pixmap(self.frame_set.pixmap, convert_dict)
-            self.frame_set.pixmap = editor_utilities.color_convert_pixmap(self.frame_set.pixmap, second_convert_dict)
-        else:
-            # color = self.palette.colors[self.new_coord]
-            # self.palette.colors[self.old_coord] = color
-            # del self.palette.colors[self.new_coord]
-            convert_dict = {qRgb(0, *self.new_coord): qRgb(0, *self.old_coord)}
-            for frame in self.frame_set.frames:
-                frame.pixmap = editor_utilities.color_convert_pixmap(frame.pixmap, convert_dict)
-            # Propagate changes up to main anim
-            self.frame_set.pixmap = editor_utilities.color_convert_pixmap(self.frame_set.pixmap, convert_dict)
-        self.frame_set.full_path = None
-
-    def can_stack(self, other) -> bool:
-        return False
-
-class CommandDeleteColor():
-    def __init__(self, palette, coord):
-        self.palette = palette
-        self.coord = coord
-        self.old_color = self.palette.colors[self.coord]
-
-    def redo(self):
-        del self.palette.colors[self.coord]
-
-    def undo(self):
-        self.palette.colors[self.coord] = self.old_color
-
-    def can_stack(self, other) -> bool:
-        return False
+def move_palette_slot(palette: Palette, frame_set, coord: tuple, new_coord: tuple):
+    """Moves the pixels of a weapon animation's or effect's frames that use one palette
+    slot to another, swapping with those that used the other, and stages its new sheet"""
+    if new_coord in palette.colors:
+        temp_coord = (255, 255)
+        convert_dict = {qRgb(0, *coord): qRgb(0, *temp_coord),
+                        qRgb(0, *new_coord): qRgb(0, *coord)}
+        second_convert_dict = {qRgb(0, *temp_coord): qRgb(0, *new_coord)}
+        for frame in frame_set.frames:
+            frame.pixmap = editor_utilities.color_convert_pixmap(frame.pixmap, convert_dict)
+            frame.pixmap = editor_utilities.color_convert_pixmap(frame.pixmap, second_convert_dict)
+        sheet = editor_utilities.color_convert_pixmap(frame_set.pixmap, convert_dict)
+        sheet = editor_utilities.color_convert_pixmap(sheet, second_convert_dict)
+    else:
+        convert_dict = {qRgb(0, *coord): qRgb(0, *new_coord)}
+        for frame in frame_set.frames:
+            frame.pixmap = editor_utilities.color_convert_pixmap(frame.pixmap, convert_dict)
+        sheet = editor_utilities.color_convert_pixmap(frame_set.pixmap, convert_dict)
+    stage_full_image(frame_set, sheet)
 
 class AnimView(IconView):
     def get_color_at_pos(self, pixmap, pos) -> Tuple[int, int, int]:
@@ -225,11 +106,7 @@ class AnimView(IconView):
 
         if event.buttons() == Qt.LeftButton:
             # overwrite current color with painting color
-            painting_color = self.window.get_painting_color()
-            command = CommandChangePaletteColor(palette, coord, painting_color)
-            palette_commands.append(command)
-            command.redo()
-            self.window.draw_frame()
+            self.window.change_color(coord, self.window.get_painting_color())
 
         elif event.buttons() == Qt.RightButton:
             # replace painting color with current color
@@ -258,7 +135,7 @@ class EaselWidget(QGraphicsView):
 
         self.working_image = None
 
-        timer.get_timer().tick_elapsed.connect(self.tick)
+        timer.connect_tick(self, self.tick)
 
     def tick(self):
         if self.current_palette:
@@ -329,19 +206,13 @@ class EaselWidget(QGraphicsView):
 
     def set_current_color(self, color: QColor):
         if self.current_palette and self.current_coord:
-            command = CommandChangePaletteColor(self.current_palette, self.current_coord, color)
-            palette_commands.append(command)
-            command.redo()
-            self.window.draw_frame()
+            self.window.change_color(self.current_coord, color)
 
     def keyPressEvent(self, event):
         super().keyPressEvent(event)
         if event.key() == Qt.Key_Delete:
             if self.current_coord and self.current_palette.colors.get(self.current_coord):
-                command = CommandDeleteColor(self.current_palette, self.current_coord)
-                palette_commands.append(command)
-                command.redo()
-                self.window.draw_frame()
+                self.window.delete_color(self.current_coord)
 
     def mousePressEvent(self, event):
         scene_pos = self.mapToScene(event.pos())
@@ -352,10 +223,9 @@ class EaselWidget(QGraphicsView):
             return
 
         if event.button() == Qt.RightButton:
-            print(tile_pos)
             # Set current slot to this coord
             if (QApplication.keyboardModifiers() & Qt.ControlModifier):
-                if self.current_frame and self.window.current_frame_set and tile_pos in self.current_palette.colors:
+                if self.window.frame_uses_slots() and tile_pos in self.current_palette.colors:
                     self.current_coord = tile_pos
             # Set painting color to this coord
             else:
@@ -366,19 +236,12 @@ class EaselWidget(QGraphicsView):
             # If control is pressed, move current coord to new position
             if self.current_coord:
                 # Modify base frame if it exists
-                if self.current_frame and self.window.current_frame_set:
-                    command = CommandChangePaletteSlot(self.current_palette, self.window.current_frame_set, self.current_coord, tile_pos)
-                    palette_commands.append(command)
-                    command.redo()
+                if self.window.frame_uses_slots():
+                    self.window.move_slot(self.current_coord, tile_pos)
                     self.current_coord = None
-                    self.window.draw_frame()
             else:
                 # overwrite current color with painting color
-                painting_color = self.window.get_painting_color()
-                command = CommandChangePaletteColor(self.current_palette, tile_pos, painting_color)
-                palette_commands.append(command)
-                command.redo()
-                self.window.draw_frame()
+                self.window.change_color(tile_pos, self.window.get_painting_color())
 
 class WeaponAnimSelection(Dialog):
     def __init__(self, parent):
@@ -487,10 +350,9 @@ class MapSpriteSelection(Dialog):
 
     @classmethod
     def autoget(cls, current_palette: Palette) -> tuple:
-        for map_sprite in RESOURCES.map_sprites:
-            palette_nids = [nid for name, nid in map_sprite.palettes]
-            if current_palette.nid in palette_nids:
-                return map_sprite.nid
+        # Every map sprite is shown in each team's map sprite palette
+        if RESOURCES.map_sprites and any(team.map_sprite_palette == current_palette.nid for team in DB.teams):
+            return RESOURCES.map_sprites[0].nid
         return None
 
 class NewPaletteProperties(QWidget):
@@ -511,18 +373,15 @@ class NewPaletteProperties(QWidget):
 
         self.settings = MainSettingsController()
 
-        self.current_frame = None
-        self.current_frame_set = None
+        # The record holding the frame shown, its catalog, the weapon animation in it
+        # (none for an effect or map sprite, which is its own frame set), and the frame
+        self.frame_owner = None
+        self.frame_owner_data = None
+        self.frame_set_nid: Optional[NID] = None
+        self.frame_nid: Optional[NID] = None
         self.painting_color: QColor = QColor(0, 0, 0)
 
-        self.undo_action = QAction("Undo", self, shortcut="Ctrl+Z", triggered=self.undo)
-        self.redo_action = QAction("Redo", self, triggered=self.redo)
-        self.redo_action.setShortcuts(["Ctrl+Shift+Z", "Ctrl+Y"])
-        self.addAction(self.undo_action)
-        self.addAction(self.redo_action)
-
         self.nid_box = PropertyBox("Unique ID", NidLineEdit, self)
-        self.nid_box.edit.textChanged.connect(self.nid_changed)
         self.nid_box.edit.editingFinished.connect(self.nid_done_editing)
 
         self.import_box = QPushButton("Import from PNG Image...")
@@ -592,22 +451,64 @@ class NewPaletteProperties(QWidget):
 
         self.set_current(self.current)
 
-    def undo(self):
-        palette_commands.undo()
+    @property
+    def current_frame_set(self):
+        """Found through the record holding it each time, since an undo restores that
+        record with new weapon animations and frames"""
+        if isinstance(self.frame_owner, CombatAnimation):
+            new_combat_animation_properties.populate_anim_pixmaps(self.frame_owner)
+            return self.frame_owner.weapon_anims.get(self.frame_set_nid)
+        elif isinstance(self.frame_owner, map_sprites.MapSprite):
+            new_map_sprite_properties.populate_map_sprite_pixmaps(self.frame_owner)
+        elif self.frame_owner:
+            new_combat_effect_properties.populate_effect_pixmaps(self.frame_owner)
+        return self.frame_owner
+
+    @property
+    def current_frame(self):
+        frame_set = self.current_frame_set
+        if not frame_set:
+            return None
+        return next((frame for frame in frame_set.frames if frame.nid == self.frame_nid), None)
+
+    def frame_uses_slots(self) -> bool:
+        """Whether a frame is shown whose pixels name palette slots, so a slot can move:
+        a weapon animation's or an effect's. A map sprite's pixels are the colors of
+        the blue team's palette, matched in order"""
+        frame_set = self.current_frame_set
+        return self.current_frame is not None and frame_set is not None \
+            and not isinstance(frame_set, map_sprites.MapSprite)
+
+    def show_frame(self, owner, owner_data, frame_set, frame):
+        self.frame_owner, self.frame_owner_data = owner, owner_data
+        self.frame_set_nid = None if frame_set is owner else frame_set.nid
+        self.frame_nid = frame.nid
+        self.easel_widget.set_current(self.current_palette, self.current_frame)
         self.draw_frame()
 
-    def redo(self):
-        palette_commands.redo()
+    def change_color(self, coord: tuple, color: QColor):
+        with HISTORY.change_set('Change palette color', origin=self.window):
+            change_palette_color(self.current_palette, coord, color)
         self.draw_frame()
 
-    def nid_changed(self, text):
-        self.current_palette.nid = text
+    def delete_color(self, coord: tuple):
+        with HISTORY.change_set('Delete palette color', origin=self.window):
+            del self.current_palette.colors[coord]
+        self.draw_frame()
+
+    def move_slot(self, coord: tuple, new_coord: tuple):
+        with HISTORY.change_set('Move palette slot', origin=self.window), \
+                HISTORY.modifying([(self.frame_owner, self.frame_owner_data)]):
+            move_palette_slot(self.current_palette, self.current_frame_set, coord, new_coord)
+        self.draw_frame()
 
     def nid_done_editing(self):
         # Check validity of nid!
-        if not self.attempt_change_nid(self.cached_nid, self.current_palette.nid):
-            self.current_palette.nid = self.cached_nid
-        self.cached_nid = self.current_palette.nid
+        new_nid = self.nid_box.edit.text()
+        if self.attempt_change_nid(self.cached_nid, new_nid):
+            self.cached_nid = new_nid
+        else:
+            self.nid_box.edit.setText(self.cached_nid)
 
     @property
     def current(self):
@@ -620,8 +521,10 @@ class NewPaletteProperties(QWidget):
             self.setEnabled(True)
             self.current_palette = current
             self.cached_nid = self.current_palette.nid
-            palette_commands.clear()
             self.current_palette = current
+            if self.frame_owner is not None and not any(record is self.frame_owner for record in self.frame_owner_data):
+                # Its animation, effect or map sprite was deleted
+                self.frame_owner = self.frame_owner_data = None
             self.nid_box.edit.setText(self.current_palette.nid)
             self.easel_widget.set_current(current, self.current_frame)
             self.draw_frame()
@@ -640,12 +543,11 @@ class NewPaletteProperties(QWidget):
         if not weapon_anim:
             return
         new_combat_animation_properties.populate_anim_pixmaps(combat_anim)
-        frame, ok = FrameSelector.get(combat_anim, weapon_anim, self)
+        # Frames can be imported into it there
+        with HISTORY.modifying([(combat_anim, RESOURCES.combat_anims)]):
+            frame, ok = FrameSelector.get(combat_anim, weapon_anim, self)
         if frame and ok:
-            self.current_frame_set = weapon_anim
-            self.current_frame = frame
-            self.easel_widget.set_current(self.current_palette, self.current_frame)
-            self.draw_frame()
+            self.show_frame(combat_anim, RESOURCES.combat_anims, weapon_anim, frame)
 
     def select_effect_frame(self):
         effect_nid = EffectSelection.get(self)
@@ -653,12 +555,10 @@ class NewPaletteProperties(QWidget):
         if not effect_anim:
             return
         new_combat_effect_properties.populate_effect_pixmaps(effect_anim)
-        frame, ok = FrameSelector.get(effect_anim, effect_anim, self)
+        with HISTORY.modifying([(effect_anim, RESOURCES.combat_effects)]):
+            frame, ok = FrameSelector.get(effect_anim, effect_anim, self)
         if frame and ok:
-            self.current_frame_set = effect_anim
-            self.current_frame = frame
-            self.easel_widget.set_current(self.current_palette, self.current_frame)
-            self.draw_frame()
+            self.show_frame(effect_anim, RESOURCES.combat_effects, effect_anim, frame)
 
     def select_map_sprite_frame(self):
         sprite_nid = MapSpriteSelection.get(self)
@@ -668,10 +568,7 @@ class NewPaletteProperties(QWidget):
         new_map_sprite_properties.populate_map_sprite_pixmaps(sprite_anim)
         frame, ok = FrameSelector.get(sprite_anim, sprite_anim, self)
         if frame and ok:
-            self.current_frame_set = sprite_anim
-            self.current_frame = frame
-            self.easel_widget.set_current(self.current_palette, self.current_frame)
-            self.draw_frame()
+            self.show_frame(sprite_anim, RESOURCES.map_sprites, sprite_anim, frame)
 
     def autoselect_frame(self):
         if not self.current_palette:
@@ -691,10 +588,7 @@ class NewPaletteProperties(QWidget):
         new_combat_animation_properties.populate_anim_pixmaps(combat_anim)
         frame = weapon_anim.frames[0]
         if frame:
-            self.current_frame_set = weapon_anim
-            self.current_frame = frame
-            self.easel_widget.set_current(self.current_palette, self.current_frame)
-            self.draw_frame()
+            self.show_frame(combat_anim, RESOURCES.combat_anims, weapon_anim, frame)
 
     def autoselect_effect_frame(self):
         if not self.current_palette:
@@ -710,10 +604,7 @@ class NewPaletteProperties(QWidget):
         new_combat_effect_properties.populate_effect_pixmaps(effect_anim)
         frame = effect_anim.frames[0]
         if frame:
-            self.current_frame_set = effect_anim
-            self.current_frame = frame
-            self.easel_widget.set_current(self.current_palette, self.current_frame)
-            self.draw_frame()
+            self.show_frame(effect_anim, RESOURCES.combat_effects, effect_anim, frame)
 
     def autoselect_map_sprite_frame(self):
         if not self.current_palette:
@@ -723,16 +614,14 @@ class NewPaletteProperties(QWidget):
         if not map_sprite_anim:
             QMessageBox.critical(self, "Autoselect Error", 'Could not find a good frame. Try using manual "Select".')
             return
+        # Its frames are cut from its sheets
+        new_map_sprite_properties.populate_map_sprite_pixmaps(map_sprite_anim)
         if not map_sprite_anim.frames:
             QMessageBox.critical(self, "Autoselect Error", 'Could not find a good frame. Try using manual "Select".')
             return
-        new_map_sprite_properties.populate_effect_pixmaps(map_sprite_anim)
         frame = map_sprite_anim.frames[0]
         if frame:
-            self.current_frame_set = map_sprite_anim
-            self.current_frame = frame
-            self.easel_widget.set_current(self.current_palette, self.current_frame)
-            self.draw_frame()
+            self.show_frame(map_sprite_anim, RESOURCES.map_sprites, map_sprite_anim, frame)
 
     def easel_selection_changed(self, current_color):
         if current_color:
@@ -804,7 +693,8 @@ class NewPaletteProperties(QWidget):
         if not weapon_anim:
             return
         new_combat_animation_properties.populate_anim_pixmaps(combat_anim)
-        frame, ok = FrameSelector.get(combat_anim, weapon_anim, self)
+        with HISTORY.modifying([(combat_anim, RESOURCES.combat_anims)]):
+            frame, ok = FrameSelector.get(combat_anim, weapon_anim, self)
         if frame and ok:
             starting_path = self.settings.get_last_open_path()
             fn, ok = QFileDialog.getOpenFileName(self.window, "Select Image to serve as palette", starting_path, "PNG Files (*.png);;All Files (*)")

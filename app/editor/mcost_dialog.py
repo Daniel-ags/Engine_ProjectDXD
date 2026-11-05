@@ -1,18 +1,19 @@
 from PyQt5.QtWidgets import QDialogButtonBox, QTableView, QInputDialog, QHeaderView, \
     QGridLayout, QPushButton, QLineEdit, QStyledItemDelegate, QAction, QMenu, QMessageBox, \
-    QDialog, QApplication
+    QApplication
 from PyQt5.QtGui import QDoubleValidator, QFontMetrics, QBrush, QColor, QPalette
 from PyQt5.QtWidgets import QStyle, QProxyStyle
 from PyQt5.QtCore import QAbstractTableModel
 from PyQt5.QtCore import Qt, QSize, QLocale
 
-from app.utilities.data import Data
 from app.data.database.database import DB
+from app.data.database.reference_schema import OtherType
 from app.utilities import str_utils
 
-from app.extensions.custom_gui import SimpleDialog, DeletionTab, DeletionDialog
-from app.editor.custom_widgets import MovementCostBox, MovementClassBox
+from app.extensions.custom_gui import SimpleDialog
+from app.editor import reference_dialogs
 from app.editor.base_database_gui import CollectionModel
+from app.editor.edit_history import HISTORY
 
 class McostDialog(SimpleDialog):
     def __init__(self, parent=None):
@@ -37,6 +38,9 @@ class McostDialog(SimpleDialog):
         self.view.setVerticalHeader(row_header_view)
         self.view.horizontalHeader().sectionDoubleClicked.connect(column_header_view.rename)
         self.view.verticalHeader().sectionDoubleClicked.connect(row_header_view.rename)
+        # Each edit is an undo step of its own, announced so the open editor windows show it
+        self.model.dataChanged.connect(self.on_edited)
+        self.model.layoutChanged.connect(self.on_edited)
 
         self.view.resizeColumnsToContents()
 
@@ -52,6 +56,9 @@ class McostDialog(SimpleDialog):
         self.buttonbox = QDialogButtonBox(QDialogButtonBox.Ok, Qt.Horizontal, self)
         layout.addWidget(self.buttonbox, 1, 1)
         self.buttonbox.accepted.connect(self.accept)
+
+    def on_edited(self, *args):
+        HISTORY.commit()
 
     def accept(self):
         super().accept()
@@ -77,17 +84,6 @@ class VerticalTextHeaderStyle(QProxyStyle):
             # pass
         else:
             super().drawControl(element, option, painter, parent)
-
-class McostDeletionDialog(DeletionDialog):
-    @staticmethod
-    def get_swap(tabs, swap_box, parent=None):
-        dialog = DeletionDialog(tabs, swap_box, parent)
-        result = dialog.exec_()
-        if result == QDialog.Accepted:
-            text = dialog.swap_box.edit.currentText()
-            return text, True
-        else:
-            return None, False
 
 class ColumnHeaderView(QHeaderView):
     def __init__(self, parent=None):
@@ -123,30 +119,19 @@ class ColumnHeaderView(QHeaderView):
     def delete(self, idx):
         if self.parent().model().columnCount() > 1:
             column_name = DB.mcost.column_headers[idx]
-            affected_classes = [klass for klass in DB.classes if klass.movement_group == column_name]
-            if affected_classes:
-                from app.editor.class_editor.class_model import ClassModel
-                model = ClassModel
-                msg = "Deleting column <b>%s</b> would modify these classes." % column_name
-                deletion_tab = DeletionTab(affected_classes, model, msg, "Classes")
-                swap, ok = McostDeletionDialog.get_swap([deletion_tab], MovementClassBox(self))
-                if ok:
-                    # Actually make the change
-                    for klass in affected_classes:
-                        klass.movement_group = swap
-                else:
-                    return  # User cancelled swap
-            self.parent().model().delete_col(idx)
+            others = [name for name in DB.mcost.column_headers if name != column_name]
+            with HISTORY.change_set('Delete %s' % column_name):
+                if reference_dialogs.check_delete(OtherType.MOVEMENT_TYPES, column_name, 'Movement Type', self,
+                                                  lambda: reference_dialogs.nid_box("Movement Type", others, self)):
+                    self.parent().model().delete_col(idx)
         else:
             QMessageBox.critical(self.parent(), 'Error', 'Cannot delete when only one column left!')
 
     def rename(self, idx):
         old_column_name = DB.mcost.column_headers[idx]
-        self.parent().model().change_col_header(idx)
-        new_column_name = DB.mcost.column_headers[idx]
-        affected_classes = [klass for klass in DB.classes if klass.movement_group == old_column_name]
-        for klass in affected_classes:
-            klass.movement_group = new_column_name
+        with HISTORY.change_set('Rename %s' % old_column_name):
+            self.parent().model().change_col_header(idx)
+            HISTORY.rewrite(OtherType.MOVEMENT_TYPES, old_column_name, DB.mcost.column_headers[idx])
 
     def cut(self, idx):
         self.parent().model().copy_col(idx)
@@ -200,29 +185,19 @@ class RowHeaderView(QHeaderView):
     def delete(self, idx):
         if self.parent().model().rowCount() > 1:
             row_name = DB.mcost.row_headers[idx]
-            affected_terrain = [terrain for terrain in DB.terrain if terrain.mtype == row_name]
-            if affected_terrain:
-                from app.editor.terrain_editor.terrain_model import TerrainModel
-                model = TerrainModel
-                msg = "Deleting row <b>%s</b> would modify these terrains." % row_name
-                deletion_tab = DeletionTab(affected_terrain, model, msg, "Terrain")
-                swap, ok = McostDeletionDialog.get_swap([deletion_tab], MovementCostBox(self))
-                if ok:
-                    for terrain in affected_terrain:
-                        terrain.mtype = swap
-                else:
-                    return # User cancelled swap
-            self.parent().model().delete_row(idx)
+            others = [name for name in DB.mcost.row_headers if name != row_name]
+            with HISTORY.change_set('Delete %s' % row_name):
+                if reference_dialogs.check_delete(OtherType.TERRAIN_MOVEMENT_TYPES, row_name, 'Terrain Type', self,
+                                                  lambda: reference_dialogs.nid_box("Terrain Type", others, self)):
+                    self.parent().model().delete_row(idx)
         else:
             QMessageBox.critical(self.parent(), 'Error', 'Cannot delete when only one row left!')
 
     def rename(self, idx):
         old_row_name = DB.mcost.row_headers[idx]
-        self.parent().model().change_row_header(idx)
-        new_row_name = DB.mcost.row_headers[idx]
-        affected_terrain = [terrain for terrain in DB.terrain if terrain.mtype == old_row_name]
-        for terrain in affected_terrain:
-            terrain.mtype = new_row_name
+        with HISTORY.change_set('Rename %s' % old_row_name):
+            self.parent().model().change_row_header(idx)
+            HISTORY.rewrite(OtherType.TERRAIN_MOVEMENT_TYPES, old_row_name, DB.mcost.row_headers[idx])
 
     def cut(self, idx):
         self.parent().model().copy_row(idx)
@@ -334,11 +309,13 @@ class GridModel(QAbstractTableModel):
     def paste_row(self, idx):
         if self.copied_row:
             self._data.set_row(idx, self.copied_row)
+            self.layoutChanged.emit()
         self.copied_row = None
 
     def paste_col(self, idx):
         if self.copied_col:
             self._data.set_column(idx, self.copied_col)
+            self.layoutChanged.emit()
         self.copied_col = None
 
     def mark_row(self, idx):

@@ -75,7 +75,9 @@ class SoundPlayer:
         self.timer.timeout.connect(self.update_progress_ui)
 
     def init_progress_timer(self):
-        self.timer = QTimer()
+        # Parented to the player's widget, so it dies with the window and never
+        # ticks over deleted widgets
+        self.timer = QTimer(self.audio_player_widget)
         self.timer.start(100)
 
     # ----- UI Update -----
@@ -201,7 +203,7 @@ class SoundPlayer:
         Stop track when closing parent ui. 
         Used this function inside closeEvent() for Qt SoundTab
         """
-        
+        self.timer.stop()
         self.audio_controller.shutdown()
             
     # ----- State reset handlers -----

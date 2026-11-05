@@ -4,6 +4,9 @@ from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QDialog, QMessageBox
 
 from app.data.resources.resources import RESOURCES
+from app.editor.edit_history import HISTORY
+from app.data.resources.resource_types import ResourceType as RType
+from app.editor import reference_dialogs
 
 from app.data.resources.portraits import PortraitCatalog
 from app.extensions.custom_gui import ResourceListView
@@ -14,7 +17,6 @@ from app.editor.new_editor_tab import NewEditorTab
 from app.editor.portrait_editor import portrait_model, new_portrait_properties
 from app.utilities.typing import NID
 
-from app.editor import timer
 
 class NewPortraitDatabase(NewEditorTab):
     catalog_type = PortraitCatalog
@@ -24,8 +26,7 @@ class NewPortraitDatabase(NewEditorTab):
 
     @classmethod
     def edit(cls, parent=None):
-        window = SingleResourceEditor(NewPortraitDatabase, ['portraits'], parent)
-        window.exec_()
+        return SingleResourceEditor(NewPortraitDatabase, ['portraits'], parent)
 
     @property
     def data(self):
@@ -53,21 +54,14 @@ class NewPortraitDatabase(NewEditorTab):
         return False
 
     def _on_nid_changed(self, old_nid: NID, new_nid: NID):
-        portrait_model.on_nid_changed(old_nid, new_nid)
+        HISTORY.rewrite(RType.PORTRAITS, old_nid, new_nid)
 
     def _on_delete(self, nid: NID) -> bool:
-        ok = portrait_model.check_delete(nid, self)
-        if ok:
-            portrait_model.on_delete(nid)
-            return True
-        else:
-            return False
+        return reference_dialogs.check_delete(RType.PORTRAITS, nid, 'Portrait', self)
 
 def get():
-    timer.get_timer().start_for_editor()
-    window = SingleResourceEditor(NewPortraitDatabase, ['portraits'])
+    window = SingleResourceEditor(NewPortraitDatabase, ['portraits'], picker=True)
     result = window.exec_()
-    timer.get_timer().stop_for_editor()
     if result == QDialog.Accepted:
         selected_portrait = window.tab.right_frame.current
         return selected_portrait, True

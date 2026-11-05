@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import QSplitter, QFrame, QVBoxLayout, QDialogButtonBox, \
     QGraphicsView, QGraphicsScene, QAbstractItemView, QActionGroup, \
     QDesktopWidget, QFileDialog, QMessageBox, QHBoxLayout, QApplication
 from PyQt5.QtCore import Qt, QRect, QDateTime
-from PyQt5.QtGui import QImage, QPainter, QPixmap, QIcon, QColor, QPen, QBrush
+from PyQt5.QtGui import QImage, QPainter, QPixmap, QIcon, QColor, QPen, QBrush, QKeySequence
 from app import dark_theme
 
 from app.constants import TILEWIDTH, TILEHEIGHT
@@ -20,10 +20,12 @@ from app.editor.tile_editor import autotiles
 from app.editor.icon_editor.icon_view import IconView
 from app.editor.terrain_painter_menu import TerrainPainterMenu
 from app.editor.base_database_gui import ResourceCollectionModel
+from app.editor.data_editor import report_undo_failure
+from app.editor.edit_history import HISTORY, EditSession, UndoFailed
+from app.editor.file_manager.staging import STAGING
 from app.extensions.custom_gui import ResourceListView, Dialog, PropertyBox
 from app.extensions.tiled_view import DraggableTileImageView
 
-from app.editor.file_manager.project_file_backend import DEFAULT_PROJECT
 from app.editor.settings import MainSettingsController
 from app.utilities import str_utils
 
@@ -566,6 +568,8 @@ class MapEditorView(DraggableTileImageView):
         elif self.window.current_tool == PaintTool.Erase:
             if event.button() == Qt.LeftButton:
                 self.left_selecting = False
+        # Each stroke or fill is an undo step of its own
+        self.window.commit_edit()
 
 class MapEditor(QDialog):
     def __init__(self, parent=None, current=None):
@@ -582,7 +586,9 @@ class MapEditor(QDialog):
         self.resize(*default_size)
 
         self.current = current
-        self.save()
+        # Undo and redo here reach only this editor's steps
+        self.session = EditSession(HISTORY)
+        HISTORY.bind(self.current, RESOURCES.tilemaps, self)
         self.current_tool = PaintTool.NoTool
         self.terrain_mode: bool = False
         self.terrain_mode_subscribers: list[callable] = []
@@ -631,9 +637,9 @@ class MapEditor(QDialog):
         self.setLayout(self.layout)
         self.layout.addWidget(self.main_splitter)
 
-        self.buttonbox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, Qt.Horizontal, self)
+        # Like every editor window, it keeps its edits, which undo takes back
+        self.buttonbox = QDialogButtonBox(QDialogButtonBox.Close, Qt.Horizontal, self)
         self.layout.addWidget(self.buttonbox)
-        self.buttonbox.accepted.connect(self.accept)
         self.buttonbox.rejected.connect(self.reject)
 
         self.check_brush()
@@ -671,7 +677,8 @@ class MapEditor(QDialog):
         self.terrain_action.setCheckable(True)
 
         self.export_as_png_action = QAction(QIcon(f"{icon_folder}/export_as_png.png"), "E&xport Current Image as PNG", self, shortcut="X", triggered=self.export_as_png)
-        self.save_action = QAction(QIcon(f"{icon_folder}/save.png"), "Save", self, shortcut="Ctrl+S", triggered=self.save_current)
+        self.undo_action = QAction("Undo", self, shortcut=QKeySequence.Undo, triggered=self.undo)
+        self.redo_action = QAction("Redo", self, shortcut=QKeySequence.Redo, triggered=self.redo)
 
         self.show_autotiles_action = QAction(QIcon(f"{icon_folder}/wave.png"), "Show Autotiles", self, triggered=self.autotile_toggle)
         self.show_autotiles_action.setCheckable(True)
@@ -712,7 +719,8 @@ class MapEditor(QDialog):
         self.toolbar.addAction(self.erase_action)
         self.toolbar.addAction(self.resize_action)
         self.toolbar.addAction(self.terrain_action)
-        self.toolbar.addAction(self.save_action)
+        self.toolbar.addAction(self.undo_action)
+        self.toolbar.addAction(self.redo_action)
         self.toolbar.addAction(self.export_as_png_action)
         self.toolbar.addAction(self.show_gridlines_action)
         self.toolbar.addAction(self.show_autotiles_action)
@@ -728,6 +736,7 @@ class MapEditor(QDialog):
 
     def resize_map(self):
         ResizeDialog.get_new_size(self.current, self)
+        self.commit_edit()
 
     def terrain_mode_toggle(self, val):
         old_val = self.terrain_mode
@@ -751,6 +760,7 @@ class MapEditor(QDialog):
 
     def autotile_fps_changed(self, val):
         self.current.autotile_fps = val
+        self.commit_edit()
 
     def export_as_png(self):
         if self.current:
@@ -764,36 +774,42 @@ class MapEditor(QDialog):
                 parent_dir = os.path.split(fn)[0]
                 self.settings.set_last_open_path(parent_dir)
 
-    def save_current(self):
-        """Write the tile resources out to the project on disk.
-
-        The resource dialog that owns this editor restores itself on Cancel by
-        reloading the project from disk, so writing here is what lets the save
-        survive that Cancel. Tilesets are written alongside the tilemaps because
-        a tilemap that references a newly added tileset is useless without it.
-        """
-        if not self.current:
-            return
-        proj_dir = self.settings.get_current_project()
-        if not proj_dir or os.path.basename(proj_dir) == DEFAULT_PROJECT:
-            QMessageBox.warning(
-                self, "Cannot Save",
-                "The default project cannot be written to.\n"
-                "Use File -> Save As in the main editor to give this project its "
-                "own name, then save again.")
-            return
-        if RESOURCES.save(proj_dir, specific=['tilesets', 'tilemaps']):
-            # Cancel in this editor rewinds to the snapshot taken when it opened.
-            # What was just saved is now the state worth rewinding to.
-            self.save()
-            QMessageBox.information(self, "Save Complete", "Successfully saved tilemaps!")
-        else:
-            QMessageBox.critical(
-                self, "Save Failed",
-                "Could not save tilemaps to %s.\n"
-                "See the log (Extra -> View Logs) for details." % proj_dir)
-
     def update_view(self):
+        self.view.update_view()
+
+    def commit_edit(self):
+        """Records the edit just made as an undo step of its own"""
+        HISTORY.commit(origin=self)
+
+    def undo(self):
+        self.commit_edit()
+        try:
+            if self.session.undo():
+                self.show_tilemap_again()
+        except UndoFailed as failure:
+            report_undo_failure(self, failure)
+
+    def redo(self):
+        self.commit_edit()
+        try:
+            if self.session.redo():
+                self.show_tilemap_again()
+        except UndoFailed as failure:
+            report_undo_failure(self, failure)
+
+    def show_tilemap_again(self):
+        """Shows the tilemap after an undo or redo, which restores it in place and so
+        rebuilds its layers, keeping the layer and tileset tab chosen where they remain"""
+        layer_row = self.layer_menu.view.currentIndex().row()
+        tab = self.tileset_menu.tab_bar.currentIndex()
+        self.layer_menu.set_current(self.current)
+        self.layer_menu.select_row(layer_row)
+        self.tileset_menu.set_current(self.current)
+        if 0 <= tab < self.tileset_menu.tab_bar.count():
+            self.tileset_menu.tab_bar.setCurrentIndex(tab)
+        self.autotile_fps_box.edit.blockSignals(True)
+        self.autotile_fps_box.edit.setValue(self.current.autotile_fps)
+        self.autotile_fps_box.edit.blockSignals(False)
         self.view.update_view()
 
     def reset_terrain(self):
@@ -801,28 +817,17 @@ class MapEditor(QDialog):
         idx = current_layer_index.row()
         current_layer = self.current.layers[idx]
         current_layer.terrain_grid.clear()
+        self.commit_edit()
 
     def get_tileset_coords(self):
         return self.tileset_menu.current_tileset, self.tileset_menu.get_selection_coords()
 
-    def accept(self):
+    def done(self, result):
+        # Close, Escape and the window's X all keep the edits
+        self.commit_edit()
+        HISTORY.unbind(self)
         self.save_geometry()
-        super().accept()
-
-    def reject(self):
-        self.restore()
-        self.save_geometry()
-        super().reject()
-
-    def closeEvent(self, event):
-        self.save_geometry()
-        super().closeEvent(event)
-
-    def save(self):
-        self.saved_data = self.current.save()
-
-    def restore(self):
-        self.current.restore_edits(self.saved_data)
+        super().done(result)
 
     def _type(self):
         return 'tilemap_editor'
@@ -990,6 +995,7 @@ class LayerModel(ResourceCollectionModel):
                 layer.visible = False
             self.dataChanged.emit(index, index)
             self.window.update_view()
+            self.window.window.commit_edit()
         return super().setData(index, value, role)
 
     def flags(self, index):
@@ -1045,7 +1051,13 @@ class LayerMenu(QWidget):
     def set_current(self, current):
         self.current = current
         self._data = current.layers
-        self.collection.update_list()
+        self.model._data = current.layers
+        self.model.layoutChanged.emit()
+
+    def select_row(self, row: int):
+        """Selects the layer in row, or the nearest one there is"""
+        row = max(min(row, len(self._data) - 1), 0)
+        self.view.setCurrentIndex(self.model.index(row))
 
     def on_item_changed(self, curr, prev):
         # Turn off delete action if layer should not be deletable
@@ -1103,6 +1115,7 @@ class LayerMenu(QWidget):
         self.model.layoutChanged.emit()
         new_index = self.model.index(new_row)
         self.view.setCurrentIndex(new_index)
+        self.window.commit_edit()
 
     def move_down(self):
         current_index = self.view.currentIndex()
@@ -1112,20 +1125,24 @@ class LayerMenu(QWidget):
         self.model.layoutChanged.emit()
         new_index = self.model.index(new_row)
         self.view.setCurrentIndex(new_index)
+        self.window.commit_edit()
 
     def new(self):
         last_index = self.model.index(len(self._data) - 1)
         self.view.new(last_index)
+        self.window.commit_edit()
 
     def duplicate(self):
         current_index = self.view.currentIndex()
         if current_index and current_index.row() >= 0:
             self.view.duplicate(current_index)
+            self.window.commit_edit()
 
     def delete(self):
         current_index = self.view.currentIndex()
         if current_index and current_index.row() >= 0 and self.deletion_func(self.model, current_index):
             self.view.delete(current_index)
+            self.window.commit_edit()
 
     def toggle_foreground(self, val: bool):
         current_index = self.view.currentIndex()
@@ -1133,6 +1150,7 @@ class LayerMenu(QWidget):
             row = current_index.row()
             self._data[row].foreground = val
             self.update_view()
+            self.window.commit_edit()
 
 class TileSetMenu(QWidget):
     def __init__(self, parent=None, current=None):
@@ -1237,6 +1255,7 @@ class TileSetMenu(QWidget):
             self.tab_bar.addTab(nid)
             self.tab_bar.setCurrentIndex(len(self.current.tilesets) - 1)
             # self.load_tileset(nid)
+            self.window.commit_edit()
 
     def delete(self):
         idx = self.tab_bar.currentIndex()
@@ -1249,6 +1268,7 @@ class TileSetMenu(QWidget):
             self.load_tileset(self.current.tilesets[new_idx])
         else:
             self.empty_tileset()
+        self.window.commit_edit()
 
     def generate_autotiles(self, color_change_flag=True):
         print("Generate Autotiles %s" % color_change_flag)
@@ -1268,14 +1288,12 @@ class TileSetMenu(QWidget):
             if not column_idxs:
                 QMessageBox.warning(self, "Autotile Generation Warning", "No autotiles match the tiles in this tileset!")
                 return
-            # Save companion tileset to file
-            full_path = current_tileset.full_path
-            new_full_path = full_path[:-4] + '_autotiles.png'
-            fn = os.path.abspath(new_full_path)
-            companion_tileset.save(fn)
-
-            current_tileset.autotiles = column_idxs
-            current_tileset.autotile_full_path = fn
+            name = os.path.basename(current_tileset.full_path)[:-4] + '_autotiles.png'
+            # The tileset, which this editor does not bind, changes as an undo step of its own
+            with HISTORY.change_set('Generate autotiles for %s' % current_tileset.nid, origin=self.window), \
+                    HISTORY.modifying([(current_tileset, RESOURCES.tilesets)]):
+                current_tileset.autotiles = column_idxs
+                current_tileset.autotile_full_path = STAGING.write_file(name, companion_tileset.save)
             pix = QPixmap(companion_tileset)
             current_tileset.autotile_pixmap = pix
             QMessageBox.information(self, "Autotile Generation Complete", "Autotile generation process completed for tileset %s" % current_tileset.nid)

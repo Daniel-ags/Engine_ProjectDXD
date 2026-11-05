@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
 from PyQt5 import QtCore, QtGui
 from app import dark_theme
 from app.editor.event_editor.event_highlighter import brace_spans
@@ -21,6 +22,59 @@ def format(color: QtGui.QColor, style: str=''):
     if 'italic' in style:
         _format.setFontItalic(True)
     return _format
+
+# A block's state says which triple quote is still open at its end
+NORMAL_STATE = 0
+STATE_OF_TRIPLE_QUOTE = {"'''": 1, '"""': 2}
+TRIPLE_QUOTE_OF_STATE = {state: quote for quote, state in STATE_OF_TRIPLE_QUOTE.items()}
+
+# Whatever starts a string or comment. A quote with no partner on its line matches nothing
+STRING_OR_COMMENT = re.compile('|'.join([
+    r"'''",
+    r'"""',
+    r'"[^"\\]*(?:\\.[^"\\]*)*"',
+    r"'[^'\\]*(?:\\.[^'\\]*)*'",
+    r'#.*',
+]))
+
+OUTSIDE_BMP = re.compile('[\U00010000-\U0010ffff]')
+
+@dataclass
+class ScannedLine:
+    """Where the strings and comments of a line are, each as (start, length)"""
+    strings: list[tuple[int, int]] = field(default_factory=list)
+    triple_quoted: list[tuple[int, int]] = field(default_factory=list)
+    comments: list[tuple[int, int]] = field(default_factory=list)
+    end_state: int = NORMAL_STATE
+
+def scan_line(text: str, previous_state: int) -> ScannedLine:
+    """Finds a line's strings and comments from left to right, each one searched
+    for from the end of the last, so quotes and #s inside them start nothing"""
+    line = ScannedLine()
+    start = pos = 0
+    open_quote = TRIPLE_QUOTE_OF_STATE.get(previous_state)
+    while True:
+        if open_quote:
+            end = text.find(open_quote, pos)
+            if end < 0:
+                line.triple_quoted.append((start, len(text) - start))
+                line.end_state = STATE_OF_TRIPLE_QUOTE[open_quote]
+                return line
+            pos = end + len(open_quote)
+            line.triple_quoted.append((start, pos - start))
+            open_quote = None
+
+        match = STRING_OR_COMMENT.search(text, pos)
+        if not match:
+            return line
+        start, pos = match.span()
+        token = match.group()
+        if token in STATE_OF_TRIPLE_QUOTE:
+            open_quote = token
+        elif token.startswith('#'):
+            line.comments.append((start, pos - start))
+        else:
+            line.strings.append((start, pos - start))
 
 class PythonHighlighter(QtGui.QSyntaxHighlighter):
     """Syntax highlighter for the Python language.
@@ -45,9 +99,9 @@ class PythonHighlighter(QtGui.QSyntaxHighlighter):
         style = theme.python_syntax_highlighting()
         self.style = style
         self.event_style = theme.event_syntax_highlighting()
-        # Multi-line strings (expression, flag, style)
-        self.tri_single = (QtCore.QRegExp("'''"), 1, format(style.string2))
-        self.tri_double = (QtCore.QRegExp('"""'), 2, format(style.string2))
+        self.string_format = format(style.string)
+        self.triple_quoted_format = format(style.string2)
+        self.comment_format = format(style.comment)
 
         rules = []
 
@@ -70,46 +124,15 @@ class PythonHighlighter(QtGui.QSyntaxHighlighter):
             (r'\b[+-]?[0-9]+[lL]?\b', 0, format(style.numbers)),
             (r'\b[+-]?0[xX][0-9A-Fa-f]+[lL]?\b', 0, format(style.numbers)),
             (r'\b[+-]?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?\b', 0, format(style.numbers)),
-            # Double-quoted string, possibly containing escape sequences
-            (r'"[^"\\]*(\\.[^"\\]*)*"', 0, format(style.string)),
-            # Single-quoted string, possibly containing escape sequences
-            (r"'[^'\\]*(\\.[^'\\]*)*'", 0, format(style.string)),
-        ]
-
-        high_prio_rules = [
-            # From '#' until a newline
-            (r'#[^\n]*', 0, format(style.comment)),
         ]
 
         # Build a QRegExp for each pattern.
         self.rules = [(QtCore.QRegExp(pat), index, fmt)
             for (pat, index, fmt) in rules]
-        # high prio rules take precedence over custom lt highlighting
-        self.high_prio_rules = [(QtCore.QRegExp(pat), index, fmt)
-            for (pat, index, fmt) in high_prio_rules]
 
     def applyRule(self, text, expression, nth, format):
         index = expression.indexIn(text, 0)
-        if index >= 0:
-            # if there is a string we check
-            # if there are some triple quotes within the string
-            # they will be ignored if they are matched again
-            if expression.pattern() in [r'"[^"\\]*(\\.[^"\\]*)*"', r"'[^'\\]*(\\.[^'\\]*)*'"]:
-                innerIndex = self.tri_single[0].indexIn(text, index + 1)
-                if innerIndex == -1:
-                    innerIndex = self.tri_double[0].indexIn(text, index + 1)
-
-                if innerIndex != -1:
-                    tripleQuoteIndexes = range(innerIndex, innerIndex + 3)
-                    self.tripleQuoutesWithinStrings.extend(tripleQuoteIndexes)
-
         while index >= 0:
-            # skipping triple quotes within strings
-            if index in self.tripleQuoutesWithinStrings:
-                index += 1
-                expression.indexIn(text, index)
-                continue
-
             # We actually want the index of the nth match
             index = expression.pos(nth)
             length = len(expression.cap(nth))
@@ -170,60 +193,19 @@ class PythonHighlighter(QtGui.QSyntaxHighlighter):
             logging.exception("Failed to syntax highlight line %s", text)
 
     def _highlight_block(self, text):
-        self.tripleQuoutesWithinStrings = []
-        # Do other syntax formatting
-        for expression, nth, format in self.rules:
-            self.applyRule(text, expression, nth, format)
+        for expression, nth, rule_format in self.rules:
+            self.applyRule(text, expression, nth, rule_format)
+
+        # Qt's positions count a character outside the BMP as two
+        line = scan_line(OUTSIDE_BMP.sub('__', text), self.previousBlockState())
+        for start, length in line.strings:
+            self.setFormat(start, length, self.string_format)
 
         self.highlightPyEvent(text)
-        for expression, nth, format in self.high_prio_rules:
-            self.applyRule(text, expression, nth, format)
-        self.setCurrentBlockState(0)
 
-        # Do multi-line strings
-        in_multiline = self.match_multiline(text, *self.tri_single)
-        if not in_multiline:
-            in_multiline = self.match_multiline(text, *self.tri_double)
-
-    def match_multiline(self, text, delimiter, in_state, style):
-        """Do highlighting of multi-line strings. ``delimiter`` should be a
-        ``QRegExp`` for triple-single-quotes or triple-double-quotes, and
-        ``in_state`` should be a unique integer to represent the corresponding
-        state changes when inside those strings. Returns True if we're still
-        inside a multi-line string when this function is finished.
-        """
-        # If inside triple-single quotes, start at 0
-        if self.previousBlockState() == in_state:
-            start = 0
-            add = 0
-        # Otherwise, look for the delimiter on this line
-        else:
-            start = delimiter.indexIn(text)
-            # skipping triple quotes within strings
-            if start in self.tripleQuoutesWithinStrings:
-                return False
-            # Move past this match
-            add = delimiter.matchedLength()
-
-        # As long as there's a delimiter match on this line...
-        while start >= 0:
-            # Look for the ending delimiter
-            end = delimiter.indexIn(text, start + add)
-            # Ending delimiter on this line?
-            if end >= add:
-                length = end - start + add + delimiter.matchedLength()
-                self.setCurrentBlockState(0)
-            # No; multi-line string
-            else:
-                self.setCurrentBlockState(in_state)
-                length = len(text) - start + add
-            # Apply formatting
-            self.setFormat(start, length, style)
-            # Look for the next match
-            start = delimiter.indexIn(text, start + length)
-
-        # Return True if still inside a multi-line string, False otherwise
-        if self.currentBlockState() == in_state:
-            return True
-        else:
-            return False
+        # Comments and triple quoted strings take precedence over custom lt highlighting
+        for start, length in line.comments:
+            self.setFormat(start, length, self.comment_format)
+        for start, length in line.triple_quoted:
+            self.setFormat(start, length, self.triple_quoted_format)
+        self.setCurrentBlockState(line.end_state)

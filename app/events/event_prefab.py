@@ -131,24 +131,31 @@ class EventCatalog(Data[EventPrefab]):
 class EventInspectorEngine():
     def __init__(self, event_db: EventCatalog):
         self.event_db = event_db
-        self.parsed: Dict[NID, List[EventCommand]] = {}
+        # Each event's commands, with the script they were parsed from
+        self.parsed: Dict[NID, Tuple[str, List[EventCommand]]] = {}
 
     def clear_cache(self, event_nid):
         if event_nid in self.parsed:
             del self.parsed[event_nid]
 
     def get_commands(self, event_nid) -> List[EventCommand]:
-        if event_nid not in self.parsed:
-            event = self.event_db.get_by_nid_or_name(event_nid)[0]
-            if event:
-                if event.version() != EventVersion.EVENT:
-                    self.parsed[event_nid] = self._parse_python_commands(event)
-                else:
-                    parsed_commands = event_commands.parse_script_to_commands(event.source)
-                    self.parsed[event_nid] = parsed_commands
-            else:
+        event = self.event_db.get_from_nid(event_nid)
+        if not event:
+            named = self.event_db.get_by_nid_or_name(event_nid)
+            if not named:
                 return []
-        return self.parsed[event_nid]
+            event = named[0]
+        source = event.source
+        # Parsed again whenever the script differs from the one cached, since the
+        # editor's undo changes a script without going through its text box
+        cached = self.parsed.get(event_nid)
+        if cached is None or cached[0] != source:
+            if event.version() != EventVersion.EVENT:
+                commands = self._parse_python_commands(event)
+            else:
+                commands = event_commands.parse_script_to_commands(source)
+            self.parsed[event_nid] = (source, commands)
+        return self.parsed[event_nid][1]
 
     def _parse_python_commands(self, event: EventPrefab) -> List[EventCommand]:
         """Extract the EventCommands invoked by a Python ($-prefixed) event script.

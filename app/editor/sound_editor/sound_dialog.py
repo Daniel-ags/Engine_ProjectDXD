@@ -4,9 +4,19 @@ import os
 from PyQt5.QtWidgets import QLineEdit, QMessageBox, QVBoxLayout, \
     QFileDialog, QPushButton, QSpinBox
 
+from app.editor.combat_animation_editor import combat_animation_model
+from app.editor.edit_history import HISTORY
+from app.editor.file_manager.staging import STAGING
+from app.data.resources.resource_types import ResourceType as RType
 from app.utilities import str_utils
+from app.utilities.typing import NID
 from app.extensions.custom_gui import ComboBox, PropertyBox, Dialog
 from app.editor.settings import MainSettingsController
+
+def rename_sound_references(old_nid: NID, new_nid: NID):
+    """Renames a sound in the database and in the combat timelines that play it"""
+    HISTORY.rewrite(RType.SFX, old_nid, new_nid)
+    combat_animation_model.rename_sound(old_nid, new_nid)
 
 class ModifySFXDialog(Dialog):
     def __init__(self, data, current, parent=None):
@@ -27,7 +37,6 @@ class ModifySFXDialog(Dialog):
             self.nid_box.setEnabled(False)
         else:
             self.nid_box.edit.setText(self.current[0].nid)
-            self.nid_box.edit.textChanged.connect(self.nid_changed)
             self.nid_box.edit.editingFinished.connect(self.nid_done_editing)
 
         self.tag_box = PropertyBox("Tag", QLineEdit, self)
@@ -41,18 +50,16 @@ class ModifySFXDialog(Dialog):
 
         layout.addWidget(self.buttonbox)
 
-    def nid_changed(self, text):
-        for d in self.current:
-            d.nid = text
-
     def nid_done_editing(self):
         current = self.current[0]
         # Check validity of nid!
+        new_nid = self.nid_box.edit.text()
         other_nids = [d.nid for d in self._data.values() if d is not current]
-        if current.nid in other_nids:
-            QMessageBox.warning(self.window, 'Warning', 'SFX ID %s already in use' % current.nid)
-            current.nid = str_utils.get_next_name(current.nid, other_nids)
-        self._data.update_nid(current, current.nid)
+        if new_nid in other_nids:
+            QMessageBox.warning(self.window, 'Warning', 'SFX ID %s already in use' % new_nid)
+            new_nid = str_utils.get_next_name(new_nid, other_nids)
+            self.nid_box.edit.setText(new_nid)
+        HISTORY.rename(self._data, current, new_nid, rename_sound_references)
 
     def tag_changed(self, text):
         for d in self.current:
@@ -76,7 +83,6 @@ class ModifyMusicDialog(Dialog):
         layout.addWidget(self.nid_box)
 
         self.nid_box.edit.setText(self.current.nid)
-        self.nid_box.edit.textChanged.connect(self.nid_changed)
         self.nid_box.edit.editingFinished.connect(self.nid_done_editing)
 
         self.choice_box = ComboBox()
@@ -154,17 +160,17 @@ class ModifyMusicDialog(Dialog):
             self.battle_box.edit.setText("")
             self.current.battle_full_path = None
 
-    def nid_changed(self, text):
-        self.current.nid = text
-
     def nid_done_editing(self):
         current = self.current
         # Check validity of nid!
+        new_nid = self.nid_box.edit.text()
         other_nids = [d.nid for d in self._data.values() if d is not current]
-        if current.nid in other_nids:
-            QMessageBox.warning(self.window, 'Warning', 'SFX ID %s already in use' % current.nid)
-            current.nid = str_utils.get_next_name(current.nid, other_nids)
-        self._data.update_nid(current, current.nid)
+        if new_nid in other_nids:
+            QMessageBox.warning(self.window, 'Warning', 'Music ID %s already in use' % new_nid)
+            new_nid = str_utils.get_next_name(new_nid, other_nids)
+            self.nid_box.edit.setText(new_nid)
+        HISTORY.rename(self._data, current, new_nid,
+                       lambda old_nid, new_nid: HISTORY.rewrite(RType.MUSIC, old_nid, new_nid))
 
     def load_battle_variant(self):
         settings = MainSettingsController()
@@ -172,7 +178,7 @@ class ModifyMusicDialog(Dialog):
         fn, ok = QFileDialog.getOpenFileName(self.window, "Select Music File", starting_path, "OGG Files (*.ogg);;All FIles (*)")
         if ok:
             if fn.endswith('.ogg'):
-                self.current.set_battle_full_path(fn)
+                self.current.set_battle_full_path(STAGING.stage_file(fn))
                 name = os.path.split(fn[:-4])[-1]
                 self.battle_box.edit.setText("%s" % name)
                 print(self.current.battle_full_path)
@@ -187,7 +193,7 @@ class ModifyMusicDialog(Dialog):
         fn, ok = QFileDialog.getOpenFileName(self.window, "Select Music File", starting_path, "OGG Files (*.ogg);;All FIles (*)")
         if ok:
             if fn.endswith('.ogg'):
-                self.current.set_intro_full_path(fn)
+                self.current.set_intro_full_path(STAGING.stage_file(fn))
                 name = os.path.split(fn[:-4])[-1]
                 self.intro_box.edit.setText("%s" % name)
                 print(self.current.intro_full_path)

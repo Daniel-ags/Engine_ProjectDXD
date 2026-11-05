@@ -27,9 +27,11 @@ from app.editor.lib.components.validated_line_edit import NidLineEdit
 from app.editor.component_editor_types import T
 
 from app.editor.class_editor import class_model
+from app.editor.custom_widgets import MovementClassBox
 from app.editor.combat_animation_editor import new_combat_animation_tab
 
 from app.editor import timer
+from app.editor.edit_history import HISTORY
 
 from app.utilities import str_utils
 from app.utilities.typing import NID
@@ -64,7 +66,6 @@ class NewClassProperties(QWidget):
         main_section.addWidget(self.icon_edit, 0, 0, 2, 2, Qt.AlignHCenter)
 
         self.nid_box = PropertyBox(_("Unique ID"), NidLineEdit, self)
-        self.nid_box.edit.textChanged.connect(self.nid_changed)
         self.nid_box.edit.editingFinished.connect(self.nid_done_editing)
         main_section.addWidget(self.nid_box, 0, 2)
 
@@ -79,9 +80,9 @@ class NewClassProperties(QWidget):
         self.desc_box.edit.setFixedHeight(font_height.lineSpacing() * 3 + 20)
         main_section.addWidget(self.desc_box, 2, 0, 1, 2)
 
-        self.movement_box = PropertyBox(_("Movement Type"), ComboBox, self)
-        self.movement_box.edit.addItems(DB.mcost.unit_types)
-        self.movement_box.edit.currentIndexChanged.connect(self.movement_changed)
+        self.movement_box = MovementClassBox(self, title=_("Movement Type"))
+        # Chosen only: showing a class whose movement type is gone leaves the box blank, which is not an edit
+        self.movement_box.edit.activated.connect(self.movement_changed)
         main_section.addWidget(self.movement_box, 2, 2)
 
         self.tier_box = PropertyBox(_("Tier"), QSpinBox, self)
@@ -205,10 +206,15 @@ class NewClassProperties(QWidget):
         # final_section.addWidget(QVLine())
         # final_section.addLayout(right_section)
 
-        timer.get_timer().tick_elapsed.connect(self.tick)
+        self.icon_frame = None
+        timer.connect_tick(self, self.tick)
 
     def tick(self):
-        self.on_icon_change()
+        # The list's map sprites move only when the passive counter's frame does
+        frame = timer.get_timer().passive_counter.count
+        if frame != self.icon_frame:
+            self.icon_frame = frame
+            self.on_icon_change()
 
     def on_icon_changed(self, nid):
         if self.current:
@@ -216,22 +222,19 @@ class NewClassProperties(QWidget):
             if self.on_icon_change:
                 self.on_icon_change()
 
-    def nid_changed(self, text):
-        if self.current:
-            # Also change name if they are identical
-            if self.current.name == self.current.nid.replace('_', ' '):
-                self.name_box.edit.setText(text.replace('_', ' '))
-            self.current.nid = text
-
     def nid_done_editing(self):
         if self.current and self.cached_nid:
+            new_nid = self.nid_box.edit.text()
             self.nid_box.edit.blockSignals(True)  # message box causes focus loss which double triggers nid_done_editing
-            # Check validity of nid!
-            if self.attempt_change_nid and self.attempt_change_nid(self.cached_nid, self.current.nid):
-                self.cached_nid = self.current.nid
-            else:
-                self.current.nid = self.cached_nid
-                self.nid_box.edit.setText(self.cached_nid)
+            with HISTORY.change_set('Rename %s' % self.cached_nid, origin=self.window):
+                # Check validity of nid!
+                if self.attempt_change_nid and self.attempt_change_nid(self.cached_nid, new_nid):
+                    # Also change name if identical to the ID
+                    if self.current.name == self.cached_nid.replace('_', ' '):
+                        self.name_box.edit.setText(new_nid.replace('_', ' '))
+                    self.cached_nid = new_nid
+                else:
+                    self.nid_box.edit.setText(self.cached_nid)
             self.nid_box.edit.blockSignals(False)
 
     def name_changed(self, text):
@@ -270,6 +273,8 @@ class NewClassProperties(QWidget):
             self.tag_box.edit.clear()
             self.tag_box.edit.addItems(DB.tags.keys())
             self.tag_box.edit.setCurrentTexts(self.current.tags)
+            # Without the tags the dialog deleted
+            self.tags_changed()
         else:
             pass
 
@@ -346,8 +351,6 @@ class NewClassProperties(QWidget):
                 self.promotes_from_box.edit.setValue(current.promotes_from)
             else:
                 self.promotes_from_box.edit.setValue("None")
-            # Need to make copies because otherwise ResetSelection calls
-            # self.tag_box.updated which resets the current.tags
             turns_into = current.turns_into[:]
             tags = current.tags[:]
             self.turns_into_box.edit.clear()

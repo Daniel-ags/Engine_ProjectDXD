@@ -2,6 +2,9 @@ from PyQt5.QtGui import QIcon, QBrush, QColor
 from PyQt5.QtWidgets import QDialog, QWidget, QMessageBox
 
 from app.data.resources.resources import RESOURCES
+from app.editor.edit_history import HISTORY
+from app.data.resources.resource_types import ResourceType as RType
+from app.editor import reference_dialogs
 from app.data.resources.combat_anims import CombatCatalog, CombatEffectCatalog
 
 from app.editor.new_editor_tab import NewEditorTab
@@ -49,8 +52,7 @@ class NewCombatAnimDatabase(NewEditorTab):
 
     @classmethod
     def edit(cls, parent=None):
-        window = SingleResourceEditor(NewCombatAnimDatabase, ['combat_anims'], parent)
-        window.exec_()
+        return SingleResourceEditor(NewCombatAnimDatabase, ['combat_anims'], parent)
 
     @property
     def data(self):
@@ -65,23 +67,17 @@ class NewCombatAnimDatabase(NewEditorTab):
         return None
 
     def _on_nid_changed(self, old_nid: NID, new_nid: NID):
-        combat_animation_model.on_nid_changed(old_nid, new_nid)
+        HISTORY.rewrite(RType.COMBAT_ANIMS, old_nid, new_nid)
 
     def _on_delete(self, nid: NID) -> bool:
-        ok = combat_animation_model.check_delete(nid, self)
-        if ok:
-            combat_animation_model.on_delete(nid)
-            return True
-        else:
-            return False
+        return reference_dialogs.check_delete(RType.COMBAT_ANIMS, nid, 'Combat Animation', self)
 
 class NewSimpleCombatAnimDatabase(NewCombatAnimDatabase):
     properties_type = NewSimpleCombatAnimProperties
 
     @classmethod
     def edit(cls, parent=None):
-        window = SingleResourceEditor(NewSimpleCombatAnimDatabase, ['combat_anims'], parent)
-        window.exec_()
+        return SingleResourceEditor(NewSimpleCombatAnimDatabase, ['combat_anims'], parent)
 
 class NewCombatEffectDatabase(NewEditorTab):
     catalog_type = CombatEffectCatalog
@@ -99,8 +95,7 @@ class NewCombatEffectDatabase(NewEditorTab):
 
     @classmethod
     def edit(cls, parent=None):
-        window = SingleResourceEditor(NewCombatEffectDatabase, ['combat_effects'], parent)
-        window.exec_()
+        return SingleResourceEditor(NewCombatEffectDatabase, ['combat_effects'], parent)
 
     @property
     def data(self):
@@ -124,12 +119,7 @@ class NewCombatEffectDatabase(NewEditorTab):
         combat_effect_model.on_nid_changed(old_nid, new_nid)
 
     def _on_delete(self, nid: NID) -> bool:
-        ok = combat_effect_model.check_delete(nid, self)
-        if ok:
-            combat_effect_model.on_delete(nid)
-            return True
-        else:
-            return False
+        return combat_effect_model.check_delete(nid, self)
 
 def get_full_editor(parent=None) -> NewMultiResourceEditor:
     editor = NewMultiResourceEditor((NewCombatAnimDatabase, NewCombatEffectDatabase, NewPaletteDatabase),
@@ -138,7 +128,7 @@ def get_full_editor(parent=None) -> NewMultiResourceEditor:
     return editor
 
 def get_animations() -> tuple:
-    window = SingleResourceEditor(NewSimpleCombatAnimDatabase, ['combat_anims'])
+    window = SingleResourceEditor(NewSimpleCombatAnimDatabase, ['combat_anims'], picker=True)
     result = window.exec_()
     if result == QDialog.Accepted:
         selected_combat_anim = window.tab.right_frame.current

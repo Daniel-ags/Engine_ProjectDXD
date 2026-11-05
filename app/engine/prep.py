@@ -1299,6 +1299,10 @@ class PrepItemsState(State):
                 self.menu.update_options()
                 self.state = 'free'
 
+        elif event == 'AUX':
+            if self.menu.next_help_page():
+                get_sound_thread().play_sfx('Select 6')
+
         elif event == 'INFO':
             if self.state in ('free', 'trade_convoy', 'trade_inventory'):
                 self.menu.toggle_info()
@@ -1368,6 +1372,10 @@ class PrepRestockState(State):
         elif event == 'BACK':
             get_sound_thread().play_sfx('Select 4')
             game.state.back()
+
+        elif event == 'AUX':
+            if self.menu.next_help_page():
+                get_sound_thread().play_sfx('Select 6')
 
         elif event == 'INFO':
             self.menu.toggle_info()
@@ -1453,6 +1461,10 @@ class PrepUseState(State):
         elif event == 'BACK':
             get_sound_thread().play_sfx('Select 4')
             game.state.back()
+
+        elif event == 'AUX':
+            if self.menu.next_help_page():
+                get_sound_thread().play_sfx('Select 6')
 
         elif event == 'INFO':
             self.menu.toggle_info()
@@ -1619,6 +1631,10 @@ class PrepMarketState(State):
             else:
                 get_sound_thread().play_sfx('Select 4')
                 game.state.change('transition_pop')
+
+        elif event == 'AUX':
+            if self.menu.next_help_page():
+                get_sound_thread().play_sfx('Select 6')
 
         elif event == 'INFO':
             if self.state == 'buy' or self.state == 'sell':

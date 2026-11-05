@@ -10,6 +10,9 @@ Converted to PyQt from https://github.com/ThisIsClark/Qt-MultiSelectComboBox
 """
 
 class MultiSelectComboBox(QComboBox):
+    """updated is emitted when the user checks or unchecks a box. Setting the choice
+    from code, as a form showing a record does, emits nothing, so the record keeps
+    its own order, and any entry the box does not list."""
     search_bar_index = 0
 
     updated = pyqtSignal()
@@ -52,6 +55,10 @@ class MultiSelectComboBox(QComboBox):
 
     def stateChanged(self, state=None):
         # state is unused
+        self.show_checked()
+        self.updated.emit()
+
+    def show_checked(self):
         selected_data = []
         count = self.list_widget.count()
 
@@ -64,7 +71,6 @@ class MultiSelectComboBox(QComboBox):
             self.line_edit.setText(', '.join(selected_data))
         else:
             self.line_edit.clear()
-        self.updated.emit()
 
     def addItem(self, text, user_data=None):
         # user_data is unused
@@ -108,6 +114,7 @@ class MultiSelectComboBox(QComboBox):
 
     def clear(self):
         self.list_widget.clear()
+        self.line_edit.clear()
         current_item = QListWidgetItem(self.list_widget)
         self.search_bar = QLineEdit(self)
         self.search_bar.setPlaceholderText("Search...")
@@ -129,20 +136,18 @@ class MultiSelectComboBox(QComboBox):
         pass
 
     def setCurrentTexts(self, texts):
+        """Checks the boxes named in texts and no others"""
         count = self.list_widget.count()
 
         for i in range(1, count):
             check_box = self.list_widget.itemWidget(self.list_widget.item(i))
-            check_box_string = check_box.text()
-            if check_box_string in texts:
-                check_box.setChecked(True)
+            check_box.blockSignals(True)
+            check_box.setChecked(check_box.text() in texts)
+            check_box.blockSignals(False)
+        self.show_checked()
 
     def ResetSelection(self):
-        count = self.list_widget.count()
-
-        for i in range(1, count):
-            check_box = self.list_widget.itemWidget(self.list_widget.item(i))
-            check_box.setChecked(False)
+        self.setCurrentTexts([])
 
 
 # Testing

@@ -37,7 +37,7 @@ class WorldMapView(SimpleMapView):
         self.ghost_road_points = ghost
         self.update_view()
 
-    def update_view(self, _=None):
+    def draw_view(self):
         if(self.current_level and not self.current_map):
             self.current_map = RESOURCES.tilemaps.get(
                 self.current_level.tilemap)

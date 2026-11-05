@@ -8,6 +8,7 @@ from app.engine import action, text_funcs
 from app.engine.game_menus.menu_components.generic_menu.cursor_hand import CursorDrawMode
 from app.engine.game_menus.menu_components.generic_menu.grid_choice import GridChoiceMenu
 from app.engine.game_state import game
+from app.engine.info_menu import multi_desc
 from app.engine.sound import get_sound_thread
 from app.engine.state import MapState
 from app.utilities.enums import Orientation
@@ -84,23 +85,26 @@ class PlayerChoiceState(MapState):
             else:
                 items = [game.get_item(int(uid)) for uid in options_list]
             for item in items:
+                owner = game.get_unit(item.owner_nid)
                 if item_system.is_weapon(None, item) or item_system.is_spell(None, item):
-                    self.help_boxes.append(help_menu.ItemHelpDialog(item))
+                    first_page = help_menu.ItemHelpDialog(item)
                 else:
                     text = text_funcs.translate_and_text_evaluate(
                         item.desc,
-                        unit=game.get_unit(item.owner_nid),
+                        unit=owner,
                         self=item)
-                    self.help_boxes.append(help_menu.HelpDialog(text))
+                    first_page = help_menu.HelpDialog(text)
+                self.help_boxes.append(multi_desc.PagedHelpDialog(first_page, item, multi_desc.PageType.ITEM, owner))
         elif self.data_type == 'type_skill':
             for skill_nid in options_list:
                 skill = DB.skills.get(skill_nid)
+                owner = game.get_unit(skill.owner_nid)
                 text = text_funcs.translate_and_text_evaluate(
                     skill.desc,
-                    unit=game.get_unit(skill.owner_nid),
+                    unit=owner,
                     self=skill,
                     local_args={'skill': skill})
-                self.help_boxes.append(help_menu.HelpDialog(text))
+                self.help_boxes.append(multi_desc.PagedHelpDialog(help_menu.HelpDialog(text), skill, multi_desc.PageType.SKILL, owner))
 
     def choose(self, selection):
         action.do(action.SetGameVar(self.nid, selection))
@@ -170,6 +174,10 @@ class PlayerChoiceState(MapState):
                 elif self.help_boxes:
                     get_sound_thread().play_sfx('Info In')
                     self.info_flag = True
+
+        elif event == 'AUX':
+            if self.info_flag and self.help_boxes[self.menu.get_selected_idx()].next_page():
+                get_sound_thread().play_sfx('Select 6')
 
         selection = self.menu.get_selected()
         game.game_vars[self.nid + '_choice_hover'] = selection

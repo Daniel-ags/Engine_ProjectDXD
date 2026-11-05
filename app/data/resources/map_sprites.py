@@ -10,6 +10,8 @@ from app.utilities.data import Data, Prefab
 from app.utilities.typing import NID, NestedPrimitiveDict
 
 class MapSprite(WithResources, Prefab):
+    path_fields = ('stand_full_path', 'move_full_path')
+
     def __init__(self, nid, stand_full_path=None, move_full_path=None):
         self.nid: NID = nid
         self.stand_full_path: Optional[str] = stand_full_path

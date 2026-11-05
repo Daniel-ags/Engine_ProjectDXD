@@ -14,6 +14,7 @@ from app.editor.mcost_dialog import McostDialog
 from app.editor.skill_editor import skill_model
 from app.extensions.color_icon import ColorIcon
 from app.editor.lib.components.validated_line_edit import NidLineEdit
+from app.editor.edit_history import HISTORY
 from app.utilities import str_utils
 
 class TerrainProperties(QWidget):
@@ -36,7 +37,6 @@ class TerrainProperties(QWidget):
         name_section = QVBoxLayout()
 
         self.nid_box = PropertyBox(_("Unique ID"), NidLineEdit, self)
-        self.nid_box.edit.textChanged.connect(self.nid_changed)
         self.nid_box.edit.editingFinished.connect(self.nid_done_editing)
         name_section.addWidget(self.nid_box)
 
@@ -66,10 +66,6 @@ class TerrainProperties(QWidget):
         self.platform_box.edit.currentIndexChanged.connect(self.platform_changed)
 
         self.background_box = PropertyBox(_("Combat Background"), ComboBox, self)
-        self.background_box.edit.addItem(QIcon(), 'None')
-        for panorama in RESOURCES.panoramas:
-            icon = QIcon(panorama.get_all_paths()[0])
-            self.background_box.edit.addItem(icon, panorama.nid)
         self.background_box.edit.setIconSize(QSize(240, 160))
         self.background_box.edit.currentIndexChanged.connect(self.background_changed)
 
@@ -83,13 +79,6 @@ class TerrainProperties(QWidget):
         self.opaque_box.edit.stateChanged.connect(self.opacity_changed)
 
         self.status_box = PropertyBox(_("Status"), ComboBox, self)
-        self.status_box.edit.addItem(_("None"))
-        for skill in DB.skills:
-            pixmap = skill_model.get_pixmap(skill)
-            if pixmap:
-                self.status_box.edit.addItem(QIcon(pixmap), skill.nid)
-            else:
-                self.status_box.edit.addItem(skill.nid)
         self.status_box.edit.setIconSize(QSize(16, 16))
         self.status_box.edit.currentIndexChanged.connect(self.status_changed)
 
@@ -106,17 +95,15 @@ class TerrainProperties(QWidget):
         total_section.addLayout(main_section)
         total_section.setAlignment(Qt.AlignTop)
 
-    def nid_changed(self, text):
-        self.current.nid = text
-        self.window.update_list()
-
     def nid_done_editing(self):
         # Check validity of nid!
+        new_nid = self.nid_box.edit.text()
         other_nids = [terrain.nid for terrain in DB.terrain.values() if terrain is not self.current]
-        if self.current.nid in other_nids:
-            QMessageBox.warning(self.window, 'Warning', 'Terrain ID %s already in use' % self.current.nid)
-            self.current.nid = str_utils.get_next_int(self.current.nid, other_nids)
-        DB.terrain.update_nid(self.current, self.current.nid)
+        if new_nid in other_nids:
+            QMessageBox.warning(self.window, 'Warning', 'Terrain ID %s already in use' % new_nid)
+            new_nid = str_utils.get_next_int(new_nid, other_nids)
+            self.nid_box.edit.setText(new_nid)
+        HISTORY.rename(DB.terrain, self.current, new_nid, self.window.left_frame.model.on_nid_changed)
         self.window.update_list()
 
     def name_changed(self, text):
@@ -157,8 +144,23 @@ class TerrainProperties(QWidget):
         self.current.color = tuple(color.getRgb()[:3])
         self.window.update_list()
 
+    def fill_choices(self):
+        """Lists the panoramas and skills as they are now"""
+        def panorama_icon(nid):
+            panorama = RESOURCES.panoramas.get(nid)
+            return QIcon(panorama.get_all_paths()[0]) if panorama else None
+
+        def skill_icon(nid):
+            skill = DB.skills.get(nid)
+            pixmap = skill_model.get_pixmap(skill) if skill else None
+            return QIcon(pixmap) if pixmap else None
+
+        self.background_box.edit.set_choices(['None'] + RESOURCES.panoramas.keys(), panorama_icon)
+        self.status_box.edit.set_choices([_("None")] + DB.skills.keys(), skill_icon)
+
     def set_current(self, current):
         self.current = current
+        self.fill_choices()
         self.nid_box.edit.setText(current.nid)
         self.name_box.edit.setText(current.name)
         self.minimap_box.edit.setValue(current.minimap)
@@ -174,6 +176,8 @@ class TerrainProperties(QWidget):
         else:
             self.status_box.edit.setValue("None")
 
-        # Icon
+        # Icon. Blocked, since the color shown has no alpha and the record's may
         color = current.color
+        self.icon_edit.blockSignals(True)
         self.icon_edit.change_color(QColor(color[0], color[1], color[2]))
+        self.icon_edit.blockSignals(False)

@@ -1,13 +1,16 @@
 from app import dark_theme
 from app.constants import TILEHEIGHT, TILEWIDTH
 from app.data.database.database import DB
+from app.data.resources.resources import RESOURCES
+from app.editor.data_editor import report_undo_failure
+from app.editor.edit_history import HISTORY, EditSession, UndoFailed
 from app.editor.settings import MainSettingsController
 from app.editor.terrain_painter_menu import TerrainPainterMenu
 from app.editor.tilemap_editor import PaintTool
 from app.extensions.tiled_view import DraggableTileImageView
 from app.data.resources.tiles import TileSet
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QColor, QIcon, QPainter, QPen
+from PyQt5.QtGui import QColor, QIcon, QKeySequence, QPainter, QPen, QPixmap
 from PyQt5.QtWidgets import (QAction, QActionGroup, QDesktopWidget, QDialog,
                              QDialogButtonBox, QFrame, QHBoxLayout, QSplitter, QToolBar,
                              QVBoxLayout)
@@ -82,13 +85,16 @@ class TileSetEditor(QDialog):
         self.resize(*default_size)
 
         self.current: TileSet = current
-        self.save()
+        # Undo and redo here reach only this editor's steps
+        self.session = EditSession(HISTORY)
+        HISTORY.bind(self.current, RESOURCES.tilesets, self)
         self.current_tool = PaintTool.NoTool
         self.tool_active = False
 
         self.terrain_painter_menu = TerrainPainterMenu(self)
         self.terrain_painter_menu.alpha_updated.connect(self.on_terrain_alpha_change)
         self.view = TileSetEditorView(self)
+        self.load_image()
         self.view.set_current(current)
         self.view.set_alpha(self.terrain_painter_menu.get_alpha())
         self.view.left_clicked.connect(self.handle_left_click)
@@ -116,9 +122,9 @@ class TileSetEditor(QDialog):
         self.setLayout(self.layout)
         self.layout.addWidget(self.main_splitter)
 
-        self.buttonbox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, Qt.Horizontal, self)
+        # Like every editor window, it keeps its edits, which undo takes back
+        self.buttonbox = QDialogButtonBox(QDialogButtonBox.Close, Qt.Horizontal, self)
         self.layout.addWidget(self.buttonbox)
-        self.buttonbox.accepted.connect(self.accept)
         self.buttonbox.rejected.connect(self.reject)
 
         self.check_brush()
@@ -138,6 +144,7 @@ class TileSetEditor(QDialog):
 
     def reset_terrain(self):
         self.current.terrain_grid.clear()
+        self.commit_edit()
 
     def handle_left_click(self, x, y):
         tile_pos = (x, y)
@@ -152,6 +159,8 @@ class TileSetEditor(QDialog):
 
     def handle_mouse_release(self):
         self.tool_active = False
+        # Each stroke is an undo step of its own
+        self.commit_edit()
 
     def handle_mouse_move(self, x, y):
         tile_pos = (x, y)
@@ -180,6 +189,9 @@ class TileSetEditor(QDialog):
         self.show_gridlines_action.setCheckable(True)
         self.show_gridlines_action.setChecked(True)
 
+        self.undo_action = QAction("Undo", self, shortcut=QKeySequence.Undo, triggered=self.undo)
+        self.redo_action = QAction("Redo", self, shortcut=QKeySequence.Redo, triggered=self.redo)
+
     def void_right_selection(self):
         pass
 
@@ -198,6 +210,8 @@ class TileSetEditor(QDialog):
         self.toolbar.addAction(self.brush_action)
         self.toolbar.addAction(self.erase_action)
         self.toolbar.addAction(self.show_gridlines_action)
+        self.toolbar.addAction(self.undo_action)
+        self.toolbar.addAction(self.redo_action)
 
     def set_current(self, current: TileSet):
         self.current = current
@@ -210,24 +224,43 @@ class TileSetEditor(QDialog):
     def update_view(self):
         self.view.update_view()
 
-    def accept(self):
+    def commit_edit(self):
+        """Records the edit just made as an undo step of its own"""
+        HISTORY.commit(origin=self)
+
+    def undo(self):
+        self.commit_edit()
+        try:
+            if self.session.undo():
+                self.show_tileset_again()
+        except UndoFailed as failure:
+            report_undo_failure(self, failure)
+
+    def redo(self):
+        self.commit_edit()
+        try:
+            if self.session.redo():
+                self.show_tileset_again()
+        except UndoFailed as failure:
+            report_undo_failure(self, failure)
+
+    def load_image(self):
+        """Loads the tileset's image, unless it has it: restoring a tileset in place,
+        as an undo does, drops the image it had"""
+        if not self.current.pixmap:
+            self.current.set_pixmap(QPixmap(self.current.full_path))
+
+    def show_tileset_again(self):
+        """Shows the tileset after an undo or redo"""
+        self.load_image()
+        self.view.update_view()
+
+    def done(self, result):
+        # Close, Escape and the window's X all keep the edits
+        self.commit_edit()
+        HISTORY.unbind(self)
         self.save_geometry()
-        super().accept()
-
-    def reject(self):
-        self.restore()
-        self.save_geometry()
-        super().reject()
-
-    def closeEvent(self, event):
-        self.save_geometry()
-        super().closeEvent(event)
-
-    def save(self):
-        self.saved_data = self.current.terrain_grid.copy()
-
-    def restore(self):
-        self.current.terrain_grid = self.saved_data
+        super().done(result)
 
     def _type(self):
         return 'tileset_editor'

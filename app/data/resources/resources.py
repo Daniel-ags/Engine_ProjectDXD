@@ -6,7 +6,7 @@ import shutil
 import os
 import traceback
 
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from app import sprites
 from app.data.category import Categories, CategorizedCatalog
@@ -190,9 +190,10 @@ class Resources():
                 to_save[data_type + CATEGORY_SUFFIX] = data.categories.save()
         return to_save
 
-    def save(self, proj_dir, specific=None, progress=None) -> bool:
+    def save(self, proj_dir, specific=None, progress=None, repoint=True) -> bool:
         """
         # Returns whether it was successful in saving
+        With repoint, each resource then points at its file in proj_dir.
         """
         from app.editor.settings import MainSettingsController
         main_settings = MainSettingsController()
@@ -270,7 +271,7 @@ class Resources():
                 logging.info("Saving %s..." % data_type)
                 time1 = time.time_ns()/1e6
                 catalog: ManifestCatalog = getattr(self, data_type)
-                catalog.save_resources(data_dir)
+                catalog.save_resources(data_dir, repoint)
                 time2 = time.time_ns()/1e6 - time1
                 logging.info("Time Taken: %s ms" % time2)
                 if progress:
@@ -296,22 +297,28 @@ class Resources():
         logging.info('Done Resource Serializing!')
         return True
 
+    def save_copies(self, proj_dir) -> List[Tuple[Path, Path]]:
+        """The (from, to) file copies save(proj_dir) makes"""
+        resource_dir = os.path.join(proj_dir, 'resources')
+        return [copy for data_type in self.save_data_types
+                for copy in getattr(self, data_type).save_copies(os.path.join(resource_dir, data_type))]
+
     def autosave(self, proj_dir, autosave_dir, progress=None):
+        """Saves the resources as they are in memory, which may not be saved to proj_dir
+        yet, to autosave_dir, leaving each resource pointing where it does"""
         logging.info("Starting Autosave Resource Serialization for %s..." % proj_dir)
         import time
         start = time.time_ns()/1e6
 
-        # Make the directory to save this resource pack in
-        # Make the directory to save this resource pack in
-        if not os.path.exists(autosave_dir):
-            os.mkdir(autosave_dir)
+        self.save(autosave_dir, self.save_data_types, repoint=False)
+        if progress:
+            progress.setValue(60)
         autosave_resource_dir = os.path.join(autosave_dir, 'resources')
-        if not os.path.exists(autosave_resource_dir):
-            os.mkdir(autosave_resource_dir)
         proj_resource_dir = os.path.join(proj_dir, 'resources')
         # from distutils.dir_util import copy_tree
         import filecmp
-        all_files = list(os.walk(proj_resource_dir))
+        all_files = [walked for loose_file_type in self.loose_file_types
+                     for walked in os.walk(os.path.join(proj_resource_dir, loose_file_type))]
         num_files = sum(len(_[2]) for _ in all_files)
         idx = 0
         for (root, d, files) in all_files:
@@ -326,7 +333,7 @@ class Resources():
                     os.makedirs(os.path.dirname(new_path), exist_ok=True)
                     shutil.copy(old_path, new_path)
                 if progress and idx % 100 == 0:
-                    perc = int((idx / num_files) * 74) + 1
+                    perc = int((idx / num_files) * 14) + 60
                     progress.setValue(perc)
 
         end = time.time_ns()/1e6

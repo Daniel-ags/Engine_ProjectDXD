@@ -10,6 +10,7 @@ from app.data.database.weapons import CombatBonusList
 from app.extensions.custom_gui import ComboBox, PropertyBox, PropertyCheckBox
 from app.extensions.list_widgets import AppendMultiListWidget
 from app.editor.lib.components.validated_line_edit import NidLineEdit
+from app.editor.edit_history import HISTORY
 
 from app.editor.weapon_editor import weapon_model
 from app.editor.icons import ItemIcon16
@@ -33,7 +34,6 @@ class WeaponProperties(QWidget):
         name_section = QVBoxLayout()
 
         self.nid_box = PropertyBox(_("Unique ID"), NidLineEdit, self)
-        self.nid_box.edit.textChanged.connect(self.nid_changed)
         self.nid_box.edit.editingFinished.connect(self.nid_done_editing)
         name_section.addWidget(self.nid_box)
 
@@ -72,22 +72,18 @@ class WeaponProperties(QWidget):
         total_section.addWidget(self.advantage)
         total_section.addWidget(self.disadvantage)
 
-    def nid_changed(self, text):
-        # Also change name if they are identical
-        if self.current.name == self.current.nid.replace('_', ' '):
-            self.name_box.edit.setText(text.replace('_', ' '))
-        self.current.nid = text
-        self.window.update_list()
-
     def nid_done_editing(self):
         # Check validity of nid!
+        new_nid = self.nid_box.edit.text()
         other_nids = [d.nid for d in self._data.values() if d is not self.current]
-        if self.current.nid in other_nids:
-            QMessageBox.warning(self.window, 'Warning', 'Weapon Type ID %s already in use' % self.current.nid)
-            self.current.nid = str_utils.get_next_name(self.current.nid, other_nids)
-        old_nid = self._data.find_key(self.current)
-        self.window.left_frame.model.on_nid_changed(old_nid, self.current.nid)
-        self._data.update_nid(self.current, self.current.nid)
+        if new_nid in other_nids:
+            QMessageBox.warning(self.window, 'Warning', 'Weapon Type ID %s already in use' % new_nid)
+            new_nid = str_utils.get_next_name(new_nid, other_nids)
+            self.nid_box.edit.setText(new_nid)
+        # Also change name if identical to the ID
+        if self.current.name == self.current.nid.replace('_', ' '):
+            self.name_box.edit.setText(new_nid.replace('_', ' '))
+        HISTORY.rename(self._data, self.current, new_nid, self.window.left_frame.model.on_nid_changed)
         self.window.update_list()
 
     def name_changed(self, text):

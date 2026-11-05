@@ -1,16 +1,18 @@
 from __future__ import annotations
 
-import logging
 import os
 from typing import Optional
 
 from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import QApplication, QFileDialog, QMessageBox
+from PyQt5.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox
 
-from app.data.resources.resources import RESOURCES
+from app.editor.edit_history import HISTORY
 from app.data.database.database import DB
+from app.data.database.database_types import DatabaseType as DType
 from app.data.database.units import UnitCatalog
-from app.editor.unit_editor import unit_import, unit_model, new_unit_properties
+from app.editor import reference_dialogs
+from app.editor.data_editor import SingleDatabaseEditor
+from app.editor.unit_editor import unit_import, new_unit_properties
 from app.editor.portrait_editor import portrait_model
 from app.editor.settings.main_settings_controller import MainSettingsController
 from app.editor.new_editor_tab import NewEditorTab
@@ -68,50 +70,29 @@ class NewUnitDatabase(NewEditorTab):
         if ok and fn:
             parent_dir = os.path.split(fn)[0]
             settings.set_last_open_path(parent_dir)
-            unit_import.update_db_from_csv(self._db, fn)
+            # The csv changes the units it names in place, as one undo step
+            with HISTORY.change_set('Import %s' % os.path.basename(fn), origin=self), \
+                    HISTORY.modifying([(record, self.data) for record in self.data]):
+                unit_import.update_db_from_csv(self._db, fn)
             self.reset()
 
     def _on_nid_changed(self, old_nid: NID, new_nid: NID):
-        unit_model.on_nid_changed(old_nid, new_nid)
+        HISTORY.rewrite(DType.UNITS, old_nid, new_nid)
 
     def _on_delete(self, nid: NID) -> bool:
-        ok = unit_model.check_delete(nid, self)
-        if ok:
-            unit_model.on_delete(nid)
-            return True
-        else:
-            return False
+        # Levels drop the unit rather than take another in its place
+        fallback = next(unit.nid for unit in self.data if unit.nid != nid)
+        return reference_dialogs.check_delete(DType.UNITS, nid, 'Unit', self, fallback=fallback)
 
-    def on_tab_close(self):
-        # Checking to see if any levels need to be changed
-        for level in DB.levels:
-            for unit in level.units.values():
-                if unit.generic or unit.nid in DB.units:
-                    pass
-                else:  # Remove any unit that no longer exist
-                    level.units.remove_key(unit.nid)
-            # Now remove groups
-            for unit_group in level.unit_groups:
-                for unit_nid in unit_group.units:
-                    if unit_nid not in level.units:
-                        unit_group.remove(unit_nid)
-
-def get(unit_nid=None):
-    window = NewUnitDatabase(None, DB, RESOURCES)
-    unit = DB.units.get(unit_nid)
-    if unit:
-        window.on_select(unit_nid)
-
-    try:
-        true_window = NewUnitDatabase.edit().tab
-        result = True
-    except Exception as err:
-        logging.warning(f"Failed to open Unit Window due to {err}")
-        result = False
-    if result:
-        selected_unit = true_window.right_frame.current
-        if selected_unit:
-            return selected_unit, True
+def get(unit_nid: Optional[NID] = None, parent=None):
+    """Opens the unit editor on unit_nid. Returns the unit it shows when closed with OK."""
+    window = SingleDatabaseEditor(NewUnitDatabase, parent, picker=True)
+    if unit_nid in DB.units:
+        window.tab.tree_list.select_item(unit_nid)
+    result = window.exec_()
+    selected_unit = window.tab.right_frame.current
+    if result == QDialog.Accepted and selected_unit:
+        return selected_unit, True
     return None, False
 
 # Testing

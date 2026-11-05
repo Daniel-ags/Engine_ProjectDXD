@@ -2,7 +2,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import TYPE_CHECKING, Optional
 
-from app.data.database.components import Component, ComponentType, get_objs_using
+from app.data.database.components import Component, ComponentType
 
 if TYPE_CHECKING:
     from app.engine.objects.item import ItemObject
@@ -30,6 +30,3 @@ class ItemTags(Enum):
 
 class ItemComponent(Component):
     item: Optional[ItemObject] = None
-
-def get_items_using(expose: ComponentType, value, db) -> list:
-    return get_objs_using(db.items.values(), expose, value)

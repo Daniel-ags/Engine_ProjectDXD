@@ -11,6 +11,7 @@ from app.data.resources.resources import RESOURCES
 from app.data.database.database import DB
 
 from app.editor import timer
+from app.editor.edit_history import HISTORY
 
 from app.editor.settings import MainSettingsController
 
@@ -41,7 +42,7 @@ class LevelEditor(QMainWindow):
         self.create_actions()
         self.set_icons()
 
-        timer.get_timer().tick_elapsed.connect(self.map_view.update_view)
+        timer.connect_tick(self, self.map_view.update_view)
 
     def on_property_tab_select(self, visible):
         if visible:
@@ -116,8 +117,10 @@ class LevelEditor(QMainWindow):
     def set_current_level(self, level_nid):
         level = DB.levels.get(level_nid)
         self.current_level = level
+        # Which draws it
         self.map_view.set_current_level(level)
-        self.update_view()
+        # Its menus and dialogs edit the level in place, which the next commit records
+        HISTORY.bind(level, DB.levels, self)
 
     def update_view(self):
         if self.rendered:  # (see _render() below)

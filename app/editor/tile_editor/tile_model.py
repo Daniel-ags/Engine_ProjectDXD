@@ -3,15 +3,19 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QIcon, QColor
 
 import os
+from typing import List, Tuple
 
 from app.constants import TILEWIDTH, TILEHEIGHT
 from app.data.resources.resources import RESOURCES
 from app.data.resources.tiles import TileSet, TileMapPrefab
 
 from app.utilities.data import Data
-from app.data.database.database import DB
+from app.editor.edit_history import HISTORY
+from app.data.resources.resource_types import ResourceType as RType
+from app.editor import reference_dialogs
 
 from app.editor.base_database_gui import ResourceCollectionModel
+from app.editor.file_manager.staging import STAGING
 from app.extensions.custom_gui import DeletionTab, DeletionDialog
 from app.editor.tilemap_editor import MapEditor
 from app.editor.settings import MainSettingsController
@@ -98,6 +102,8 @@ class TileSetModel(ResourceCollectionModel):
             return text
         elif role == Qt.DecorationRole:
             tileset = self._data[index.row()]
+            if not tileset.pixmap:  # As after an undo restored the tileset
+                tileset.set_pixmap(QPixmap(tileset.full_path))
             pixmap = tileset.pixmap
             pix = pixmap.scaled(96, 96)
             # pix = pixmap
@@ -122,11 +128,6 @@ class TileSetModel(ResourceCollectionModel):
                         nid = os.path.split(mapchip_config)[-1][:-15]
                         nid = str_utils.get_next_name(nid, RESOURCES.tilesets.keys())
 
-                        current_proj = settings.get_current_project()
-                        if not current_proj:
-                            QMessageBox.critical(self.window, "Error!", "Cannot load new tilesets without having saved the project")
-                            return
-
                         mapchip = read_mapchip_file(mapchip_config)
                         if not mapchip:
                             QMessageBox.critical(self.window, "Error!", "Mapchip files must not be empty!")
@@ -139,9 +140,7 @@ class TileSetModel(ResourceCollectionModel):
 
                         palette_image = QImage(object_palette)
                         pix = draw_tileset_from_mapchip(mapchip, palette, palette_image)
-                        full_path = os.path.join(current_proj, 'resources', 'tilesets', '%s.png' % nid)
-                        pix.save(full_path)
-                        new_tileset = TileSet(nid, full_path)
+                        new_tileset = TileSet(nid, STAGING.write_file('%s.png' % nid, pix.save))
                         new_tileset.set_pixmap(pix)
                         RESOURCES.tilesets.append(new_tileset)
                     else:
@@ -161,7 +160,7 @@ class TileSetModel(ResourceCollectionModel):
                     elif pix.height() % TILEHEIGHT != 0:
                         QMessageBox.critical(self.window, 'Error', "Image height must be exactly divisible by %d pixels!" % TILEHEIGHT)
                         continue
-                    new_tileset = TileSet(nid, fn)
+                    new_tileset = TileSet(nid, STAGING.stage_file(fn))
                     new_tileset.set_pixmap(pix)
                     RESOURCES.tilesets.append(new_tileset)
                 else:
@@ -180,35 +179,44 @@ class TileSetModel(ResourceCollectionModel):
             msg = "Deleting Tileset <b>%s</b> would affect these tilemaps." % nid
             deletion_tab = DeletionTab(affected_tilemaps, model, msg, "Tilemaps")
             ok = DeletionDialog.inform([deletion_tab], self.window)
-            if ok:
-                self.delete_tileset_from_tilemaps(nid)
-            else:
+            if not ok:
                 return
-        super().delete(idx)
+        with HISTORY.change_set('Delete %s' % nid, origin=self.window):
+            self.delete_tileset_from_tilemaps(nid)
+            super().delete(idx)
 
     def delete_tileset_from_tilemaps(self, tileset_nid):
         # What uses tilesets
         # Tilemaps use tilesets
-        for tilemap in RESOURCES.tilemaps:
-            if tileset_nid in tilemap.tilesets:
-                tilemap.tilesets.remove(tileset_nid)
-            for layer in tilemap.layers:
-                for coord, tile_sprite in list(layer.sprite_grid.items()):
-                    if tile_sprite.tileset_nid == tileset_nid:
-                        # Delete all places that tileset is used
-                        del layer.sprite_grid[coord]
+        with HISTORY.modifying(tilemaps_using(tileset_nid)):
+            for tilemap in RESOURCES.tilemaps:
+                if tileset_nid in tilemap.tilesets:
+                    tilemap.tilesets.remove(tileset_nid)
+                for layer in tilemap.layers:
+                    for coord, tile_sprite in list(layer.sprite_grid.items()):
+                        if tile_sprite.tileset_nid == tileset_nid:
+                            # Delete all places that tileset is used
+                            del layer.sprite_grid[coord]
 
     def on_nid_changed(self, old_nid, new_nid):
         # What uses tilesets
         # Tilemaps use tilesets
-        for tilemap in RESOURCES.tilemaps:
-            for idx, nid in enumerate(tilemap.tilesets):
-                if nid == old_nid:
-                    tilemap.tilesets[idx] = new_nid
-            for layer in tilemap.layers:
-                for coord, tile_sprite in layer.sprite_grid.items():
-                    if tile_sprite.tileset_nid == old_nid:
-                        tile_sprite.tileset_nid = new_nid
+        with HISTORY.modifying(tilemaps_using(old_nid)):
+            for tilemap in RESOURCES.tilemaps:
+                for idx, nid in enumerate(tilemap.tilesets):
+                    if nid == old_nid:
+                        tilemap.tilesets[idx] = new_nid
+                for layer in tilemap.layers:
+                    for coord, tile_sprite in layer.sprite_grid.items():
+                        if tile_sprite.tileset_nid == old_nid:
+                            tile_sprite.tileset_nid = new_nid
+
+def tilemaps_using(tileset_nid: str) -> List[Tuple[TileMapPrefab, Data]]:
+    """The tilemaps that list the tileset or draw from it, for recording a change to them"""
+    return [(tilemap, RESOURCES.tilemaps) for tilemap in RESOURCES.tilemaps
+            if tileset_nid in tilemap.tilesets or
+            any(tile_sprite.tileset_nid == tileset_nid
+                for layer in tilemap.layers for tile_sprite in layer.sprite_grid.values())]
 
 def create_tilemap_pixmap(tilemap):
     base_layer = tilemap.layers.get('base')
@@ -249,6 +257,8 @@ class TileMapModel(ResourceCollectionModel):
             return text
         elif role == Qt.DecorationRole:
             tilemap = self._data[index.row()]
+            if not tilemap.pixmap:  # As after an undo restored the tilemap
+                create_tilemap_pixmap(tilemap)
             pixmap = tilemap.pixmap
             if pixmap:
                 pix = pixmap.scaled(96, 96)
@@ -265,28 +275,12 @@ class TileMapModel(ResourceCollectionModel):
         self.layoutChanged.emit()
 
     def delete(self, idx):
-        # Check to see what is using me?
         res = self._data[idx]
-        nid = res.nid
-        affected_levels = [level for level in DB.levels if level.tilemap == nid]
-        if affected_levels:
-            from app.editor.global_editor.level_menu import LevelModel
-            model = LevelModel
-            msg = "Deleting Tilemap <b>%s</b> would affect these levels." % nid
-            deletion_tab = DeletionTab(affected_levels, model, msg, "Levels")
-            ok = DeletionDialog.inform([deletion_tab], self.window)
-            if ok:
-                pass
-            else:
-                return
-        super().delete(idx)
+        if reference_dialogs.check_delete(RType.TILEMAPS, res.nid, 'Tilemap', self.window):
+            super().delete(idx)
 
     def on_nid_changed(self, old_nid, new_nid):
-        # What uses tilemaps
-        # Levels use tilemaps
-        for level in DB.levels:
-            if level.tilemap == old_nid:
-                level.tilemap = new_nid
+        HISTORY.rewrite(RType.TILEMAPS, old_nid, new_nid)
 
     def duplicate(self, tilemap):
         idx = self._data.index(tilemap.nid)

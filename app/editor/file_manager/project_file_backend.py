@@ -14,11 +14,15 @@ from PyQt5.QtCore import QDir, Qt, QTimer
 from PyQt5.QtWidgets import QApplication, QFileDialog, QMessageBox, QProgressDialog, QVBoxLayout, QLabel, QDialogButtonBox, QCheckBox
 
 from app.constants import VERSION
+from app.data.database import references
 from app.data.database.database import DB, Database
 from app.data.resources.resources import RESOURCES, Resources
 from app.data.serialization.dataclass_serialization import dataclass_from_dict
 from app.data.serialization.versions import CURRENT_SERIALIZATION_VERSION
 from app.data.validation.db_validation import DBChecker
+from app.editor.edit_history import HISTORY
+from app.editor.file_manager.staging import STAGING
+from app.editor.font_editor import font_model
 from app.editor import timer
 from app.editor.error_viewer import show_error_report
 from app.editor.settings.preference_definitions import Preference
@@ -87,11 +91,13 @@ class ProjectFileBackend():
         except Exception:
             self.metadata = Metadata()
 
+        # Each step of the progress handles the events waiting, so the progress dialogs
+        # block every window: an edit in an editor window would land mid-save
         self.save_progress = QProgressDialog(
             "Saving project to %s" % self.current_proj, None, 0, 100, self.parent)
         self.save_progress.setAutoClose(True)
         self.save_progress.setWindowTitle("Saving Project")
-        self.save_progress.setWindowModality(Qt.WindowModal)
+        self.save_progress.setWindowModality(Qt.ApplicationModal)
         self.save_progress.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
         self.save_progress.reset()
 
@@ -101,7 +107,7 @@ class ProjectFileBackend():
             "Autosaving project to %s" % autosave_path, None, 0, 100, self.parent)
         self.autosave_progress.setAutoClose(True)
         self.autosave_progress.setWindowTitle("Autosaving Project")
-        self.autosave_progress.setWindowModality(Qt.WindowModal)
+        self.autosave_progress.setWindowModality(Qt.ApplicationModal)
         self.autosave_progress.setWindowFlag(
             Qt.WindowContextHelpButtonHint, False)
         self.autosave_progress.reset()
@@ -203,6 +209,13 @@ class ProjectFileBackend():
                 else:
                     return False
 
+        # The save overwrites project files that undo may still point a resource at, and
+        # a backup save moves the project away before it copies a renamed resource's
+        # file, so whatever project files it copies or overwrites are staged first
+        resource_dir = os.path.normcase(os.path.abspath(os.path.join(self.current_proj, 'resources')))
+        HISTORY.keep_files(path for copy in RESOURCES.save_copies(self.current_proj) for path in copy
+                           if os.path.normcase(os.path.abspath(path)).startswith(resource_dir + os.sep))
+
         # Make directory for saving if it doesn't already exist
         if not new and self.settings.get_preference(Preference.SAVE_BACKUP):
             # we will copy the existing save (whichever is more recent)
@@ -229,7 +242,10 @@ class ProjectFileBackend():
             error_msg.setWindowTitle("Serialization Error")
             error_msg.exec_()
 
+        HISTORY.commit()
         success = RESOURCES.save(self.current_proj, progress=self.save_progress)
+        # Saving points each resource at its file in the project, which is not an edit to undo
+        HISTORY.rebaseline()
         if not success:
             display_error("resources")
             return False
@@ -372,8 +388,19 @@ class ProjectFileBackend():
             elif ret == QMessageBox.Cancel:
                 return False
 
+        # The editor windows show the project being replaced
+        self.parent.editor_windows.close_all()
         RESOURCES.load(self.current_proj, self.metadata.serialization_version)
         DB.load(curr_proj_path, self.metadata.serialization_version)
+        for font in RESOURCES.fonts:
+            font_model.pin_palettes(font)
+        # Undo never reaches back into another project
+        HISTORY.clear()
+        STAGING.start(self.current_proj)
+        # A field added to a record but not to the reference schema is one
+        # renames and deletions would silently skip
+        for problem in references.check_schema(DB):
+            logging.warning(problem)
 
         if self.metadata.serialization_version < CURRENT_SERIALIZATION_VERSION:
             self.save()     # To ensure updates from migration are saved
@@ -456,6 +483,8 @@ class ProjectFileBackend():
         return RESOURCES.get_unused_files(self.current_proj)
 
     def clean(self, unused_files: Dict[str, List[str]]):
+        # Undo may still point a deleted or renamed resource at one of them
+        HISTORY.keep_files(path for paths in unused_files.values() for path in paths)
         RESOURCES.clean(unused_files)
 
     def dump_csv(self, db: Database):

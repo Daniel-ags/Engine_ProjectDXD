@@ -342,7 +342,7 @@ class TitleModeState(State):
 
         elif self.state == 'growth_setup':
             if self.growths_choice:
-                options = [growth.value for growth in GrowthOption if growth != GrowthOption.PLAYER_CHOICE]
+                options = [GrowthOption.RANDOM.value, GrowthOption.FIXED.value, GrowthOption.DYNAMIC.value]
                 self.menu = menus.ModeSelect(options)
                 self.state = 'growth_wait'
                 game.state.change('transition_in')

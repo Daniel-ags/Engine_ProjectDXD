@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Dict, Generic, List, TypeVar
+from dataclasses import dataclass
+from typing import Dict, Generic, List, Optional, TypeVar
 from app.utilities.data import Data, HasNid
 
 from app.utilities.typing import NID
@@ -31,4 +31,6 @@ class Categories(Dict[NID, List[str]]):
         return super().__repr__()
 
 class CategorizedCatalog(Data[T], Generic[T]):
-    categories: Categories = field(default_factory=Categories)
+    def __init__(self, vals: Optional[List[T]] = None):
+        super().__init__(vals)
+        self.categories: Categories = Categories()

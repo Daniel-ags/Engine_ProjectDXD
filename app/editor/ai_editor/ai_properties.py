@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+
 from PyQt5.QtWidgets import QWidget, QLabel, QLineEdit, \
     QMessageBox, QSpinBox, QHBoxLayout, QGroupBox, QRadioButton, \
     QVBoxLayout, QComboBox, QStackedWidget, QDoubleSpinBox, QCheckBox, \
@@ -14,6 +16,7 @@ from app.editor.event_editor.py_syntax import PythonHighlighter
 from app.extensions.custom_gui import PropertyBox, ComboBox, PropertyCheckBox
 from app.editor.custom_widgets import ClassBox, UnitBox, TeamBox, FactionBox, PartyBox, TerrainBox
 from app.editor.lib.components.validated_line_edit import NidLineEdit
+from app.editor.edit_history import HISTORY
 from app.utilities import str_utils
 
 from app.editor.code_line_edit import CodeLineEdit
@@ -51,14 +54,13 @@ class UnitSpecification(QWidget):
         class_box = ClassBox(self)
         class_box.edit.activated.connect(self.sub_spec_changed)
         self.box2.addWidget(class_box)
-        tag_box = ComboBox(self)
-        tag_box.addItems([tag.nid for tag in DB.tags])
-        tag_box.activated.connect(self.sub_spec_changed)
-        self.box2.addWidget(tag_box)
-        name_box = ComboBox(self)
-        name_box.addItems([unit.name for unit in DB.units])
-        name_box.activated.connect(self.sub_spec_changed)
-        self.box2.addWidget(name_box)
+        self.tag_box = ComboBox(self)
+        self.tag_box.activated.connect(self.sub_spec_changed)
+        self.box2.addWidget(self.tag_box)
+        self.name_box = ComboBox(self)
+        self.name_box.activated.connect(self.sub_spec_changed)
+        self.box2.addWidget(self.name_box)
+        self.fill_lists()
         team_box = TeamBox(self)
         team_box.edit.activated.connect(self.sub_spec_changed)
         self.box2.addWidget(team_box)
@@ -132,7 +134,23 @@ class UnitSpecification(QWidget):
     def check_box_toggled(self, checked):
         self.window.current.invert_targeting = bool(checked)
 
+    def fill_lists(self):
+        """Lists the tags and unit names as they are now, keeping the shown choice.
+        The boxes write only when the user picks from them, so this writes nothing."""
+        for box, choices in ((self.tag_box, [tag.nid for tag in DB.tags]),
+                             (self.name_box, [unit.name for unit in DB.units])):
+            text = box.currentText()
+            box.clear()
+            box.addItems(choices)
+            box.setValue(text)
+
+    def showEvent(self, event):
+        # A target type switches to its own specification without showing it again
+        self.fill_lists()
+        super().showEvent(event)
+
     def set_current(self, target_spec):
+        self.fill_lists()
         self.except_check_box.setChecked(bool(self.window.current.invert_targeting))
         try:
             self.box1.setValue(str(target_spec[0]))
@@ -471,7 +489,15 @@ class BehaviourBox(QGroupBox):
             self.current.view_range = -1 * (self.view_range.currentIndex() + 1)
 
     def set_current(self, behaviour):
+        # Showing a behaviour goes through the handlers the user's changes do, which
+        # write to self.current as they go: forcing the target an action implies, a
+        # listed position into a tuple, a target spec the shown kind can't hold to None.
+        # They write to a copy, so showing a behaviour changes nothing in it
+        self.current = copy.deepcopy(behaviour)
+        self.show_behaviour(behaviour)
         self.current = behaviour
+
+    def show_behaviour(self, behaviour):
         action = behaviour.action.replace('_', ' ')
         self.action.setValue(action)
         self.action_changed(None)
@@ -517,7 +543,6 @@ class AIProperties(QWidget):
         self.top_section = QHBoxLayout()
 
         self.nid_box = PropertyBox("Unique ID", NidLineEdit, self)
-        self.nid_box.edit.textChanged.connect(self.nid_changed)
         self.nid_box.edit.editingFinished.connect(self.nid_done_editing)
         self.top_section.addWidget(self.nid_box)
 
@@ -572,18 +597,15 @@ class AIProperties(QWidget):
             for b in self.behaviour_boxes:
                 b.show_roam_info(self.current.roam_ai)
 
-    def nid_changed(self, text):
-        self.current.nid = text
-        self.window.update_list()
-
     def nid_done_editing(self):
         # Check validity of nid!
+        new_nid = self.nid_box.edit.text()
         other_nids = [d.nid for d in self._data.values() if d is not self.current]
-        if self.current.nid in other_nids:
-            QMessageBox.warning(self.window, 'Warning', 'AI ID %s already in use' % self.current.nid)
-            self.current.nid = str_utils.get_next_name(self.current.nid, other_nids)
-        self.model.on_nid_changed(self._data.find_key(self.current), self.current.nid)
-        self._data.update_nid(self.current, self.current.nid)
+        if new_nid in other_nids:
+            QMessageBox.warning(self.window, 'Warning', 'AI ID %s already in use' % new_nid)
+            new_nid = str_utils.get_next_name(new_nid, other_nids)
+            self.nid_box.edit.setText(new_nid)
+        HISTORY.rename(self._data, self.current, new_nid, self.model.on_nid_changed)
         self.window.update_list()
 
     def priority_changed(self, val):

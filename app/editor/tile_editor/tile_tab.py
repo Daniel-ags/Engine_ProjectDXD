@@ -2,7 +2,6 @@ from PyQt5.QtWidgets import QWidget, QGridLayout, QListView, QPushButton, \
     QDialog
 from PyQt5.QtCore import QSize
 
-from app.editor import tilemap_editor
 from app.editor import tileset_editor
 from app.editor.tileset_editor import TileSetEditor
 from app.data.resources.resources import RESOURCES
@@ -65,6 +64,11 @@ from app.extensions.delete_list_view import DeleteListView
 #         painter.restore()
 
 class TileTab(QWidget):
+    # Whether what it shows comes in part from levels, overworlds or tilemaps, so a
+    # map edit in the main window changes it (EditHistoryDialog.show_changes). Such a
+    # tab says which map edits do with reads_map_edit(change_set)
+    reads_maps = False
+
     def __init__(self, data, title, model, parent=None):
         super().__init__(parent)
         self.window = parent
@@ -103,7 +107,8 @@ class TileTab(QWidget):
         self.model.layoutChanged.emit()
 
     def reset(self):
-        pass
+        self.model.layoutAboutToBeChanged.emit()
+        self.model.layoutChanged.emit()
 
     @property
     def current(self):
@@ -136,10 +141,16 @@ class TileSetDatabase(TileTab):
     def edit_current(self):
         current_tileset = self.current
         if current_tileset:
-            tileset_editor = TileSetEditor(self, current_tileset)
-            tileset_editor.exec_()
+            # It records each of its edits as an undo step
+            TileSetEditor(self, current_tileset).exec_()
 
 class TileMapDatabase(TileTab):
+    # It lists the tilemaps by their pictures
+    reads_maps = True
+
+    def reads_map_edit(self, change_set) -> bool:
+        return True
+
     @classmethod
     def create(cls, parent=None):
         data = RESOURCES.tilemaps
@@ -160,12 +171,14 @@ class TileMapDatabase(TileTab):
     def edit_current(self):
         current_tilemap = self.current
         if current_tilemap:
-            map_editor = MapEditor(self, current_tilemap)
-            map_editor.exec_()
-            tilemap_editor.get_tilemap_pixmap(current_tilemap)
+            # It records each of its edits as an undo step
+            MapEditor(self, current_tilemap).exec_()
+            # Its picture in the list, which the edits may have changed
+            tile_model.create_tilemap_pixmap(current_tilemap)
+            self.update_list()
 
 def get_tilesets() -> tuple:
-    window = SingleResourceEditor(TileSetDatabase, ["tilesets"])
+    window = SingleResourceEditor(TileSetDatabase, ["tilesets"], picker=True)
     result = window.exec_()
     if result == QDialog.Accepted:
         selected_tileset = window.tab.current
@@ -174,7 +187,7 @@ def get_tilesets() -> tuple:
         return None, False
 
 def get_tilemaps() -> tuple:
-    window = SingleResourceEditor(TileMapDatabase, ["tilemaps"])
+    window = SingleResourceEditor(TileMapDatabase, ["tilemaps"], picker=True)
     result = window.exec_()
     if result == QDialog.Accepted:
         selected_tilemap = window.tab.current

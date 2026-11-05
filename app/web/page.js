@@ -1,9 +1,9 @@
 // Sets up the page for the game: shows the game's screen as large as the
 // window allows, keeps its sound going, keeps its saves (with a button to
 // export and import them), and on a touch screen draws the buttons a keyboard
-// would give. main.py runs this file, then __ltSaves.restore, then
-// __ltSetupPage once the engine is imported, and __ltSaves.offer once the
-// game's data is loaded.
+// would give, which vibrate as they are pressed. main.py runs this file, then
+// __ltSaves.restore, then __ltSetupPage once the engine is imported, and
+// __ltSaves.offer once the game's data is loaded.
 // Presses wait in a queue that main.py drains each frame (__ltTouch.take) and
 // hands the engine as presses of the player's keys for those buttons.
 (() => {
@@ -34,6 +34,14 @@
     #lt-dpad .DOWN { left: 46px; top: 92px; border-radius: 0 0 8px 8px; }
     #lt-dpad .LEFT { left: 0; top: 46px; border-radius: 8px 0 0 8px; }
     #lt-dpad .RIGHT { left: 92px; top: 46px; border-radius: 0 8px 8px 0; }
+    #lt-pad .lt-switch { position: absolute; left: 0; top: 0; z-index: 1; width: 100%; height: 100%;
+                         margin: 0; padding: 0; border: 0; opacity: 0; touch-action: none;
+                         -webkit-appearance: auto; appearance: auto; }
+    .lt-ring { position: fixed; z-index: 11; width: 56px; height: 56px; margin: -28px 0 0 -28px;
+               border-radius: 50%; pointer-events: none; background: rgba(255, 240, 120, 0.35);
+               border: 2px solid rgba(255, 236, 110, 0.7); box-sizing: border-box;
+               animation: lt-ring 250ms ease-out forwards; }
+    @keyframes lt-ring { from { transform: scale(0.4); opacity: 1; } to { transform: scale(1.3); opacity: 0; } }
 
     #lt-pad.landscape .L { left: calc(12px + env(safe-area-inset-left)); top: 12px; }
     #lt-pad.landscape .R { right: calc(12px + env(safe-area-inset-right)); top: 12px; }
@@ -86,16 +94,124 @@
   const WATCH = {passive: true};
   const WATCH_FIRST = {passive: true, capture: true};
 
-  function holdable(element, button) {
+  // Each press shows a ring where the finger landed and, where the player
+  // leaves it on, ticks the phone's vibration. Android vibrates from script.
+  // Safari can't: the only tick it plays is a finger flipping an
+  // <input type=checkbox switch> (WebKit's CheckboxInputType), and only as
+  // the finger lifts, or as it moves once it has been down 200 ms. So on an
+  // iPhone each button has an unseen switch over it, and a tap ticks on its
+  // release; the D-pad also ticks as a held thumb rolls to a new direction
+  const TICKS = typeof navigator.vibrate === 'function' ? 'vibrate'
+    : ('switch' in HTMLInputElement.prototype || /iPhone|iPad|iPod/.test(navigator.userAgent)) ? 'switch' : null;
+  const VIBRATE_MS = 15;
+  const VIBRATION_KEY = 'lt-vibration';
+  let vibration = true;
+  try { vibration = localStorage.getItem(VIBRATION_KEY) !== 'off'; } catch (error) {}
+  const switches = [];
+
+  // As long as its animation in STYLE. Taken away on a timer, as a page the
+  // browser holds still may never end the animation
+  const RING_MS = 250;
+  function ring(x, y) {
+    const element = document.createElement('div');
+    element.className = 'lt-ring';
+    element.style.left = x + 'px';
+    element.style.top = y + 'px';
+    document.body.appendChild(element);
+    setTimeout(() => element.remove(), RING_MS);
+  }
+
+  // A press at the event's place, ticking through under, the switch over what was pressed
+  function pressFeedback(event, under) {
+    ring(event.clientX, event.clientY);
+    if (!vibration) return;
+    if (TICKS === 'vibrate') navigator.vibrate(VIBRATE_MS);
+    else if (TICKS === 'switch') under.tick();
+  }
+
+  // How long after a touch lands WebKit starts moving the switch with the
+  // finger (its switchHeldDelay, 200 ms), with some to spare
+  const SWITCH_FOLLOWS_AFTER = 260;  // ms
+  // Far enough that the switch, moved this far aside, lies wholly to one side of the finger
+  const SWITCH_ASIDE = 10000;  // px
+  // A flip lands on the finger's movement after the switch is put in its way;
+  // moving it again before then could undo it
+  const MOVES_BETWEEN_TICKS = 2;
+
+  // An unseen switch over host. A tap flips it as the finger lifts, which
+  // ticks. Once WebKit moves it with the finger, it flips wherever the finger
+  // crosses its middle: so while the finger is down it waits off to the side
+  // that keeps it as it is, and tick puts it on the other side, for the
+  // finger's next movement to flip it. Off, the thumb is at its left
+  function switchOver(host) {
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.setAttribute('switch', '');
+    input.setAttribute('aria-hidden', 'true');
+    input.tabIndex = -1;
+    input.className = 'lt-switch';
+    // Whether it shows as on, which WebKit changes as the finger moves and
+    // makes checked only as the finger lifts
+    let on = false, followsAt = 0, wanted = false, movesSincePlaced = 0;
+    const place = (flipping) => {
+      const thumbLeft = !on;
+      const toLeft = flipping ? thumbLeft : !thumbLeft;
+      input.style.transform = 'translateX(' + (toLeft ? -SWITCH_ASIDE : SWITCH_ASIDE) + 'px)';
+    };
     const release = () => {
+      if (!wanted || movesSincePlaced < MOVES_BETWEEN_TICKS) return;
+      place(true);
+      on = !on;
+      wanted = false;
+      movesSincePlaced = 0;
+    };
+    const under = {
+      shown(shown) { if (shown) host.appendChild(input); else input.remove(); },
+      down() {
+        on = input.checked;
+        followsAt = performance.now() + SWITCH_FOLLOWS_AFTER;
+        wanted = false;
+        movesSincePlaced = MOVES_BETWEEN_TICKS;
+        place(false);
+      },
+      // Before the host handles each movement of the finger
+      moved() {
+        movesSincePlaced++;
+        release();
+      },
+      // Sooner than WebKit follows the finger, the tick is the one as it lifts
+      tick() {
+        if (performance.now() < followsAt) return;
+        wanted = true;
+        release();
+      },
+      up() { input.style.transform = ''; },
+    };
+    under.shown(TICKS === 'switch' && vibration);
+    switches.push(under);
+    return under;
+  }
+
+  function setVibration(on) {
+    vibration = on;
+    try { localStorage.setItem(VIBRATION_KEY, on ? 'on' : 'off'); } catch (error) {}
+    for (const under of switches) under.shown(on);
+  }
+
+  function holdable(element, button) {
+    const under = switchOver(element);
+    const release = () => {
+      under.up();
       if (!element.classList.contains('pressed')) return;
       element.classList.remove('pressed');
       changes.push([button, false]);
     };
     element.addEventListener('pointerdown', (event) => {
       element.setPointerCapture(event.pointerId);
+      under.down();
       element.classList.add('pressed');
       changes.push([button, true]);
+      pressFeedback(event, under);
     }, WATCH);
     element.addEventListener('pointerup', release, WATCH);
     element.addEventListener('pointercancel', release, WATCH);
@@ -111,15 +227,20 @@
       arms[direction].className = direction;
       pad.appendChild(arms[direction]);
     }
+    const under = switchOver(pad);
     const held = new Set();
-    const hold = (wanted) => {
+    // event: the finger's, for a press's feedback; none when it lifts
+    const hold = (wanted, event) => {
+      let pressed = false;
       for (const direction of ['UP', 'DOWN', 'LEFT', 'RIGHT']) {
         if (wanted.has(direction) && !held.has(direction)) {
           held.add(direction); arms[direction].classList.add('pressed'); changes.push([direction, true]);
+          pressed = true;
         } else if (!wanted.has(direction) && held.has(direction)) {
           held.delete(direction); arms[direction].classList.remove('pressed'); changes.push([direction, false]);
         }
       }
+      if (pressed) pressFeedback(event, under);
     };
     const aim = (event) => {
       const box = pad.getBoundingClientRect();
@@ -130,15 +251,24 @@
       // A diagonal only when the thumb is well off both axes
       if (Math.abs(dx) > dead && Math.abs(dx) > Math.abs(dy) * 0.5) wanted.add(dx < 0 ? 'LEFT' : 'RIGHT');
       if (Math.abs(dy) > dead && Math.abs(dy) > Math.abs(dx) * 0.5) wanted.add(dy < 0 ? 'UP' : 'DOWN');
-      hold(wanted);
+      hold(wanted, event);
+    };
+    const lift = () => {
+      under.up();
+      hold(new Set());
     };
     pad.addEventListener('pointerdown', (event) => {
       pad.setPointerCapture(event.pointerId);
+      under.down();
       aim(event);
     }, WATCH);
-    pad.addEventListener('pointermove', (event) => { if (pad.hasPointerCapture(event.pointerId)) aim(event); }, WATCH);
-    pad.addEventListener('pointerup', () => hold(new Set()), WATCH);
-    pad.addEventListener('pointercancel', () => hold(new Set()), WATCH);
+    pad.addEventListener('pointermove', (event) => {
+      if (!pad.hasPointerCapture(event.pointerId)) return;
+      under.moved();
+      aim(event);
+    }, WATCH);
+    pad.addEventListener('pointerup', lift, WATCH);
+    pad.addEventListener('pointercancel', lift, WATCH);
     return pad;
   }
 
@@ -444,9 +574,19 @@
           <button class="export">Export</button><button class="import">Import</button><button class="close">Close</button>
         </div>
         <p class="status"></p>
+        <div class="choices vibration"><button></button></div>
         <input type="file" accept=".zip,application/zip" hidden>
       </div>`;
     document.body.appendChild(panel);
+    // Where the buttons vibrate, whether they do, for this browser
+    const vibrationButton = panel.querySelector('.vibration button');
+    const showVibration = () => { vibrationButton.textContent = 'Vibration: ' + (vibration ? 'On' : 'Off'); };
+    if (!(pad && TICKS)) panel.querySelector('.vibration').style.display = 'none';
+    showVibration();
+    vibrationButton.addEventListener('click', () => {
+      setVibration(!vibration);
+      showVibration();
+    });
     const status = panel.querySelector('.status');
     const input = panel.querySelector('input');
     const show = (shown) => {

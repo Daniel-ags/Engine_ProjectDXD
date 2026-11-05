@@ -16,3 +16,4 @@ class ResourceType(Enum):
   TILEMAPS = 13
   MUSIC = 14
   SFX = 15
+  FONTS = 16
