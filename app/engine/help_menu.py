@@ -424,3 +424,99 @@ class SkillHelpDialog(HelpDialog):
         if skill.owner_nid:
             return game.get_unit(skill.owner_nid)
         return None
+
+class HelpInspector:
+    """
+    Gerencia uma sessão de inspeção de ajuda (Botão R):
+    Unifica a navegação direcional, o balão flutuante (HelpDialog),
+    o posicionamento das âncoras e a animação nativa do cursor (menus.Cursor).
+    """
+    def __init__(self, targets, start_idx: int = 0, orientation: str = 'horizontal', play_sfx: bool = True):
+        from app.engine import menus
+        from app.engine.sound import get_sound_thread
+
+        self.get_sound_thread = get_sound_thread
+        self.orientation = orientation
+        self.play_sfx = play_sfx
+        self.cursor = menus.Cursor()
+        self.dialog = None
+        self.dialog_pos = (0, 0)
+        self.cursor_pos = (0, 0)
+
+        self._parsed_targets = [self._parse_target(t) for t in targets] if targets else []
+        self.idx = max(0, min(start_idx, len(self._parsed_targets) - 1)) if self._parsed_targets else 0
+
+        if self.play_sfx:
+            self.get_sound_thread().play_sfx('Info In')
+
+        self._refresh()
+
+    def _parse_target(self, t):
+        if len(t) == 3 and isinstance(t[0], (tuple, list)) and isinstance(t[1], (tuple, list)):
+            return t[0], t[1], t[2]
+        elif len(t) == 3:
+            x, y, text = t
+            # Aplica o recuo nativo da engine (-12px em X e +2px em Y)
+            return (x - 6, y), (x + 8, y + 16), text
+        elif len(t) == 2:
+            pos, text = t
+            return (pos[0] - 6, pos[1]), (pos[0] + 8, pos[1] + 16), text
+        elif len(t) == 4:
+            x, y, text, dialog_pos = t
+            return (x - 6, y), dialog_pos, text
+        raise ValueError(f"Formato de alvo inválido para HelpInspector: {t}")
+
+    def _refresh(self):
+        if not self._parsed_targets:
+            self.dialog = None
+            return
+        cursor_pos, dialog_pos, text = self._parsed_targets[self.idx]
+        self.cursor_pos = cursor_pos
+        self.dialog_pos = dialog_pos
+
+        HelpDialogClass = getattr(self, 'HelpDialog', None) or globals().get('HelpDialog') or globals().get('HelpBox')
+        self.dialog = HelpDialogClass(text) if HelpDialogClass else None
+
+    def handle_input(self, event, directions=None) -> bool:
+        directions = directions or []
+
+        if event in ('INFO', 'BACK', 'SELECT'):
+            if self.play_sfx:
+                self.get_sound_thread().play_sfx('Info Out')
+            return False
+
+        if not self._parsed_targets:
+            return True
+
+        prev_idx = self.idx
+
+        if self.orientation in ('horizontal', 'both', 'any'):
+            if event == 'LEFT' or 'LEFT' in directions:
+                self.idx = (self.idx - 1) % len(self._parsed_targets)
+            elif event == 'RIGHT' or 'RIGHT' in directions:
+                self.idx = (self.idx + 1) % len(self._parsed_targets)
+
+        if self.orientation in ('vertical', 'both', 'any'):
+            if event == 'UP' or 'UP' in directions:
+                self.idx = (self.idx - 1) % len(self._parsed_targets)
+            elif event == 'DOWN' or 'DOWN' in directions:
+                self.idx = (self.idx + 1) % len(self._parsed_targets)
+
+        if self.idx != prev_idx:
+            if self.play_sfx:
+                self.get_sound_thread().play_sfx('Select 5')
+            self._refresh()
+
+        return True
+
+    def update(self):
+        self.cursor.update()
+        if self.dialog and hasattr(self.dialog, 'update'):
+            self.dialog.update()
+
+    def draw(self, surf):
+        if not self._parsed_targets:
+            return
+        self.cursor.draw(surf, self.cursor_pos[0], self.cursor_pos[1])
+        if self.dialog:
+            self.dialog.draw(surf, self.dialog_pos)

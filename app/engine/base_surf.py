@@ -4,7 +4,7 @@ import random
 from typing import Optional
 
 from app.engine.sprites import SPRITES
-from app.engine import engine
+from app.engine import engine, image_mods
 
 import logging
 
@@ -101,5 +101,78 @@ def create_highlight_surf(width) -> engine.Surface:
     for middle_x in range(2, width - 2):
         surf.blit(middle_segment, (middle_x, 0))
     surf.blit(right_endcap, (width - 2, 0))
+
+    return surf
+
+def create_ornate_base_surf(width: int, height: int, background: str = 'menu_bg_base',
+                            gems: str = 'top_left', gem_type: str = 'small',
+                            translucency: float = 0.1):
+    """
+    Cria uma superfície de base 9-slice ornamentada com gemas/diamantes projetados.
+    
+    :param width: Largura útil da moldura interna (em múltiplos de 8px).
+    :param height: Altura útil da moldura interna.
+    :param background: ID do sprite 9-slice base (ex: 'menu_bg_base').
+    :param gems: 'top_left', 'diagonal', 'all' ou None.
+    :param gem_type: 'small' (gema azul padrão) ou 'brown'.
+    :param translucency: Nível de transparência (0.1 por padrão).
+    :return: Superfície pronta (pygame.Surface).
+    """
+    # 1. Gera a moldura 9-slice tradicional
+    raw_bg = create_base_surf(width, height, background)
+
+    # 2. Se nenhuma gema for solicitada, retorna a base comum
+    if not gems:
+        if translucency:
+            raw_bg = image_mods.make_translucent(raw_bg, translucency)
+        return raw_bg
+
+    # 3. Cria o envelope transparente (+8px largura, +12px altura para acomodar as saliências)
+    surf = engine.create_surface((width + 8, height + 12), transparent=True)
+    # A moldura interna fica ancorada em (2, 4)
+    surf.blit(raw_bg, (2, 4))
+
+    # 4. Seleção e renderização das gemas
+    gem_key = 'menu_gem_brown' if gem_type == 'brown' else 'menu_gem_small'
+    gem_sprite = SPRITES.get(gem_key)
+
+    if gem_sprite:
+        gem_w = gem_sprite.get_width()
+        gem_h = gem_sprite.get_height()
+
+        # Coordenadas calibradas das quinas
+        tl_pos = (0, 0)
+        br_pos = ((2 + width) - gem_w + 2, (4 + height) - gem_h + 3)
+        tr_pos = ((2 + width) - gem_w + 2, 0)
+        bl_pos = (0, (4 + height) - gem_h + 3)
+
+        # Topo Esquerdo (padrão em quase todos os modos)
+        if gems in ('top_left', 'diagonal', 'all'):
+            surf.blit(gem_sprite, tl_pos)
+
+        # Inferior Direito (espelhado horizontal e verticalmente)
+        if gems in ('diagonal', 'all'):
+            try:
+                br_gem = engine.flip_vert(engine.flip_horiz(gem_sprite))
+            except AttributeError:
+                import pygame
+                br_gem = pygame.transform.flip(gem_sprite, True, True)
+            surf.blit(br_gem, br_pos)
+
+        # Demais cantos caso 'all' seja solicitado
+        if gems == 'all':
+            try:
+                tr_gem = engine.flip_horiz(gem_sprite)
+                bl_gem = engine.flip_vert(gem_sprite)
+            except AttributeError:
+                import pygame
+                tr_gem = pygame.transform.flip(gem_sprite, True, False)
+                bl_gem = pygame.transform.flip(gem_sprite, False, True)
+            surf.blit(tr_gem, tr_pos)
+            surf.blit(bl_gem, bl_pos)
+
+    # 5. Aplica a translucidez uniforme no conjunto inteiro
+    if translucency:
+        surf = image_mods.make_translucent(surf, translucency)
 
     return surf

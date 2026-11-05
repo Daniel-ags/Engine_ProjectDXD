@@ -9,10 +9,11 @@ from app.engine.sprites import SPRITES
 from app.engine.sound import get_sound_thread
 from app.engine.state import State
 from app.engine import background, menus, engine, dialog, text_funcs, icons, \
-    action, item_system, battle_animation
+    action, item_system, battle_animation, base_surf, help_menu
 from app.engine.combat.mock_combat import MockCombat
 from app.engine.game_state import game
 from app.engine.fluid_scroll import FluidScroll
+from app.engine.graphics.text.text_renderer import render_text
 
 class PromotionChoiceState(State):
     name = 'promotion_choice'
@@ -31,13 +32,6 @@ class PromotionChoiceState(State):
         game.memory['current_unit'] = self.unit
         game.memory['next_class'] = next_class
         game.memory['next_state'] = 'promotion'
-        # Only an on-map promotion (Master Seal used during the unit's turn)
-        # has a tactical turn to finalize. The turn was deliberately left
-        # unfinalized so the choice could be cancelled; now that we're
-        # committing, finalize it after the promotion. Off-map promotions
-        # (base/prep "Use", base bonus exp, promote event command) have no turn
-        # to end -- finalizing there clears the base/event state stack and
-        # dumps the player onto the map.
         if self.from_map_combat:
             game.memory['_promo_finalize_turn'] = True
         game.state.change('transition_to_with_pop')
@@ -47,9 +41,6 @@ class PromotionChoiceState(State):
 
         self.can_go_back = game.memory.get('can_go_back', False)
         game.memory['can_go_back'] = None
-        # Whether the promotion was launched from an on-map combat (and so owes
-        # a turn finalization on confirm). Set by the class-change item's
-        # end_combat; absent for base bonus exp and event-command promotions.
         self.from_map_combat = game.memory.get('_promo_map_combat', False)
         game.memory['_promo_map_combat'] = None
         self.combat_item = game.memory.get('combat_item')
@@ -58,104 +49,85 @@ class PromotionChoiceState(State):
         self.unit_klass = DB.classes.get(self.unit.klass)
         display_options = self._get_choices()
 
-        self.menu = menus.Choice(self.unit, display_options, (14, 13))
-        self.menu.set_limit(5)
+        # Flag de alternância entre Tela 1 (Seleção) e Tela 2 (Detalhes)
+        self.in_details = False
+
+        # Gerenciador de inspeção com botão R
+        self.inspector = None
+        self.class_details_items = []
+
+        # Menu de Classes (Tela 1) - posicionado em (14, 46) com limite de 3
+        options = [DB.classes.get(c_nid).name for c_nid in self.class_options]
+        self.menu = menus.Choice(self.unit, options, (10, 46))
+        self.menu.set_limit(3)
         self.child_menu = None
 
+        # Cabeçalho Superior Centralizado da Tela 1 (Ornate com tamanho modular)
+        header_text = "Choose your promotion!"
+        text_w = FONT['text'].width(header_text)
+        header_w = ((text_w + 16 + 7) // 8) * 8
+        header_h = 24
+        self.header_surf = base_surf.create_ornate_base_surf(header_w, header_h, 'menu_bg_base', gems='all')
+        off_x, off_y = 2, 4
+        title_x = off_x + (header_w - text_w) // 2
+        render_text(self.header_surf, ['text'], [header_text], ['new-white'], (title_x, off_y + 3))
+        self.header_pos = ((WINWIDTH - header_w) // 2 - 2, 8 - 4)
+
+        # Pré-carregamento dos elementos visuais e cards da Tela 2
         self.animations = []
         self.weapon_icons = []
+        self.skill_cards = []
+        self.name_cards = []
+
         for option in self.class_options:
             anim = battle_animation.get_battle_anim(self.unit, None, klass=option)
             if anim:
+                # True: combatente direito olhando para a esquerda
                 anim.pair(self, None, True, 0)
             self.animations.append(anim)
-            weapons = []
+
             klass = DB.classes.get(option)
+
+            weapons = []
             for weapon_nid, weapon in klass.wexp_gain.items():
                 if weapon.usable:
                     weapons.append(weapon_nid)
             self.weapon_icons.append(weapons)
 
-        # Platforms
+            immediate_skills = [
+                DB.skills.get(s_nid)
+                for req_lvl, s_nid in klass.learned_skills
+                if req_lvl <= 1 and DB.skills.get(s_nid)
+            ]
+
+            # Salva os itens em ordem para navegação com o botão R
+            items = [('skill', s) for s in immediate_skills] + [('weapon', w) for w in weapons]
+            self.class_details_items.append(items)
+
+            # Cards da Tela 2
+            self.skill_cards.append(self._create_skills_card(immediate_skills, weapons))
+            self.name_cards.append(self._create_name_card(klass.name))
+
+        # Plataforma Melee (Duas metades unidas)
         if game.tilemap and self.unit.position:
             terrain = game.tilemap.get_terrain(self.unit.position)
             platform_type = DB.terrain.get(terrain).platform
         else:
             platform_type = 'Floor'
-        platform = RESOURCES.platforms.get(platform_type + '-Melee', RESOURCES.platforms.get('Arena-Melee'))
+        platform = RESOURCES.platforms.get(
+            platform_type + '-Melee',
+            RESOURCES.platforms.get('Arena-Melee', RESOURCES.platforms.get(platform_type + '-Ranged', RESOURCES.platforms.get('Arena-Ranged')))
+        )
         self.left_platform = engine.image_load(platform)
         self.right_platform = engine.flip_horiz(self.left_platform.copy())
 
-        # For anim swoop in
         self.anim_offset = 120
         self.target_anim_offset = False
 
         self.current_desc = self._get_desc()
 
-        game.state.change('transition_in')
-        return 'repeat'
-
     def begin(self):
         self.fluid.reset_on_change_state()
-
-    def take_input(self, event):
-        first_push = self.fluid.update()
-        directions = self.fluid.get_directions()
-
-        current_idx = self.menu.get_current_index()
-        self.menu.handle_mouse()
-        new_idx = self.menu.get_current_index()
-        if current_idx != new_idx:  # Mouse moved
-            self.target_anim_offset = True
-            self.current_desc = self._get_desc()
-
-        if 'DOWN' in directions:
-            if self.child_menu:
-                if self.child_menu.move_down(first_push):
-                    get_sound_thread().play_sfx('Select 6')
-            else:
-                if self.menu.move_down(first_push):
-                    get_sound_thread().play_sfx('Select 6')
-                self.target_anim_offset = True
-                self.current_desc = self._get_desc()
-        elif 'UP' in directions:
-            if self.child_menu:
-                if self.child_menu.move_up(first_push):
-                    get_sound_thread().play_sfx('Select 6')
-            else:
-                if self.menu.move_up(first_push):
-                    get_sound_thread().play_sfx('Select 6')
-                self.target_anim_offset = True
-                self.current_desc = self._get_desc()
-
-        elif event == 'BACK':
-            if self.child_menu:
-                get_sound_thread().play_sfx('Select 4')
-                self.child_menu = None
-            elif self.can_go_back:
-                get_sound_thread().play_sfx('Select 4')
-                game.state.back()
-                if self.combat_item:
-                    action.do(action.HasNotAttacked(self.unit))
-                    item_system.reverse_use(self.unit, self.combat_item)
-            else:
-                # Can't go back...
-                get_sound_thread().play_sfx('Error')
-
-        elif event == 'SELECT':
-            if self.child_menu:
-                selection = self.child_menu.get_current()
-                if selection == 'Change':
-                    get_sound_thread().play_sfx('Select 1')
-                    self._proceed(self.class_options[self.menu.get_current_index()])
-                else:
-                    get_sound_thread().play_sfx('Select 4')
-                    self.child_menu = None
-            else:
-                get_sound_thread().play_sfx('Select 1')
-                selection = self.menu.get_current()
-                options = ['Change', 'Cancel']
-                self.child_menu = menus.Choice(selection, options, self.menu)
 
     def _get_desc(self):
         current_klass = self.class_options[self.menu.get_current_index()]
@@ -172,12 +144,205 @@ class PromotionChoiceState(State):
         d.reformat()
         return d
 
+    def _create_name_card(self, klass_name):
+        title_w = FONT['text'].width(klass_name)
+        card_w = max(48, min(WINWIDTH - 16, ((title_w + 16 + 7) // 8) * 8))
+        card_h = 24
+        card_surf = base_surf.create_ornate_base_surf(card_w, card_h, 'menu_bg_base', gems='all')
+        off_x, off_y = 2, 4
+
+        title_x = off_x + (card_w - title_w) // 2
+        render_text(card_surf, ['text'], [klass_name], ['text-yellow'], (title_x, off_y + 3))
+        return card_surf, card_w, card_h
+
+    def _create_skills_card(self, skills, weapons=None):
+        weapons = weapons or []
+        title_text = "Skills & Weapons"
+        title_w = FONT['text'].width(title_text)
+
+        icon_pitch = 18
+        total_icons = len(skills) + len(weapons)
+        total_content_w = total_icons * icon_pitch - 2 if total_icons > 0 else FONT['text'].width("---")
+        content_w = max(title_w, total_content_w)
+        card_w = ((content_w + 12 + 7) // 8) * 8
+        card_h = 40
+
+        card_surf = base_surf.create_ornate_base_surf(card_w, card_h, 'menu_bg_base', gems='all')
+        off_x, off_y = 2, 4
+
+        title_x = off_x + (card_w - title_w) // 2
+        render_text(card_surf, ['text'], [title_text], ['new-white'], (title_x, off_y + 3))
+
+        start_x = off_x + (card_w - total_content_w) // 2
+        icons_y = off_y + 18
+        curr_x = start_x
+
+        if skills:
+            for skill in skills:
+                icons.draw_skill(card_surf, skill, (curr_x, icons_y))
+                curr_x += icon_pitch
+        elif not weapons:
+            render_text(card_surf, ['text'], ["---"], ['gray'], (curr_x, icons_y))
+
+        if weapons:
+            for weapon in weapons:
+                icons.draw_weapon(card_surf, weapon, (curr_x, icons_y))
+                curr_x += icon_pitch
+
+        return card_surf, card_w, card_h
+
+    def _draw_stat_bonuses(self, surf, klass):
+        promo_gains = klass.promotion if hasattr(klass, 'promotion') and klass.promotion else {}
+        bonus_list = []
+
+        # 1. Coleta os atributos que sofrem alteração (excluindo MOV)
+        for stat in DB.stats:
+            if stat.nid == 'MOV':
+                continue
+            val = promo_gains.get(stat.nid, 0)
+            if val != 0 and abs(val) < 50:
+                bonus_list.append((stat.nid, val))
+
+        for stat_nid, val in promo_gains.items():
+            if stat_nid != 'MOV' and val != 0 and abs(val) < 50 and stat_nid not in [b[0] for b in bonus_list]:
+                bonus_list.append((stat_nid, val))
+
+        box_x, box_y = 6, 112
+        if not bonus_list:
+            text = "No stat changes upon promotion."
+            render_text(surf, ['text'], [text], ['white'], (box_x + 16, box_y + 16))
+            return
+
+        # 2. Formatação em grade: linha 1 (chaves) e linha 2 (valores)
+        num_stats = len(bonus_list)
+        col_w = min(36, 212 // num_stats)
+        total_w = num_stats * col_w
+        start_x = box_x + (228 - total_w) // 2
+
+        for col_idx, (s_nid, s_val) in enumerate(bonus_list):
+            item_center_x = start_x + col_idx * col_w + col_w // 2
+
+            key_w = FONT['text'].width(s_nid)
+            key_x = item_center_x - key_w // 2
+            render_text(surf, ['text'], [s_nid], ['white'], (key_x, box_y + 10))
+
+            sign = "+" if s_val > 0 else ""
+            val_text = f"{sign}{s_val}"
+            val_color = 'green' if s_val > 0 else 'red'
+            val_w = FONT['text'].width(val_text)
+            val_x = item_center_x - val_w // 2
+            render_text(surf, ['text'], [val_text], [val_color], (val_x, box_y + 26))
+
+    def _get_help_targets(self, class_idx):
+        """Monta a lista de alvos para o HelpInspector com coordenadas brutas de cada elemento."""
+        if not self.skill_cards or class_idx >= len(self.class_details_items):
+            return []
+        items = self.class_details_items[class_idx]
+        if not items:
+            return []
+
+        card_surf, card_w, card_h = self.skill_cards[class_idx]
+        total_icons = len(items)
+        icon_pitch = 18
+        total_content_w = total_icons * icon_pitch - 2 if total_icons > 0 else FONT['text'].width("---")
+
+        box_x = 10
+        box_y = 50
+        start_x = box_x + (card_w - total_content_w) // 2
+        icons_y = box_y + 18
+
+        targets = []
+        for idx, (item_type, item_obj) in enumerate(items):
+            icon_x = start_x + idx * icon_pitch
+            icon_y = icons_y
+
+            if item_type == 'skill':
+                name = getattr(item_obj, 'name', 'Skill')
+                desc = getattr(item_obj, 'desc', '') or "No description."
+            else:  # weapon
+                w_obj = DB.weapons.get(item_obj) if hasattr(DB, 'weapons') and DB.weapons.get(item_obj) else None
+                name = getattr(w_obj, 'name', item_obj)
+                desc = getattr(w_obj, 'desc', '') or f"Grants proficiency with {name}s."
+
+            text = f"{name}: {desc}"
+            # O HelpInspector aplica automaticamente o recuo nativo de (-12, +2)
+            targets.append((icon_x, icon_y, text))
+
+        return targets
+
+    def take_input(self, event):
+        first_push = self.fluid.update()
+        directions = self.fluid.get_directions()
+
+        # ---------------------------------------------------------------------
+        # Tela 2: Detalhes da Promoção
+        # ---------------------------------------------------------------------
+        if self.in_details:
+            # 1. Se a inspeção estiver aberta, delega para o HelpInspector
+            if self.inspector:
+                if not self.inspector.handle_input(event, directions):
+                    self.inspector = None
+                return
+
+            # 2. Abertura da inspeção
+            if event == 'INFO':
+                current_idx = self.menu.get_current_index()
+                targets = self._get_help_targets(current_idx)
+                if targets:
+                    self.inspector = help_menu.HelpInspector(targets, orientation='horizontal')
+                return
+
+            if event == 'BACK':
+                get_sound_thread().play_sfx('Select 4')
+                self.in_details = False
+            elif event == 'SELECT':
+                get_sound_thread().play_sfx('Select 1')
+                self._proceed(self.class_options[self.menu.get_current_index()])
+            return
+
+        # ---------------------------------------------------------------------
+        # Tela 1: Escolha da Classe
+        # ---------------------------------------------------------------------
+        current_idx = self.menu.get_current_index()
+        self.menu.handle_mouse()
+        new_idx = self.menu.get_current_index()
+        if current_idx != new_idx:
+            self.target_anim_offset = True
+            self.current_desc = self._get_desc()
+
+        if 'DOWN' in directions:
+            if self.menu.move_down(first_push):
+                get_sound_thread().play_sfx('Select 6')
+            self.target_anim_offset = True
+            self.current_desc = self._get_desc()
+        elif 'UP' in directions:
+            if self.menu.move_up(first_push):
+                get_sound_thread().play_sfx('Select 6')
+            self.target_anim_offset = True
+            self.current_desc = self._get_desc()
+
+        elif event == 'BACK':
+            if self.can_go_back:
+                get_sound_thread().play_sfx('Select 4')
+                game.state.back()
+                if self.combat_item:
+                    action.do(action.HasNotAttacked(self.unit))
+                    item_system.reverse_use(self.unit, self.combat_item)
+            else:
+                get_sound_thread().play_sfx('Error')
+
+        elif event == 'SELECT':
+            get_sound_thread().play_sfx('Select 1')
+            self.in_details = True
+
     def update(self):
-        self.menu.update()
-        if self.child_menu:
-            self.child_menu.update()
-        if self.current_desc:
-            self.current_desc.update()
+        if not self.in_details:
+            self.menu.update()
+            if self.current_desc:
+                self.current_desc.update()
+
+        if self.inspector:
+            self.inspector.update()
 
         if self.target_anim_offset:
             self.anim_offset += 8
@@ -199,28 +364,62 @@ class PromotionChoiceState(State):
 
         self.bg.draw(surf)
 
-        top = WINHEIGHT - 72
-        surf.blit(self.left_platform, (WINWIDTH//2 - self.left_platform.get_width() + self.anim_offset + 52, top))
-        surf.blit(self.right_platform, (WINWIDTH//2 + self.anim_offset + 52, top))
-        anim = self.animations[self.menu.get_current_index()]
+        current_idx = self.menu.get_current_index()
+
+        # ---------------------------------------------------------------------
+        # Plataforma Dupla Melee com a calibração de encaixe na borda
+        # ---------------------------------------------------------------------
+        platform_y = 124 - self.right_platform.get_height()
+        right_plat_x = WINWIDTH - self.right_platform.get_width() + self.anim_offset + 28
+        left_plat_x = right_plat_x - self.left_platform.get_width()
+
+        surf.blit(self.left_platform, (left_plat_x, platform_y))
+        surf.blit(self.right_platform, (right_plat_x, platform_y))
+
+        sprite_offset_x = 26 + self.anim_offset
+        sprite_offset_y = platform_y - (WINHEIGHT - 74)
+
+        anim = self.animations[current_idx]
         if anim:
-            anim.draw(surf, (self.anim_offset + 12, 0))
+            anim.draw(surf, (sprite_offset_x, sprite_offset_y))
 
-        # Class Reel
-        FONT['class'].blit(self.menu.get_current(), surf, (114, 5))
+        # ---------------------------------------------------------------------
+        # Renderização Específica de Cada Tela
+        # ---------------------------------------------------------------------
+        if not self.in_details:
+            # TELA 1: Seleção de Classe
+            if getattr(self, 'header_surf', None):
+                surf.blit(self.header_surf, self.header_pos)
 
-        # Weapon Icons
-        for idx, weapon in enumerate(self.weapon_icons[self.menu.get_current_index()]):
-            icons.draw_weapon(surf, weapon, (130 + 16 * idx, 32))
+            if self.menu:
+                self.menu.draw(surf)
 
-        if self.menu:
-            self.menu.draw(surf)
-        if self.child_menu:
-            self.child_menu.draw(surf)
+            surf.blit(SPRITES.get('promotion_description'), (6, 112))
+            if self.current_desc:
+                self.current_desc.draw(surf)
+        else:
+            # TELA 2: Detalhes e Status Bônus
+            # 1. Nome da classe centralizado no topo
+            if self.name_cards:
+                card_surf, card_w, card_h = self.name_cards[current_idx]
+                name_x = (WINWIDTH - card_w) // 2
+                surf.blit(card_surf, (name_x - 2, 8 - 4))
 
-        surf.blit(SPRITES.get('promotion_description'), (6, 112))
-        if self.current_desc:
-            self.current_desc.draw(surf)
+            # 2. Contêiner de Skills & Weapons
+            if self.skill_cards:
+                card_surf, card_w, card_h = self.skill_cards[current_idx]
+                box_x = 10
+                box_y = 50
+                surf.blit(card_surf, (box_x - 2, box_y - 4))
+
+            # 3. Rodapé populado com os Status Bônus
+            surf.blit(SPRITES.get('promotion_description'), (6, 112))
+            klass = DB.classes.get(self.class_options[current_idx])
+            self._draw_stat_bonuses(surf, klass)
+
+            # 4. Modo de Inspeção Unificado
+            if self.inspector:
+                self.inspector.draw(surf)
 
         return surf
 
@@ -234,7 +433,7 @@ class ClassChangeChoiceState(PromotionChoiceState):
         elif not self.unit.generic:
             unit_prefab = DB.units.get(self.unit.nid)
             self.class_options = [c for c in unit_prefab.alternate_classes if c != self.unit.klass]
-        else:  # Just every class, lol?
+        else:
             self.class_options = [c.nid for c in DB.classes.values() if c.nid != self.unit.klass]
         if DB.constants.value('class_change_same_tier'):
             self.class_options = [c for c in self.class_options if DB.classes.get(c).tier == DB.classes.get(self.unit.klass).tier]
@@ -244,7 +443,6 @@ class ClassChangeChoiceState(PromotionChoiceState):
         game.memory['current_unit'] = self.unit
         game.memory['next_class'] = next_class
         game.memory['next_state'] = 'class_change'
-        # See PromotionChoiceState._proceed.
         if self.from_map_combat:
             game.memory['_promo_finalize_turn'] = True
         game.state.change('transition_to_with_pop')
@@ -262,9 +460,6 @@ class PromotionState(State, MockCombat):
     def start(self):
         self.create_background()
 
-        # Whether to finalize the unit's turn when the promotion finishes. Set
-        # when confirming a cancellable promotion choice, where the turn was
-        # left unfinalized up front so it could be backed out of.
         self.finalize_turn = game.memory.pop('_promo_finalize_turn', False)
 
         music = 'music_%s' % self.name
@@ -279,9 +474,7 @@ class PromotionState(State, MockCombat):
         self.unit = game.memory['current_unit']
         color = game.teams.get(self.unit.team).combat_color
 
-        # Old Right Animation
         self.right_battle_anim = battle_animation.get_battle_anim(self.unit, None)
-        # New Left Animation
         next_class = game.memory['next_class']
         self.left_battle_anim = battle_animation.get_battle_anim(self.unit, None, klass=next_class)
         self.current_battle_anim = self.right_battle_anim
@@ -291,12 +484,10 @@ class PromotionState(State, MockCombat):
         self.left_platform = engine.image_load(platform)
         self.right_platform = engine.flip_horiz(self.left_platform.copy())
 
-        # Name tag
         self.name_tag = SPRITES.get('combat_name_right_' + color).copy()
         width = FONT['text-brown'].width(self.unit.name)
         FONT['text-brown'].blit(self.unit.name, self.name_tag, (36 - width // 2, 8))
 
-        # For darken backgrounds and drawing
         self.setup_dark()
         self.last_update = engine.get_time()
         self.state = 'init'
@@ -348,8 +539,6 @@ class PromotionState(State, MockCombat):
         elif self.state == 'leave':
             if current_time > utils.frames2ms(10):
                 if self.finalize_turn:
-                    # Cancellable promotion was confirmed: the turn was not
-                    # finalized earlier, so end it cleanly now.
                     game.state.clear()
                     game.state.change('free')
                     self.unit.wait()
@@ -363,7 +552,6 @@ class PromotionState(State, MockCombat):
         if self.state != self.current_state:
             self.last_update = engine.get_time()
 
-        # Update anims
         if self.current_battle_anim:
             self.current_battle_anim.update()
 
@@ -376,7 +564,6 @@ class PromotionState(State, MockCombat):
         else:
             return surf
 
-        # Platforms
         top = WINHEIGHT - 72
         combat_surf = engine.copy_surface(self.combat_surf)
         combat_surf.blit(self.left_platform, (WINWIDTH//2 - self.left_platform.get_width(), top))
@@ -387,7 +574,6 @@ class PromotionState(State, MockCombat):
         if self.current_battle_anim:
             self.current_battle_anim.draw(surf)
 
-        # Name Tag
         combat_surf = engine.copy_surface(self.combat_surf)
         combat_surf.blit(self.name_tag, (WINWIDTH + 3 - self.name_tag.get_width(), 0))
         self.color_ui(combat_surf)
