@@ -2,14 +2,18 @@ from functools import lru_cache
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPixmap, QIcon, QPainter, QColor
 
+from typing import List
+
+from app.editor.edit_history import HISTORY
 from app.data.resources.resources import RESOURCES
-from app.data.database.database import DB
+from app.data.resources.resource_types import ResourceType as RType
 
 from app.utilities import utils
 from app.utilities.data import Data
 
 from app.data.resources.combat_palettes import Palette
-from app.extensions.custom_gui import DeletionTab, DeletionDialog
+from app.editor import reference_dialogs
+from app.extensions.custom_gui import DeletionTab
 from app.editor.custom_widgets import PaletteBox
 from app.editor.base_database_gui import DragDropCollectionModel
 from app.utilities import str_utils
@@ -34,12 +38,10 @@ def get_palette_pixmap(palette) -> QPixmap:
     colors = palette.colors.values()
     return generate_palette_pixmap(tuple(colors))
 
-def check_delete(nid: NID, window):
-    # Delete watchers
-    res = window.data.get(nid)
+def resource_deletion_tabs(nid: NID) -> List[DeletionTab]:
+    """What a deletion would affect beyond the database's own references to the palette"""
     affected_combat_anims = [anim for anim in RESOURCES.combat_anims if nid in [palette[1] for palette in anim.palettes]]
     affected_effect_anims = [anim for anim in RESOURCES.combat_effects if nid in [palette[1] for palette in anim.palettes]]
-    affected_teams = [team for team in DB.teams if nid == team.map_sprite_palette]
     deletion_tabs = []
     if affected_combat_anims:
         from app.editor.combat_animation_editor.combat_animation_model import CombatAnimModel
@@ -51,30 +53,33 @@ def check_delete(nid: NID, window):
         model = CombatEffectModel
         msg = "Deleting Palette <b>%s</b> would affect these effect animations." % nid
         deletion_tabs.append(DeletionTab(affected_effect_anims, model, msg, "Effect Animations"))
-    if affected_teams:
-        from app.editor.team_editor.team_model import TeamModel
-        model = TeamModel
-        msg = "Deleting Palette <b>%s</b> would affect these teams." % nid
-        deletion_tabs.append(DeletionTab(affected_teams, model, msg, "Teams"))
+    return deletion_tabs
 
-    if deletion_tabs:
-        swap, ok = DeletionDialog.get_swap(deletion_tabs, PaletteBox(window, exclude=res), window)
-        return swap, ok
-    return None, True
+def check_delete(nid: NID, window) -> bool:
+    res = window.data.get(nid)
+    return reference_dialogs.check_delete(RType.COMBAT_PALETTES, nid, 'Palette', window,
+                                          lambda: PaletteBox(window, exclude=res),
+                                          extra_tabs=resource_deletion_tabs(nid),
+                                          on_swap=lambda swap_nid: swap_in_resources(nid, swap_nid),
+                                          # Each animation keeps the palette's name, with no palette under it
+                                          on_clear=lambda: swap_in_resources(nid, None))
 
 def on_nid_changed(old_nid, new_nid):
-    # What uses combat palettes
-    for combat_anim in RESOURCES.combat_anims:
-        for idx, palette in enumerate(combat_anim.palettes):
-            if old_nid == palette[1]:
-                combat_anim.palettes[idx][1] = new_nid
-    for effect_anim in RESOURCES.combat_effects:
-        for idx, palette in enumerate(effect_anim.palettes):
-            if old_nid == palette[1]:
-                effect_anim.palettes[idx][1] = new_nid
-    for team in DB.teams:
-        if team.map_sprite_palette == old_nid:
-            team.map_sprite_palette = new_nid
+    HISTORY.rewrite(RType.COMBAT_PALETTES, old_nid, new_nid)
+    swap_in_resources(old_nid, new_nid)
+
+def swap_in_resources(old_nid, new_nid):
+    users = [(anim, RESOURCES.combat_anims) for anim in RESOURCES.combat_anims if old_nid in [palette[1] for palette in anim.palettes]] + \
+        [(anim, RESOURCES.combat_effects) for anim in RESOURCES.combat_effects if old_nid in [palette[1] for palette in anim.palettes]]
+    with HISTORY.modifying(users):
+        for combat_anim in RESOURCES.combat_anims:
+            for idx, palette in enumerate(combat_anim.palettes):
+                if old_nid == palette[1]:
+                    combat_anim.palettes[idx][1] = new_nid
+        for effect_anim in RESOURCES.combat_effects:
+            for idx, palette in enumerate(effect_anim.palettes):
+                if old_nid == palette[1]:
+                    effect_anim.palettes[idx][1] = new_nid
 
 class PaletteModel(DragDropCollectionModel):
     def data(self, index, role):

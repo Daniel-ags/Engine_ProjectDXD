@@ -59,7 +59,7 @@ class RegionMenu(QWidget):
             RegionMenu.__name__, 'selected_level', self.set_current_level)
         self.state_manager.subscribe_to_key(
             RegionMenu.__name__, 'ui_refresh_signal', self._refresh_view)
-        timer.get_timer().tick_elapsed.connect(self.tick)
+        timer.connect_tick(self, self.tick)
 
     def tick(self):
         status_box = self.modify_region_widget.status_box
@@ -79,12 +79,23 @@ class RegionMenu(QWidget):
 
     def set_current_level(self, level_nid):
         level = DB.levels.get(level_nid)
+        same_level = self.current_level is not None and self.current_level.nid == level_nid
+        shown = self.modify_region_widget.current
         self.current_level = level
         self._data = self.current_level.regions
         self.model._data = self._data
         self.model.update()
         self.modify_region_widget._data = self._data
-        if len(self._data):
+        if same_level and shown is not None and shown.nid in self._data:
+            # The level shown again after a change elsewhere keeps the region it showed,
+            # which an undo may have rebuilt, and the map stays where it is
+            self.modify_region_widget.setEnabled(True)
+            reg = self._data.get(shown.nid)
+            self.modify_region_widget.set_current(reg)
+            row = self._data.index(reg.nid)
+            if self.view.currentIndex().row() != row:
+                self.select(row)
+        elif len(self._data):
             self.modify_region_widget.setEnabled(True)
             reg = self._data[0]
             if reg.position:
@@ -191,7 +202,6 @@ class ModifyRegionWidget(QWidget):
         self.current = current
 
         self.nid_box = PropertyBox("Unique ID", NidLineEdit, self)
-        self.nid_box.edit.textChanged.connect(self.nid_changed)
         self.nid_box.edit.editingFinished.connect(self.nid_done_editing)
         layout.addWidget(self.nid_box)
 
@@ -252,23 +262,19 @@ class ModifyRegionWidget(QWidget):
         self.status_box.hide()
         self.terrain_box.hide()
 
-    def nid_changed(self, text):
-        if self.current:
-            self.current.nid = text
-            self.window.update_list()
-
     def nid_done_editing(self):
         if not self.current:
             return
         # Check validity of nid!
+        new_nid = self.nid_box.edit.text()
         other_nids = [d.nid for d in self._data.values()
                       if d is not self.current]
-        if self.current.nid in other_nids:
+        if new_nid in other_nids:
             QMessageBox.warning(self.window, 'Warning',
-                                'Region ID %s already in use' % self.current.nid)
-            self.current.nid = str_utils.get_next_name(
-                self.current.nid, other_nids)
-        self._data.update_nid(self.current, self.current.nid)
+                                'Region ID %s already in use' % new_nid)
+            new_nid = str_utils.get_next_name(new_nid, other_nids)
+            self.nid_box.edit.setText(new_nid)
+        self._data.update_nid(self.current, new_nid)
         self.window.update_list()
 
     def region_type_changed(self, index):

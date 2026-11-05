@@ -34,5 +34,18 @@ class EventInspectorTests(unittest.TestCase):
         self.assertEqual(len(change_music_calls), 1)
         self.assertEqual(list(change_music_calls.values())[0].parameters.get('Music'), 'Other Theme')
 
+    def test_a_script_changed_without_clearing_the_cache_is_parsed_again(self):
+        # The editor's undo puts back an event's script in place, never through the
+        # text box that clears the cache, so the inspector notices the script changed
+        event = EventPrefab('music')
+        event.source = "music;Main Theme"
+        catalog = EventCatalog([event])
+        self.assertEqual(['Main Theme'], [command.parameters.get('Music') for command in
+                                          catalog.inspector.find_all_calls_of_command(Music()).values()])
+
+        event.source = "music;Other Theme"
+        self.assertEqual(['Other Theme'], [command.parameters.get('Music') for command in
+                                           catalog.inspector.find_all_calls_of_command(Music()).values()])
+
 if __name__ == '__main__':
     unittest.main()

@@ -10,6 +10,11 @@ from app.editor.panorama_editor import panorama_model
 from app.extensions.delete_list_view import DeleteListView
 
 class PanoramaTab(QWidget):
+    # Whether what it shows comes in part from levels, overworlds or tilemaps, so a
+    # map edit in the main window changes it (EditHistoryDialog.show_changes). Such a
+    # tab says which map edits do with reads_map_edit(change_set)
+    reads_maps = False
+
     def __init__(self, data, title, model, parent=None):
         super().__init__(parent)
         self.window = parent
@@ -50,7 +55,7 @@ class PanoramaTab(QWidget):
 
         self.display = None
 
-        timer.get_timer().tick_elapsed.connect(self.tick)
+        timer.connect_tick(self, self.tick)
 
     def update_list(self):
         # self.model.dataChanged.emit(self.model.index(0), self.model.index(self.model.rowCount()))
@@ -64,7 +69,9 @@ class PanoramaTab(QWidget):
         #         self.model.dataChanged.emit(index, index, [Qt.DecorationRole])
 
     def reset(self):
-        pass
+        # A panorama an undo restored loads its images again as the model draws it
+        self.model.layoutAboutToBeChanged.emit()
+        self.model.layoutChanged.emit()
 
     @property
     def current(self):
@@ -88,8 +95,7 @@ class PanoramaDatabase(PanoramaTab):
 
     @classmethod
     def edit(cls, parent=None):
-        window = SingleResourceEditor(PanoramaDatabase, ['panoramas'], parent)
-        window.exec_()
+        return SingleResourceEditor(PanoramaDatabase, ['panoramas'], parent)
 
 # Run "python -m app.editor.panorama_editor.panorama_tab" from main directory
 if __name__ == '__main__':

@@ -36,6 +36,10 @@ class IconSheetList(QListWidget):
 
 class IconTab(QWidget):
     side_menu_enabled: bool = False
+    # Whether what it shows comes in part from levels, overworlds or tilemaps, so a
+    # map edit in the main window changes it (EditHistoryDialog.show_changes). Such a
+    # tab says which map edits do with reads_map_edit(change_set)
+    reads_maps = False
 
     def __init__(self, data, title, model, parent=None, initial_icon_nid=None):
         super().__init__(parent)
@@ -138,7 +142,8 @@ class IconTab(QWidget):
                 self.icon_sheet_list.insertItem(i, icon_sheet.nid)
 
     def reset(self):
-        pass
+        self.full_model.rebuild()
+        self.update_list()
 
     def _type(self):
         return self.__class__.__name__
@@ -227,7 +232,7 @@ class MapIconDatabase(IconTab):
 
 def get_map_icon_editor():
     database = MapIconDatabase
-    window = SingleResourceEditor(database, ['map_icons'])
+    window = SingleResourceEditor(database, ['map_icons'], picker=True)
     result = window.exec_()
     if result == QDialog.Accepted:
         selected_icon = window.tab.current
@@ -247,7 +252,7 @@ def get(width, icon_nid=None):
         database = Icon80Database
     else:
         return None, False
-    window = SingleResourceEditor(database, [resource_type], selected_icon_nid=icon_nid)
+    window = SingleResourceEditor(database, [resource_type], picker=True, selected_icon_nid=icon_nid)
     result = window.exec_()
     if result == QDialog.Accepted:
         selected_icon = window.tab.current

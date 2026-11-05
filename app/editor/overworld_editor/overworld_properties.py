@@ -1,5 +1,7 @@
 from app.editor.lib.components.validated_line_edit import NidLineEdit
 from app.data.database.database import DB
+from app.data.database.database_types import DatabaseType as DType
+from app.editor.edit_history import HISTORY
 from app.editor.sound_editor import sound_tab
 from app.editor.tile_editor import tile_tab
 from app.extensions.custom_gui import (ComboBox, PropertyBox, PropertyCheckBox,
@@ -41,7 +43,6 @@ class OverworldPropertiesMenu(QWidget):
         form.setAlignment(Qt.AlignTop)
 
         self.nid_box = PropertyBox("Overworld ID", NidLineEdit, self)
-        self.nid_box.edit.textChanged.connect(self.nid_changed)
         self.nid_box.edit.editingFinished.connect(self.nid_done_editing)
         form.addWidget(self.nid_box)
 
@@ -73,19 +74,19 @@ class OverworldPropertiesMenu(QWidget):
             self.current.music = nid
             self.music_box.edit.setText(nid)
 
-    def nid_changed(self, text):
-        self.current.nid = text
-        self.state_manager.change_and_broadcast('ui_refresh_signal', None)
-
     def nid_done_editing(self):
+        new_nid = self.nid_box.edit.text()
         other_nids = [
             overworld.nid for overworld in DB.overworlds if overworld is not self.current]
-        if self.current.nid in other_nids:
+        if new_nid in other_nids:
             QMessageBox.warning(
-                self, 'Warning', 'Level ID %s already in use' % self.current.nid)
-            self.current.nid = str_utils.get_next_int(
-                self.current.nid, other_nids)
-        DB.overworlds.update_nid(self.current, self.current.nid)
+                self, 'Warning', 'Level ID %s already in use' % new_nid)
+            new_nid = str_utils.get_next_int(new_nid, other_nids)
+            self.nid_box.edit.setText(new_nid)
+        # Nothing in the database names an overworld, but the rename warns of the event
+        # script lines that still do
+        HISTORY.rename(DB.overworlds, self.current, new_nid,
+                       lambda old_nid, new_nid: HISTORY.rewrite(DType.OVERWORLDS, old_nid, new_nid))
         self.state_manager.change_and_broadcast('ui_refresh_signal', None)
 
     def title_changed(self, text):

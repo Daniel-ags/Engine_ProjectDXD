@@ -122,7 +122,9 @@ class FontIndex:
 
 @dataclass(slots=True)
 class Font(WithResources, Prefab):
-    nid: str                                                                             #: NID of the font.
+    path_fields = ('file_name',)
+
+    nid: str                                                                            #: NID of the font.
     fallback_ttf: str = None                                                             #: name of the .ttf file (in this directory) to be used as a fallback if the main font cannot render anything
     fallback_size: int = 16                                                              #: what size the fallback font should be rendered at. This may well differ depending on the font, especially at these lower resolutions!
     default_color: Optional[str] = None                                                  #: The palette text is rendered in when no color is asked for.

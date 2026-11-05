@@ -11,6 +11,7 @@ from app.engine.unit_sprite import load_map_sprite
 from app.engine.graphics.text.text_renderer import render_text, text_width, rendered_text_width
 from app.utilities.enums import HAlignment
 from app.engine.game_menus.icon_options import UsesDisplayConfig
+from app.engine.info_menu import multi_desc
 
 class EmptyOption():
     def __init__(self, idx):
@@ -335,13 +336,14 @@ class ItemOption(BasicOption):
     def get_help_box(self):
         owner = game.get_unit(self.item.owner_nid)
         if item_system.is_weapon(owner, self.item) or item_system.is_spell(owner, self.item):
-            return help_menu.ItemHelpDialog(self.item)
+            first_page = help_menu.ItemHelpDialog(self.item)
         else:
             text = text_funcs.translate_and_text_evaluate(
                 self.item.desc,
-                unit=game.get_unit(self.item.owner_nid),
+                unit=owner,
                 self=self.item)
-            return help_menu.HelpDialog(text)
+            first_page = help_menu.HelpDialog(text)
+        return multi_desc.PagedHelpDialog(first_page, self.item, multi_desc.PageType.ITEM, owner)
 
     def draw(self, surf, x, y):
         icon = icons.get_icon(self.item)
@@ -706,13 +708,14 @@ class SkillOption(BasicOption):
         return 16
 
     def get_help_box(self):
+        owner = game.get_unit(self.skill.owner_nid)
         text = text_funcs.translate_and_text_evaluate(
                self.skill.desc,
-               unit=game.get_unit(self.skill.owner_nid),
+               unit=owner,
                self=self.skill,
                local_args={'skill': self.skill})
         # The option draws the skill's name itself, so the help box does not need to
-        return help_menu.HelpDialog(text)
+        return multi_desc.PagedHelpDialog(help_menu.HelpDialog(text), self.skill, multi_desc.PageType.SKILL, owner)
 
     def draw(self, surf, x, y):
         icon = icons.get_icon(self.skill)

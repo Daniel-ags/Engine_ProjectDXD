@@ -28,6 +28,9 @@ class CombatAnimationCommand():
     def has_effect(self) -> bool:
         return self.attr and 'effect' in self.attr
 
+    def has_sound(self) -> bool:
+        return self.attr and 'sound' in self.attr
+
     def get_frames(self) -> list:
         return [self.value[idx] for idx in range(len(self.attr)) if self.attr[idx] == 'frame']
 

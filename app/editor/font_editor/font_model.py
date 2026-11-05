@@ -8,8 +8,12 @@ from PyQt5.QtGui import QImage, QPixmap, QIcon, QPainter
 
 from app.data.resources.fonts import Font
 from app.data.resources.fonts import FontIndex
+from app.data.resources.resource_types import ResourceType as RType
 from app.data.resources.resources import RESOURCES
+from app.editor import reference_dialogs
 from app.editor.base_database_gui import ResourceCollectionModel
+from app.editor.edit_history import HISTORY
+from app.editor.file_manager.staging import STAGING
 from app.editor.settings import MainSettingsController
 from app.utilities import str_utils
 from app.utilities.typing import Color4
@@ -81,6 +85,18 @@ def detect_base_palette(font: Font) -> Optional[str]:
         if palette and all(tuple(color) in sheet_colors for color in palette):
             return name
     return None
+
+
+def pin_palettes(font: Font) -> None:
+    """Records which palette is the sheet's own, and which text defaults to, for a font
+    saved before either was always set: so moving the default color later cannot
+    mistake the outgoing default for the sheet. Run as a project loads, before the
+    edit history starts, so neither is taken for an edit."""
+    if font.palettes and not font.base_color:
+        font.base_color = detect_base_palette(font) or font.default_color
+    if font.palettes and not font.default_color:
+        # A default naming no palette leaves the engine nothing to render
+        font.default_color = next(iter(font.palettes))
 
 
 def seed_default_palette(font: Font) -> bool:
@@ -188,14 +204,21 @@ class FontModel(ResourceCollectionModel):
         nid = os.path.splitext(os.path.basename(fn))[0]
         nid = str_utils.get_next_name(nid, [d.nid for d in RESOURCES.fonts])
         new_font = Font(nid=nid)
-        new_font.set_full_path(file_name_no_ext)
+        version_dir = STAGING.stage_files([fn, idx_path])
+        new_font.set_full_path(os.path.join(version_dir, os.path.basename(file_name_no_ext)))
         seed_default_palette(new_font)
         RESOURCES.fonts.append(new_font)
         settings.set_last_open_path(os.path.dirname(fn))
         return new_font
 
     def delete(self, idx):
-        super().delete(idx)
+        # Nothing in the database names a font, but event scripts may
+        nid = self._data[idx].nid
+        with HISTORY.change_set('Delete %s' % nid, origin=self.window):
+            if reference_dialogs.check_delete(RType.FONTS, nid, 'Font', self.window):
+                super().delete(idx)
 
     def on_nid_changed(self, old_nid, new_nid):
         self._icon_cache.pop(old_nid, None)
+        # So the event script lines still naming the old nid are pointed out
+        HISTORY.rewrite(RType.FONTS, old_nid, new_nid)

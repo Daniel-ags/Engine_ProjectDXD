@@ -1,5 +1,4 @@
 import os
-import shutil
 
 from PyQt5.QtWidgets import QFileDialog, QMessageBox, QProgressDialog
 from PyQt5.QtCore import Qt
@@ -9,13 +8,11 @@ from app.data.resources.portraits import PortraitPrefab, GBA_PORTRAIT_WIDTH, GBA
 from app.data.resources.resources import RESOURCES
 
 from app.utilities.data import Data
-from app.data.database.database import DB
 
-from app.extensions.custom_gui import DeletionTab, DeletionDialog
 from app.editor.base_database_gui import ResourceCollectionModel
+from app.editor.file_manager.staging import STAGING
 from app.editor.settings import MainSettingsController
 from app.utilities import str_utils, utils
-from app.utilities.typing import NID
 
 import app.editor.utilities as editor_utilities
 
@@ -25,9 +22,7 @@ def get_chibi(portrait_nid):
         return None
     if not res.pixmap:
         res.pixmap = QPixmap(res.full_path)
-    pixmap = res.pixmap.copy(*res.get_minimug())
-    pixmap = QPixmap.fromImage(editor_utilities.convert_colorkey(pixmap.toImage()))
-    return pixmap
+    return editor_utilities.cut_icon(res.pixmap, *res.get_minimug())
 
 def auto_frame_portrait(portrait: PortraitPrefab, progress_dialog: QProgressDialog = None):
     def test_similarity(im1: QImage, im2: QImage, size: tuple) -> int:
@@ -90,20 +85,9 @@ def auto_colorkey(portrait: PortraitPrefab):
     im = portrait.pixmap.toImage()
     if im.pixel(0, 0) != editor_utilities.qCOLORKEY:
         im = editor_utilities.color_convert(im, {im.pixel(0, 0): editor_utilities.qCOLORKEY})
-        # since we're messing with data, let's try to be atomic
-        try:
-            shutil.copyfile(portrait.full_path, portrait.full_path + '.bak')
-        except:
-            raise IOError("failed to create backup, aborting auto-colorkey")
-        os.remove(portrait.full_path)
-        try:
-            im.save(portrait.full_path)
-            portrait.pixmap = QPixmap(portrait.full_path)
-            portrait.image = None # reset this so the engine will know to reload
-        except:
-            shutil.move(portrait.full_path + '.bak', portrait.full_path)
-            raise IOError("some file operation failed, aborting auto-colorkey")
-        os.remove(portrait.full_path + '.bak')
+        portrait.full_path = STAGING.write_file(os.path.basename(portrait.full_path), im.save)
+        portrait.pixmap = QPixmap(portrait.full_path)
+        portrait.image = None # reset this so the engine will know to reload
 
 def import_gba_portrait(portrait: PortraitPrefab) -> None:
     if not portrait.pixmap:
@@ -124,15 +108,10 @@ def import_gba_portrait(portrait: PortraitPrefab) -> None:
     painter.drawPixmap( 32,  0, face_frame)
     painter.end()
 
-    try:
-        tokens = portrait.full_path.split('.')
-        new_path = '%s_lt.%s' % ('.'.join(tokens[:-1]), tokens[-1])
-        new_pix.save(new_path)
-        portrait.pixmap = QPixmap(new_path)
-        portrait.full_path = new_path
-        portrait.image = None # reset this so the engine will know to reload
-    except:
-        raise IOError("some file operation failed, aborted")
+    name = '%s_lt.png' % os.path.splitext(os.path.basename(portrait.full_path))[0]
+    portrait.full_path = STAGING.write_file(name, new_pix.save)
+    portrait.pixmap = QPixmap(portrait.full_path)
+    portrait.image = None # reset this so the engine will know to reload
 
 def create_new(window):
     settings = MainSettingsController()
@@ -147,7 +126,7 @@ def create_new(window):
                 existing_nids = [d.nid for d in RESOURCES.portraits] + [p.nid for p in new_portraits]
                 nid = str_utils.get_next_name(nid, existing_nids)
                 if pix.width() >= GBA_PORTRAIT_WIDTH and pix.height() >= GBA_PORTRAIT_HEIGHT:
-                    new_portrait = PortraitPrefab(nid, fn, pix)
+                    new_portrait = PortraitPrefab(nid, STAGING.stage_file(fn), pix)
                     if pix.width() == GBA_PORTRAIT_WIDTH and pix.height() == GBA_PORTRAIT_HEIGHT:   # must be GBA format then
                         # Swap to use colorkey color if it's not
                         auto_colorkey(new_portrait)
@@ -166,31 +145,6 @@ def create_new(window):
         parent_dir = os.path.split(fns[-1])[0]
         settings.set_last_open_path(parent_dir)
     return new_portraits
-
-def check_delete(nid: NID, window) -> bool:
-    # Check to see what is using me?
-    affected_units = [unit for unit in DB.units if unit.portrait_nid == nid]
-    if affected_units:
-        from app.editor.unit_editor.unit_model import UnitModel
-        model = UnitModel
-        msg = "Deleting Portrait <b>%s</b> would affect these units." % nid
-        deletion_tab = DeletionTab(affected_units, model, msg, "Units")
-        return DeletionDialog.inform([deletion_tab], window)
-    return True
-
-def on_delete(nid: NID):
-    # What uses portraits
-    # Units
-    for unit in DB.units:
-        if unit.portrait_nid == nid:
-            unit.portrait_nid = None
-
-def on_nid_changed(old_nid, new_nid):
-    # What uses portraits
-    # Units (Later Dialogues)
-    for unit in DB.units:
-        if unit.portrait_nid == old_nid:
-            unit.portrait_nid = new_nid
 
 class PortraitModel(ResourceCollectionModel):
     def data(self, index, role):

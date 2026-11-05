@@ -5,6 +5,7 @@ import tempfile
 import unittest
 
 from app.tests import qt_headless  # noqa: F401 -- before any QApplication
+from app.tests.staging_harness import use_temporary_staging
 
 from PyQt5.QtGui import QImage, qRgb
 from PyQt5.QtWidgets import QApplication
@@ -23,6 +24,7 @@ class LegacyAnimImportPaletteTests(unittest.TestCase):
 
     def setUp(self) -> None:
         self.app = QApplication.instance() or QApplication(sys.argv)
+        use_temporary_staging(self)
         self.tmp = tempfile.mkdtemp()
         self.blue = combat_palettes.Palette('TestLegacy_GenericBlue')
         self.blue.colors = {(0, 0): COLORKEY, (1, 0): (40, 80, 200), (2, 0): (16, 16, 16)}

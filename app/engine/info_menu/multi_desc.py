@@ -3,9 +3,12 @@ from __future__ import annotations
 from app.engine.utils.ltcache import ltcached
 import logging
 
-from app.engine import item_system, skill_system, text_funcs
+from app.engine import engine, item_system, skill_system, text_funcs
+from app.engine.dialog import DialogState
+from app.engine.graphics.text.text_renderer import render_text
 from app.engine.help_menu import HelpDialog, ItemHelpDialog, SkillHelpDialog
 from app.engine.info_menu.multi_desc_utils import InfoSource, Page, PageType, RawPages
+from app.utilities.enums import HAlignment
 
 from typing import Optional, TYPE_CHECKING
 if TYPE_CHECKING:
@@ -26,19 +29,16 @@ def build_dialog_list(obj: SkillObject | ItemObject,
             page_type: The type of page that the initial object corresponds to.
             unit: The unit used in the context of this help dialog.
     """
-    boxes: list[HelpDialog] = []
-    local_seen: set[Page] = set()
     root: InfoSource = InfoSource(obj, page_type)
-        
-    root_box = get_dlg_box(root, page_type, unit, is_first=True)   
-    boxes.append(root_box)
-    local_seen.add((root.nid, page_type))
-    
-    pages = _collect(root, page_type, unit)
-    if not pages:
-        return boxes
-    
-    for nid, p_type in pages:
+    root_box = get_dlg_box(root, page_type, unit, is_first=True)
+    return [root_box] + _build_further_pages(root, page_type, unit)
+
+def _build_further_pages(root: InfoSource, page_type: PageType, unit: Optional[UnitObject]) -> list[HelpDialog]:
+    """The help boxes of every page the root's multi desc components lead to, without the root's own."""
+    boxes: list[HelpDialog] = []
+    local_seen: set[Page] = {(root.nid, page_type)}
+
+    for nid, p_type in _collect(root, page_type, unit):
         if nid is None:
             continue
         if (nid, p_type) in local_seen:
@@ -125,3 +125,55 @@ def get_dlg_box(source: InfoSource, page_type: PageType, unit: Optional[UnitObje
         return HelpDialog(text_funcs.translate_and_text_evaluate(source.desc, unit=unit), source.name)
     else:
         return HelpDialog(text_funcs.translate_and_text_evaluate(source.desc, unit=unit), name=source.name)
+
+def draw_page_number(surf, help_box: HelpDialog, top_left: tuple[int, int], box_at_top: bool, page: int, num_pages: int) -> None:
+    """Numbers the page of a help box drawn at top_left, once the box's text has started."""
+    if help_box.dlg and help_box.dlg.state == DialogState.TRANSITION_IN:
+        return
+    x = top_left[0] + help_box.get_width() - 16
+    y = top_left[1] + help_box.get_height() - 8 if box_at_top else top_left[1] - 4
+    render_text(surf, ['small-yellow'], ['%d/%d' % (page + 1, num_pages)], [], (x, y), HAlignment.RIGHT)
+
+class PagedHelpDialog(HelpDialog):
+    """
+    The help box of a menu option: the option's own box, followed by the pages
+    the object's multi desc components lead to.
+
+    Menus build the help box of every option up front, and laying out a help box is
+    slow, so the further pages are only built once the help box is first shown.
+    """
+    def __init__(self, first_page: HelpDialog, obj: SkillObject | ItemObject, page_type: PageType, unit: Optional[UnitObject]):
+        self.first_page = first_page
+        self.obj = obj
+        self.page_type = page_type
+        self.unit = unit
+        self.pages: Optional[list[HelpDialog]] = None
+        self.page = 0
+        self.last_time = 0
+
+    def get_pages(self) -> list[HelpDialog]:
+        if self.pages is None:
+            self.pages = [self.first_page] + _build_further_pages(InfoSource(self.obj, self.page_type), self.page_type, self.unit)
+        return self.pages
+
+    def next_page(self) -> bool:
+        pages = self.get_pages()
+        if len(pages) <= 1:
+            return False
+        self.page = (self.page + 1) % len(pages)
+        self.last_time = engine.get_time()
+        return True
+
+    def draw(self, surf, pos, right=False):
+        time = engine.get_time()
+        if time > self.last_time + 1000:  # Not shown for a while, so the player has moved on from it
+            self.page = 0
+        self.last_time = time
+
+        pages = self.get_pages()
+        help_box = pages[self.page]
+        surf = help_box.draw(surf, pos, right)
+        if len(pages) > 1:
+            top_left = help_box.top_left(pos, right)
+            draw_page_number(surf, help_box, top_left, top_left[1] != pos[1], self.page, len(pages))
+        return surf

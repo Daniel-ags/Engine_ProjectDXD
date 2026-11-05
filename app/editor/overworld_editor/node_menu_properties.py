@@ -8,7 +8,6 @@ from app.editor.custom_widgets import EventBox
 from app.utilities.data import Data
 from app.utilities import str_utils
 from app.extensions.custom_gui import PropertyBox, PropertyCheckBox, RightClickListView
-from app.data.database.database import DB
 
 class NodeEventPropertiesMenu(QWidget):
     def __init__(self, state_manager, parent=None):
@@ -57,9 +56,15 @@ class NodeEventPropertiesMenu(QWidget):
             opt = self._data[curr.row()]
             self.modify_option_widget.set_current(opt)
 
-    def on_node_changed(self):
+    def on_node_changed(self, same_node: bool):
+        """Shows the node's first option, or, when the node shown is the same one shown
+        again, as after a change elsewhere, the option it showed"""
         if self._data:
-            opt = self._data[0]
+            shown = self.modify_option_widget.current
+            opt = self._data.get(shown.nid) if same_node and shown is not None else None
+            if opt is None:
+                opt = self._data[0]
+            self.select(self._data.index(opt.nid))
             self.modify_option_widget.set_current(opt)
 
     def get_current(self):
@@ -138,7 +143,6 @@ class ModifyOptionsWidget(QWidget):
         self.current = current
 
         self.opt_nid_box = PropertyBox("Menu Option ID", NidLineEdit, self)
-        self.opt_nid_box.edit.textChanged.connect(self.option_nid_changed)
         self.opt_nid_box.edit.editingFinished.connect(self.option_nid_done_editing)
         layout.addWidget(self.opt_nid_box)
 
@@ -147,7 +151,7 @@ class ModifyOptionsWidget(QWidget):
         layout.addWidget(self.option_name_box)
 
         self.event_box = EventBox(self)
-        self.event_box.edit.currentIndexChanged.connect(self.event_changed)
+        self.event_box.edit.activated.connect(self.event_changed)
         layout.addWidget(self.event_box)
 
         self.visible_box = PropertyCheckBox("Visible in menu?", QCheckBox, self)
@@ -158,23 +162,19 @@ class ModifyOptionsWidget(QWidget):
         self.enabled_box.edit.stateChanged.connect(self.selectable_changed)
         layout.addWidget(self.enabled_box)
 
-    def option_nid_changed(self, text):
-        if self.current:
-            self.current.nid = text
-            self.window.update_list()
-
     def option_nid_done_editing(self):
         if not self.current:
             return
         # Check validity of nid!
+        new_nid = self.opt_nid_box.edit.text()
         other_nids = [d.nid for d in self._data.values()
                       if d is not self.current]
-        if self.current.nid in other_nids:
+        if new_nid in other_nids:
             QMessageBox.warning(self.window, 'Warning',
-                                'Option ID %s already in use' % self.current.nid)
-            self.current.nid = str_utils.get_next_name(
-                self.current.nid, other_nids)
-        self._data.update_nid(self.current, self.current.nid)
+                                'Option ID %s already in use' % new_nid)
+            new_nid = str_utils.get_next_name(new_nid, other_nids)
+            self.opt_nid_box.edit.setText(new_nid)
+        self._data.update_nid(self.current, new_nid)
         self.window.update_list()
 
     def sub_nid_changed(self, text):
@@ -182,7 +182,9 @@ class ModifyOptionsWidget(QWidget):
         self.window.update_list()
 
     def event_changed(self, index):
-        self.current.event = self.event_box.edit.currentText()
+        # By nid, which a rename of the event rewrites; the box shows only names,
+        # which events of different levels share
+        self.current.event = self.event_box.model._data[index].nid
 
     def visibility_changed(self, state):
         self.current.visible = bool(state)
@@ -192,17 +194,16 @@ class ModifyOptionsWidget(QWidget):
 
     def set_current(self, current):
         self.current = current
-        if DB.events:
-            #This currently forces OW menu events to be limited to Global events
-            #My preference would be to have OW be its own category of event, but that is not my judgement call to make
-            self.event_box.model._data = [event for event in DB.events.get_by_level(None)]
-            self.event_box.model.layoutChanged.emit()
+        self.event_box.refresh()
         self.opt_nid_box.edit.setText(current.nid)
         self.option_name_box.edit.setText(current.option_name)
-        if current.event:
-            self.event_box.edit.setValue(current.event)
-        else:
-            self.event_box.edit.setValue(None)
+        # Options saved before they named events by nid name them by name, as the
+        # engine also accepts
+        events = self.event_box.model._data
+        index = next((i for i, event in enumerate(events) if event.nid == current.event), None)
+        if index is None:
+            index = next((i for i, event in enumerate(events) if event.name == current.event), -1)
+        self.event_box.edit.setCurrentIndex(index)
         self.visible_box.edit.setChecked(bool(current.visible))
         self.enabled_box.edit.setChecked(bool(current.enabled))
 

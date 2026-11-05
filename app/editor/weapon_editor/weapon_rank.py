@@ -4,70 +4,43 @@ from PyQt5.QtCore import Qt
 from app.utilities import str_utils
 from app.data.database.database import DB
 
-from app.extensions.custom_gui import ComboBox, PropertyBox, DeletionTab, DeletionDialog
-from app.extensions.list_dialogs import MultiAttrListDialog
+from app.extensions.custom_gui import ComboBox, DeletionTab
 from app.extensions.list_models import MultiAttrListModel, DefaultMultiAttrListModel
-from app.data.database.components import ComponentType, swap_values
 
+from app.editor.edit_history import HISTORY
+from app.editor.recorded_list_dialog import RecordedListDialog
+from app.data.database.database_types import DatabaseType as DType
 from app.data.database.weapons import WeaponRank
-from app.data.database import item_components, skill_components
+from app.editor import reference_dialogs
+from app.editor.custom_widgets import ObjBox
+from app.utilities.data import Data
 
 class WeaponRankMultiModel(MultiAttrListModel):
     def delete(self, idx):
-        # Check to make sure nothing else is using this rank
         element = DB.weapon_ranks[idx]
-        affected_weapons = [weapon for weapon in DB.weapons if
-                            any(adv.weapon_rank == element.rank for adv in weapon.rank_bonus) or
-                            any(adv.weapon_rank == element.rank for adv in weapon.advantage) or
-                            any(adv.weapon_rank == element.rank for adv in weapon.disadvantage)]
-        affected_items = item_components.get_items_using(ComponentType.WeaponRank, element.rank, DB)
-        affected_skills = skill_components.get_skills_using(ComponentType.WeaponRank, element.rank, DB)
-        affected_classes = [klass for klass in DB.classes if 
+        # A class's weapon experience cap names a rank by its requirement, not by nid
+        affected_classes = [klass for klass in DB.classes if
                             any([wexp_gain.cap == element.requirement for wexp_gain in klass.wexp_gain.values()])]
-
-        deletion_tabs = []
-        if affected_weapons:
-            from app.editor.weapon_editor.weapon_model import WeaponModel
-            model = WeaponModel
-            msg = "Deleting WeaponRank <b>%s</b> would affect these weapons." % element.rank
-            deletion_tabs.append(DeletionTab(affected_weapons, model, msg, "Weapons"))
-        if affected_items:
-            from app.editor.item_editor.item_model import ItemModel
-            model = ItemModel
-            msg = "Deleting WeaponRank <b>%s</b> would affect these items." % element.rank
-            deletion_tabs.append(DeletionTab(affected_items, model, msg, "Items"))
-        if affected_items:
-            from app.editor.skill_editor.skill_model import SkillModel
-            model = SkillModel
-            msg = "Deleting WeaponRank <b>%s</b> would affect these skills." % element.rank
-            deletion_tabs.append(DeletionTab(affected_skills, model, msg, "Skills"))
+        extra_tabs = []
         if affected_classes:
             from app.editor.class_editor.class_model import ClassModel
-            model = ClassModel
             msg = "Deleting WeaponRank <b>%s</b> would modify these classes." % element.rank
-            deletion_tabs.append(DeletionTab(affected_classes, model, msg, "Classes"))
-        
-        if deletion_tabs:
-            combo_box = PropertyBox("Rank", ComboBox, self.window)
-            objs = [rank for rank in DB.weapon_ranks if rank.rank != element.rank]
-            combo_box.edit.addItems([rank.rank for rank in objs])
-            obj_idx, ok = DeletionDialog.get_simple_swap(deletion_tabs, combo_box)
-            
-            if ok:
-                swap = objs[obj_idx]
-                for weapon in affected_weapons:
-                    weapon.rank_bonus.swap_rank(element.rank, swap.rank)
-                    weapon.advantage.swap_rank(element.rank, swap.rank)
-                    weapon.disadvantage.swap_rank(element.rank, swap.rank)
-                swap_values(DB.items.values(), ComponentType.WeaponRank, element.rank, swap.rank)
-                swap_values(DB.skills.values(), ComponentType.WeaponRank, element.rank, swap.rank)
+            extra_tabs.append(DeletionTab(affected_classes, ClassModel, msg, "Classes"))
+
+        def swap_caps(swap_nid):
+            swap = DB.weapon_ranks.get(swap_nid)
+            with HISTORY.modifying([(klass, DB.classes) for klass in affected_classes]):
                 for klass in affected_classes:
-                    for weapon_type, wexp_gain in klass.wexp_gain.items():
+                    for wexp_gain in klass.wexp_gain.values():
                         if wexp_gain.cap == element.requirement:
                             wexp_gain.cap = swap.requirement
-            else:
-                return
-        super().delete(idx)
+
+        others = Data([rank for rank in DB.weapon_ranks if rank is not element])
+        with HISTORY.change_set('Delete %s' % element.rank):
+            if reference_dialogs.check_delete(DType.WEAPON_RANKS, element.rank, 'Weapon Rank', self.window,
+                                              lambda: ObjBox("Rank", reference_dialogs.NidListModel, lambda: others, self.window),
+                                              extra_tabs=extra_tabs, on_swap=swap_caps):
+                super().delete(idx)
 
     def create_new(self):
         nids = DB.weapon_ranks.keys()
@@ -79,19 +52,17 @@ class WeaponRankMultiModel(MultiAttrListModel):
     def on_attr_changed(self, data, attr, old_value, new_value):
         if attr == 'rank':
             self._data.update_nid(data, new_value)
-            for weapon in DB.weapons:
-                weapon.rank_bonus.swap_rank(old_value, new_value)
-                weapon.advantage.swap_rank(old_value, new_value)
-                weapon.disadvantage.swap_rank(old_value, new_value)
-            swap_values(DB.items.values(), ComponentType.WeaponRank, old_value, new_value)
-            swap_values(DB.skills.values(), ComponentType.WeaponRank, old_value, new_value)
+            HISTORY.rewrite(DType.WEAPON_RANKS, old_value, new_value)
         elif attr == 'requirement':
-            for klass in DB.classes.values():
-                for weapon_type, wexp_gain in klass.wexp_gain.items():
-                    if wexp_gain.cap == old_value:
-                        wexp_gain.cap = new_value
+            with HISTORY.modifying([(klass, DB.classes) for klass in DB.classes]):
+                # With the caps that name it, as one undo step
+                data.requirement = new_value
+                for klass in DB.classes.values():
+                    for weapon_type, wexp_gain in klass.wexp_gain.items():
+                        if wexp_gain.cap == old_value:
+                            wexp_gain.cap = new_value
 
-class RankDialog(MultiAttrListDialog):
+class RankDialog(RecordedListDialog):
     @classmethod
     def create(cls):
         def deletion_func(model, index):

@@ -47,21 +47,11 @@ class HighlightBlockNeverRaisesTests(unittest.TestCase):
 
 
 
-class DialogCommandHighlightTests(unittest.TestCase):
-    '''
-    In dialog text, dialog commands like {w} and line breaks (|) stand out in the
-    special text color. Python events used to color the whole line of dialog
-    the plain text color
-    '''
-
+class HighlightColorsTestCase(unittest.TestCase):
     def setUp(self) -> None:
         import sys
         from PyQt5.QtWidgets import QApplication
         self.app = QApplication.instance() or QApplication(sys.argv)
-        from app import dark_theme
-        style = dark_theme.get_theme().event_syntax_highlighting()
-        self.text_color = style.text_color
-        self.special_color = style.special_text_color
 
     def colors(self, highlighter_type, script, line_no):
         """Map each character of the given line to its highlighted foreground color"""
@@ -76,6 +66,115 @@ class DialogCommandHighlightTests(unittest.TestCase):
             for i in range(fmt_range.start, fmt_range.start + fmt_range.length):
                 colors[i] = fmt_range.format.foreground().color()
         return block.text(), colors
+
+
+class PythonStringHighlightTests(HighlightColorsTestCase):
+    '''
+    Strings and comments are found left to right, so a quote or # inside one
+    of them starts nothing
+    '''
+
+    def setUp(self) -> None:
+        super().setUp()
+        from app import dark_theme
+        style = dark_theme.get_theme().python_syntax_highlighting()
+        self.string_color = style.string
+        self.triple_color = style.string2
+        self.comment_color = style.comment
+        self.brace_color = style.brace
+
+    def assert_spans(self, script, spans, line_no=0):
+        """Each (text, color) names the first place text appears on the line
+        and the color all of it has; a color of None means no color of its own"""
+        from app.editor.event_editor.py_syntax import PythonHighlighter
+        line, colors = self.colors(PythonHighlighter, script, line_no)
+        for text, color in spans:
+            start = line.index(text)
+            for i in range(start, start + len(text)):
+                self.assertEqual(color, colors.get(i), (line, text, line[i]))
+
+    def test_apostrophe_in_double_quoted_string(self):
+        self.assert_spans('''check_default("O'Neill",['Eirika'])''', [
+            ('''"O'Neill"''', self.string_color),
+            (',', None),
+            ('[', self.brace_color),
+            ("'Eirika'", self.string_color),
+            ('])', self.brace_color),
+        ])
+
+    def test_double_quote_in_single_quoted_string(self):
+        self.assert_spans("""f('a"b', x, 'c"d')""", [
+            ("""'a"b'""", self.string_color),
+            (', x, ', None),
+            ("""'c"d'""", self.string_color),
+        ])
+
+    def test_hash_in_string_is_not_a_comment(self):
+        self.assert_spans('''x = "a # b" + 'c' # d''', [
+            ('"a # b"', self.string_color),
+            (' + ', None),
+            ("'c'", self.string_color),
+            ('# d', self.comment_color),
+        ])
+
+    def test_quotes_in_comment_are_not_strings(self):
+        self.assert_spans('''# don't "stop''', [('''# don't "stop''', self.comment_color)])
+
+    def test_escaped_quote_stays_in_string(self):
+        self.assert_spans(r'''x = 'it\'s' + y''', [
+            (r"""'it\'s'""", self.string_color),
+            (' + y', None),
+        ])
+
+    def test_unterminated_quote_colors_nothing(self):
+        self.assert_spans("x = don't + y", [("don't + y", None)])
+
+    def test_triple_quotes_in_string_start_nothing(self):
+        script = """x = "'''"\ny = 1 + z"""
+        self.assert_spans(script, [('''"\'\'\'"''', self.string_color)])
+        self.assert_spans(script, [('y', None), (' + z', None)], line_no=1)
+
+    def test_triple_quotes_in_comment_start_nothing(self):
+        script = "# '''\ny"
+        self.assert_spans(script, [('y', None)], line_no=1)
+
+    def test_triple_quoted_string_spans_lines(self):
+        script = """x = '''don't\n# "not" a comment\nend''' + "it's" # done\ny"""
+        self.assert_spans(script, [("'''don't", self.triple_color)])
+        self.assert_spans(script, [('# "not" a comment', self.triple_color)], line_no=1)
+        self.assert_spans(script, [
+            ("end'''", self.triple_color),
+            (' + ', None),
+            ('''"it's"''', self.string_color),
+            ('# done', self.comment_color),
+        ], line_no=2)
+        self.assert_spans(script, [('y', None)], line_no=3)
+
+    def test_emoji_counts_as_two_positions(self):
+        from app.editor.event_editor.py_syntax import PythonHighlighter
+        _, colors = self.colors(PythonHighlighter, 'x = \U0001F600 + "abc" + y', 0)
+        string_positions = [i for i, color in colors.items() if color == self.string_color]
+        self.assertEqual(list(range(9, 14)), string_positions)
+
+    def test_other_triple_quote_does_not_close_string(self):
+        script = '''"""a\n\'\'\'b\nc"""d'''
+        self.assert_spans(script, [("\'\'\'b", self.triple_color)], line_no=1)
+        self.assert_spans(script, [('c"""', self.triple_color), ('d', None)], line_no=2)
+
+
+class DialogCommandHighlightTests(HighlightColorsTestCase):
+    '''
+    In dialog text, dialog commands like {w} and line breaks (|) stand out in the
+    special text color. Python events used to color the whole line of dialog
+    the plain text color
+    '''
+
+    def setUp(self) -> None:
+        super().setUp()
+        from app import dark_theme
+        style = dark_theme.get_theme().event_syntax_highlighting()
+        self.text_color = style.text_color
+        self.special_color = style.special_text_color
 
     def assert_dialog_colors(self, line, colors, dialog):
         start = line.index(dialog)

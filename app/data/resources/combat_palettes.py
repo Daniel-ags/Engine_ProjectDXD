@@ -15,6 +15,7 @@ from app.constants import COLORKEY
 from app.utilities.data_order import parse_order_keys_file
 
 class Palette(Prefab, WithResources):
+    path_fields = ()  # Only colors, which save() holds
     def __init__(self, nid):
         self.nid = nid
         # Mapping of color indices to true colors

@@ -13,7 +13,7 @@ from PyQt5.QtGui import QPixmap, QPainter, QImage, QColor, QPen, QBrush
 
 from app.constants import TILEWIDTH, TILEHEIGHT
 from app.data.resources.resources import RESOURCES
-from app.extensions.custom_gui import PropertyBox
+from app.extensions.custom_gui import ComboBox, PropertyBox
 from app.extensions.spinbox_xy import SpinBoxXY
 
 from app.utilities import utils
@@ -115,16 +115,22 @@ class PreviewSpecification(QWidget):
         unit_section = QHBoxLayout()
         self.unit_check = QCheckBox("Show Unit", self)
         self.unit_check.stateChanged.connect(self.unit_toggled)
-        self.unit_box = QComboBox(self)
+        self.unit_box = ComboBox(self)
         self.unit_box.setEnabled(False)
-        for map_sprite in RESOURCES.map_sprites:
-            self.unit_box.addItem(map_sprite.nid)
+        self.list_units()
         self.unit_box.currentIndexChanged.connect(lambda val: self.preview_changed.emit())
         unit_section.addWidget(self.unit_check)
         unit_section.addWidget(self.unit_box, Qt.AlignLeft)
         layout.addLayout(unit_section)
 
         self.setLayout(layout)
+
+    def list_units(self):
+        """Lists the map sprites as they are now, keeping the one chosen if it is still there"""
+        chosen = self.unit_box.currentText()
+        self.unit_box.set_choices(RESOURCES.map_sprites.keys())
+        if chosen in RESOURCES.map_sprites:
+            self.unit_box.setValue(chosen)
 
     def unit_toggled(self, val):
         self.unit_box.setEnabled(self.show_unit())
@@ -215,6 +221,9 @@ class FrameList(QListWidget):
         return s
 
     def frame_time_changed(self, idx: int, val: int):
+        if len(self.current.frame_times) <= idx:
+            # The frames shown with no time of their own show 1
+            self.current.frame_times.extend([1] * (idx + 1 - len(self.current.frame_times)))
         self.current.frame_times[idx] = val
 
     def set_current(self, current):
@@ -230,9 +239,7 @@ class FrameList(QListWidget):
             top = (num // self.current.frame_x) * height
             base_image = self.current.pixmap.copy(left, top, width, height)
             
-            if len(self.current.frame_times) < self.current.num_frames:
-                self.current.frame_times.extend([1]*(self.current.num_frames - len(self.current.frame_times)))
-            frame_time = self.current.frame_times[num]
+            frame_time = self.current.frame_times[num] if num < len(self.current.frame_times) else 1
             frame_time_widget = FrameTime(num, base_image, frame_time, self)
             frame_time_widget.frame_time_changed.connect(self.frame_time_changed)
 
@@ -337,7 +344,7 @@ class MapAnimationProperties(QWidget):
         self.setLayout(final_section)
         final_section.addWidget(final_splitter)
 
-        timer.get_timer().tick_elapsed.connect(self.tick)
+        timer.connect_tick(self, self.tick)
 
     def tick(self):
         if self.current:
@@ -347,6 +354,7 @@ class MapAnimationProperties(QWidget):
     def set_current(self, current):
         self.reset()
         self.current = current
+        self.preview_box.edit.list_units()
         old_num_frames = self.current.num_frames
         self.frame_box.edit.set_current(current.frame_x, current.frame_y)
         self.total_num_box.edit.setValue(old_num_frames)

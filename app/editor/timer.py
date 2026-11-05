@@ -1,7 +1,9 @@
 import time
 
-from PyQt5.QtWidgets import QWidget
-from PyQt5.QtCore import QTimer, pyqtSignal
+from typing import Callable
+
+from PyQt5.QtWidgets import QDockWidget, QWidget
+from PyQt5.QtCore import QObject, QTimer, pyqtSignal
 
 from app import constants
 from app import counters
@@ -38,15 +40,9 @@ class Timer(QWidget):
         self.main_timer.start()
         self.autosave_timer.start()
 
-    def start_for_editor(self):
-        self.main_timer.start()
-
     def stop(self):
         self.main_timer.stop()
         self.autosave_timer.stop()
-
-    def stop_for_editor(self):
-        self.main_timer.stop()
 
 TIMER = None
 def get_timer():
@@ -54,3 +50,31 @@ def get_timer():
     if not TIMER:
         TIMER = Timer(constants.FPS//2)
     return TIMER
+
+class _TickGate(QObject):
+    """Passes the tick on to a widget's slot. A child of the widget, so the connection
+    goes when the widget does"""
+    def __init__(self, widget: QWidget, slot: Callable[[], None]):
+        super().__init__(widget)
+        self.slot = slot
+
+    def on_tick(self):
+        widget = self.parent()
+        # Called unbound, like QWidget.window below. A widget hidden behind another
+        # tab or editor redraws on the first tick after it shows again
+        if QWidget.isVisible(widget) and in_active_window(widget):
+            self.slot()
+
+def in_active_window(widget: QWidget) -> bool:
+    # Called unbound, since editor forms keep their parent in a window attribute
+    window = QWidget.window(widget)
+    if isinstance(window, QDockWidget):
+        # A dock floating beside its main window works with it
+        return window.isActiveWindow() or window.parentWidget().isActiveWindow()
+    return window.isActiveWindow()
+
+def connect_tick(widget: QWidget, slot: Callable[[], None]) -> None:
+    """Calls slot on each tick while widget is on show in the window being worked in.
+    Windows in the background, windows closed, and widgets hidden don't redraw."""
+    gate = _TickGate(widget, slot)
+    get_timer().tick_elapsed.connect(gate.on_tick)

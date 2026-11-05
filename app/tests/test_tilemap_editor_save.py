@@ -11,11 +11,9 @@ MARKER = 'TEST_MARKER_TERRAIN'
 
 class TilemapEditorSaveTests(unittest.TestCase):
     '''
-    The Save button in the tilemap editor has to leave the project on disk holding
-    the edits. The resource dialog that owns the tilemap editor restores itself on
-    Cancel by reloading the project from disk, so a save that misses the disk -- or
-    hits the wrong project -- silently throws away every map edit the moment the
-    user backs out of that dialog instead of hitting OK.
+    The tilemap editor has only Close, which keeps its edits, as every editor window
+    does; undo takes them back. Like every resource edit, they reach the project on
+    disk when the project is saved.
     '''
 
     @classmethod
@@ -30,6 +28,7 @@ class TilemapEditorSaveTests(unittest.TestCase):
         from app.data.database.database import DB
         from app.data.resources.resources import RESOURCES
         from app.data.serialization.versions import CURRENT_SERIALIZATION_VERSION
+        from app.editor.edit_history import HISTORY
 
         self.tmp_dir = tempfile.mkdtemp()
         self.proj = os.path.join(self.tmp_dir, 'save_test.ltproj')
@@ -39,6 +38,7 @@ class TilemapEditorSaveTests(unittest.TestCase):
 
         DB.load(self.proj, CURRENT_SERIALIZATION_VERSION)
         RESOURCES.load(self.proj, CURRENT_SERIALIZATION_VERSION)
+        HISTORY.clear()
         self.version = CURRENT_SERIALIZATION_VERSION
 
     def tearDown(self) -> None:
@@ -57,72 +57,177 @@ class TilemapEditorSaveTests(unittest.TestCase):
         RESOURCES.load('testing_proj.ltproj', CURRENT_SERIALIZATION_VERSION)
         DB.load('testing_proj.ltproj', CURRENT_SERIALIZATION_VERSION)
 
-    def make_editor(self, proj_dir):
-        """A tilemap editor on the first tilemap, pointed at proj_dir."""
+    def terrain(self):
         from app.data.resources.resources import RESOURCES
-        from app.editor.tilemap_editor import MapEditor
-
-        editor = MapEditor(None, RESOURCES.tilemaps[0])
-        patcher = patch.object(
-            type(editor.settings), 'get_current_project', return_value=proj_dir)
-        patcher.start()
-        self.addCleanup(patcher.stop)
-        return editor
-
-    def terrain_on_disk(self):
-        """What the project on disk says the first tilemap's origin terrain is.
-
-        This is what the owning resource dialog's Cancel would restore.
-        """
-        from app.data.resources.resources import RESOURCES
-        RESOURCES.load(self.proj, self.version)
         return RESOURCES.tilemaps[0].layers[0].terrain_grid.get((0, 0))
 
-    @patch('app.editor.tilemap_editor.QMessageBox')
-    def test_save_survives_cancelling_the_resource_dialog(self, _message_box):
-        editor = self.make_editor(self.proj)
+    def terrain_on_disk(self):
+        """What the project on disk says the first tilemap's origin terrain is"""
+        from app.data.resources.resources import RESOURCES
+        RESOURCES.load(self.proj, self.version)
+        return self.terrain()
+
+    def edit_and_close(self, editor):
         editor.current.layers[0].terrain_grid[(0, 0)] = MARKER
+        editor.reject()  # As Close, Escape and the window's X do
 
-        editor.save_current()
+    def test_closing_the_tilemap_editor_keeps_its_edits(self):
+        from app.data.resources.resources import RESOURCES
+        from app.editor.tilemap_editor import MapEditor
+        self.edit_and_close(MapEditor(None, RESOURCES.tilemaps[0]))
 
-        self.assertEqual(self.terrain_on_disk(), MARKER)
+        self.assertEqual(MARKER, self.terrain())
 
-    @patch('app.editor.tilemap_editor.QMessageBox')
-    def test_save_then_cancel_in_the_tilemap_editor_keeps_the_save(self, _message_box):
-        editor = self.make_editor(self.proj)
-        editor.current.layers[0].terrain_grid[(0, 0)] = MARKER
+    def test_edits_survive_closing_the_tilemap_dialog_and_undo_there_takes_them_back(self):
+        from app.editor.data_editor import SingleResourceEditor
+        from app.editor.tile_editor.tile_tab import TileMapDatabase
+        from app.editor.tilemap_editor import MapEditor
+        before = self.terrain()
+        dialog = SingleResourceEditor(TileMapDatabase, ['tilemaps'])
+        self.addCleanup(dialog.stop_history)
+        tab = dialog.tab
+        tab.view.setCurrentIndex(tab.model.index(0))
 
-        editor.save_current()
-        # Backing out of the tilemap editor rewinds to its snapshot, which the
-        # save should have advanced -- otherwise Save then Cancel loses the work.
-        editor.restore()
+        with patch.object(MapEditor, 'exec_', lambda editor: self.edit_and_close(editor)):
+            tab.edit_current()
+        self.assertEqual(MARKER, self.terrain())
+        dialog.undo()
+        self.assertEqual(before, self.terrain())
+        dialog.redo()
+        dialog.reject()
 
-        self.assertEqual(editor.current.layers[0].terrain_grid.get((0, 0)), MARKER)
+        self.assertEqual(MARKER, self.terrain())
 
-    @patch('app.editor.tilemap_editor.QMessageBox')
-    def test_save_goes_to_the_current_project_not_a_stale_one(self, _message_box):
-        from app.data.database.database import DB
+    def test_the_tilemap_list_shows_the_picture_the_edits_leave(self):
+        from app.editor.data_editor import SingleResourceEditor
+        from app.editor.tile_editor import tile_model
+        from app.editor.tile_editor.tile_tab import TileMapDatabase
+        from app.editor.tilemap_editor import MapEditor
+        dialog = SingleResourceEditor(TileMapDatabase, ['tilemaps'])
+        self.addCleanup(dialog.stop_history)
+        tab = dialog.tab
+        tab.view.setCurrentIndex(tab.model.index(0))
+        tilemap = tab.current
+        before = tilemap.pixmap.toImage()
 
-        # What a Save As leaves behind if nothing resyncs it
-        stale = os.path.join(self.tmp_dir, 'stale.ltproj')
-        shutil.copytree(self.proj, stale)
-        DB.current_proj_dir = stale
+        def erase_a_tile(editor):
+            base = editor.current.layers.get('base')
+            del base.sprite_grid[next(iter(base.sprite_grid))]
+            editor.reject()
+        with patch.object(MapEditor, 'exec_', erase_a_tile):
+            tab.edit_current()
 
-        editor = self.make_editor(self.proj)
-        editor.current.layers[0].terrain_grid[(0, 0)] = MARKER
-        editor.save_current()
+        shown = tilemap.pixmap.toImage()
+        self.assertNotEqual(before, shown)
+        self.assertEqual(tile_model.create_tilemap_pixmap(tilemap).toImage(), shown)
 
-        self.assertEqual(self.terrain_on_disk(), MARKER)
+    def test_edits_write_nothing_to_the_project_until_it_is_saved(self):
+        from app.data.resources.resources import RESOURCES
+        from app.editor.tilemap_editor import MapEditor
+        before = self.terrain()
+        self.edit_and_close(MapEditor(None, RESOURCES.tilemaps[0]))
 
-    @patch('app.editor.tilemap_editor.QMessageBox')
-    def test_save_refuses_to_write_to_the_default_project(self, message_box):
-        editor = self.make_editor('some/path/default.ltproj')
-        editor.current.layers[0].terrain_grid[(0, 0)] = MARKER
+        self.assertEqual(before, self.terrain_on_disk())
 
-        editor.save_current()
 
-        self.assertNotEqual(self.terrain_on_disk(), MARKER)
-        message_box.warning.assert_called_once()
+class TileEditorUndoTests(TilemapEditorSaveTests):
+    """Undo and redo in the tilemap and tileset terrain editors reach only the steps
+    made since the editor opened, one per stroke, and after Close they stay in the
+    edit history"""
+    def setUp(self) -> None:
+        super().setUp()
+        from app.data.resources.resources import RESOURCES
+        from app.editor.edit_history import HISTORY
+        self.history = HISTORY
+        self.tilemap = RESOURCES.tilemaps[0]
+        # An edit from before the editor opens, which its undo must leave alone
+        HISTORY.bind(self.tilemap, RESOURCES.tilemaps, self)
+        self.grid()[(2, 0)] = 'Before'
+        HISTORY.unbind(self)
+        self.original = dict(self.grid())
+
+    def grid(self) -> dict:
+        # Read afresh each time: an undo rebuilds the tilemap's layers
+        return self.tilemap.layers[0].terrain_grid
+
+    def open_map_editor(self):
+        from app.editor.tilemap_editor import MapEditor
+        editor = MapEditor(None, self.tilemap)
+        self.addCleanup(editor.deleteLater)
+        return editor
+
+    def stroke(self, editor, coord, terrain_nid):
+        """Paints terrain, finished by the mouse button's release on the map"""
+        from PyQt5.QtCore import QPoint, Qt
+        from PyQt5.QtTest import QTest
+        editor.current.layers[0].terrain_grid[coord] = terrain_nid
+        QTest.mouseRelease(editor.view.viewport(), Qt.LeftButton, pos=QPoint(4, 4))
+
+    def test_each_stroke_is_undone_and_redone_on_its_own_and_undo_stops_where_it_opened(self):
+        editor = self.open_map_editor()
+        self.stroke(editor, (0, 0), 'A')
+        self.stroke(editor, (1, 0), 'B')
+
+        editor.undo()
+        self.assertEqual('A', self.grid().get((0, 0)))
+        self.assertEqual(self.original.get((1, 0)), self.grid().get((1, 0)))
+        editor.undo()
+        editor.undo()  # Nothing left of this editor's to undo
+        self.assertEqual(self.original, dict(self.grid()))
+        self.assertEqual('Before', self.grid()[(2, 0)])
+
+        editor.redo()
+        editor.redo()
+        self.assertEqual('A', self.grid()[(0, 0)])
+        self.assertEqual('B', self.grid()[(1, 0)])
+
+    def test_the_layer_list_shows_the_layers_an_undo_leaves(self):
+        editor = self.open_map_editor()
+        count = len(self.tilemap.layers)
+        editor.layer_menu.new()
+        self.assertEqual(count + 1, len(self.tilemap.layers))
+
+        editor.undo()
+
+        self.assertEqual(count, len(self.tilemap.layers))
+        self.assertIs(self.tilemap.layers, editor.layer_menu.model._data)
+        self.assertEqual(count, editor.layer_menu.model.rowCount())
+        self.assertTrue(editor.layer_menu.view.currentIndex().isValid())
+
+    def test_after_close_each_stroke_is_still_an_undo_step(self):
+        editor = self.open_map_editor()
+        self.stroke(editor, (0, 0), 'A')
+        self.stroke(editor, (1, 0), 'B')
+        editor.reject()
+
+        self.history.undo()
+
+        self.assertEqual('A', self.grid()[(0, 0)])
+        self.assertEqual(self.original.get((1, 0)), self.grid().get((1, 0)))
+
+    def test_the_tileset_terrain_editor_undoes_each_stroke_and_close_keeps_them(self):
+        from app.data.resources.resources import RESOURCES
+        from app.editor.tileset_editor import TileSetEditor
+        tileset = RESOURCES.tilesets[0]
+        original = dict(tileset.terrain_grid)
+        editor = TileSetEditor(None, tileset)
+        self.addCleanup(editor.deleteLater)
+        for coord, terrain_nid in (((0, 0), 'A'), ((1, 0), 'B')):
+            tileset.terrain_grid[coord] = terrain_nid
+            editor.handle_mouse_release()  # As the stroke's release does
+
+        editor.undo()
+        self.assertEqual('A', tileset.terrain_grid[(0, 0)])
+        self.assertEqual(original.get((1, 0)), tileset.terrain_grid.get((1, 0)))
+        self.assertIsNotNone(tileset.pixmap)  # Loaded again for the view
+        editor.redo()
+        self.assertEqual('B', tileset.terrain_grid[(1, 0)])
+
+        editor.reject()
+        self.assertEqual('A', tileset.terrain_grid[(0, 0)])
+        self.assertEqual('B', tileset.terrain_grid[(1, 0)])
+        self.history.undo()
+        self.assertEqual(original.get((1, 0)), tileset.terrain_grid.get((1, 0)))
 
 
 if __name__ == '__main__':

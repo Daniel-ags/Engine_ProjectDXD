@@ -6,8 +6,10 @@ from typing import Optional
 
 from PyQt5.QtWidgets import QMainWindow, QAction, QMenu, QMessageBox, QApplication, \
     QDesktopWidget, \
-    QToolButton, QWidgetAction, QStackedWidget
-from PyQt5.QtGui import QIcon
+    QDockWidget, QToolButton, QWidget, QWidgetAction, QStackedWidget
+from PyQt5.QtGui import QIcon, QKeySequence
+from PyQt5 import sip
+from PyQt5.QtCore import QEvent, QTimer
 
 from app import autoupdate, dark_theme
 from app.utilities import file_utils
@@ -21,7 +23,12 @@ from app.editor.settings import MainSettingsController
 from app.constants import VERSION
 from app.data.database.database import DB
 
-from app.editor import log_viewer, timer, error_viewer
+from app.editor import log_viewer, timer, error_viewer, reference_dialogs
+from app.editor.custom_widgets import ObjBox
+from app.editor.data_editor import EditHistoryDialog, UndoFeedback, handles_own_undo, held_in_text_field, \
+    report_undo_failure
+from app.editor.edit_history import HISTORY, UndoFailed
+from app.editor.editor_windows import EditorWindows
 
 # components
 from app.editor.lib.components.menubar import MenuBar
@@ -111,6 +118,8 @@ class MainEditor(QMainWindow):
         self.app_state_manager.state.selected_level = '0'
         self.initialize_state_subscriptions()
 
+        self.editor_windows = EditorWindows()
+
         # initialize save/load handler
         self.project_save_load_handler = ProjectFileBackend(
             self,
@@ -155,6 +164,111 @@ class MainEditor(QMainWindow):
         self.app_state_manager.change_and_broadcast(
             'selected_level', first_level_nid)
 
+        self.history_changed = False
+        HISTORY.listen(self.on_history_changed)
+        self.update_undo_actions()
+        # A rename leaves event scripts as they are, so the user hears which lines still name the old nid
+        HISTORY.listen_to_renames(reference_dialogs.warn_of_event_mentions)
+        # The level and overworld editors change their records in place, which the
+        # next commit records. A field's edit is done once focus moves on
+        self.key_widget = None
+        QApplication.instance().focusChanged.connect(self.on_focus_changed)
+
+    def holds(self, widget: QWidget) -> bool:
+        """Whether widget is part of this window, a dock floating beside it included"""
+        while widget is not None:
+            if widget is self:
+                return True
+            if widget.isWindow() and not isinstance(widget, QDockWidget):
+                return False
+            widget = widget.parentWidget()
+        return False
+
+    def watch_keys(self, widget):
+        """Watches widget for the undo keys in place of the one watched before, if it
+        is in this window. A text field claims the keys ahead of the Undo action's
+        shortcut, even with no typing of its own to undo"""
+        if self.key_widget is not None and not sip.isdeleted(self.key_widget):
+            self.key_widget.removeEventFilter(self)
+        self.key_widget = widget if self.holds(widget) else None
+        if self.key_widget is not None:
+            self.key_widget.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if obj is self.key_widget and event.type() == QEvent.KeyPress:
+            if event.matches(QKeySequence.Undo) and not handles_own_undo(obj, redo=False):
+                if not held_in_text_field(obj, event):
+                    self.undo()
+                return True
+            if event.matches(QKeySequence.Redo) and not handles_own_undo(obj, redo=True):
+                if not held_in_text_field(obj, event):
+                    self.redo()
+                return True
+        return super().eventFilter(obj, event)
+
+    def on_focus_changed(self, old, new):
+        self.watch_keys(new)
+        if self.holds(old):
+            # A field here has finished its edit, an undo step of its own, kept
+            # apart from whatever is edited next in another window
+            HISTORY.commit(origin=self)
+        elif self.holds(new):
+            # From another window, whose edits this window has yet to show; an
+            # editor window's tab already shows its own
+            HISTORY.commit(origin=EditHistoryDialog.tab_holding(old))
+
+    def on_history_changed(self, origin, change_set):
+        # A disabled action's shortcut does nothing, so the actions keep up with
+        # every change, not only when the menu opens
+        self.update_undo_actions()
+        # Editor windows change the database beside this window. What this window
+        # changed it shows already, and showing it again would drop its selections
+        if origin is not None and self.holds(origin):
+            return
+        if not self.history_changed:
+            self.history_changed = True
+            QTimer.singleShot(0, self.show_changes)
+
+    def show_changes(self):
+        """Shows the database again after an editor window changed it.
+
+        Undo restores a level's fields in place, which rebuilds the units and regions
+        inside it. The level editor (and its sub-widgets) cache those and only refresh
+        on a 'selected_level' broadcast, so without it unit edits would go to objects
+        the level no longer holds -- the "unit positions revert" bug.
+        """
+        self.history_changed = False
+        # Including the boxes of dialogs opened from this window, like Load Unit;
+        # editor dialogs refresh their own, leaving out the tab that made the change.
+        # PropertyBox keeps its parent as box.window, hiding QWidget.window
+        for box in self.findChildren(ObjBox):
+            if not isinstance(QWidget.window(box), EditHistoryDialog):
+                box.refresh()
+        self.broadcast_selection()
+        self.app_state_manager.change_and_broadcast('ui_refresh_signal', None)
+
+    def broadcast_selection(self):
+        """Broadcasts the selected level, overworld and node again. The global editor's
+        map shows whichever of the level and overworld is broadcast last, so the one it
+        shows goes last."""
+        state = self.app_state_manager.state
+        broadcasts = []
+        # Sometimes the stored current level nid does not exist as a valid
+        # level; check before broadcasting.
+        if state.selected_level in DB.levels:
+            broadcasts.append(('selected_level', state.selected_level))
+        # Overworlds hold their nodes the way levels hold their units
+        overworld = DB.overworlds.get(state.selected_overworld)
+        if overworld:
+            node_nid = state.selected_node if state.selected_node in overworld.overworld_nodes else None
+            overworld_broadcasts = [('selected_overworld', overworld.nid), ('selected_node', node_nid)]
+            if self.global_editor.shows_overworld():
+                broadcasts = broadcasts + overworld_broadcasts
+            else:
+                broadcasts = overworld_broadcasts + broadcasts
+        for key, value in broadcasts:
+            self.app_state_manager.change_and_broadcast(key, value)
+
     def on_clean_changed(self, clean):
         # Change Title
         if clean:
@@ -192,6 +306,7 @@ class MainEditor(QMainWindow):
 
     # === Create Menu ===
     def create_actions(self):
+        windows = self.editor_windows.opener
         self.new_act = QAction(_("New Project..."), self,
                                shortcut="Ctrl+N", triggered=self.new)
         self.open_act = QAction(_("Open Project..."), self,
@@ -202,6 +317,10 @@ class MainEditor(QMainWindow):
             _("Save Project As..."), self, shortcut="Ctrl+Shift+S", triggered=self.save_as)
         self.quit_act = QAction(
             _("&Quit"), self, shortcut="Ctrl+Q", triggered=self.close)
+
+        # One history for every window: these undo the last change anywhere
+        self.undo_act = QAction(_("Undo"), self, shortcut=QKeySequence.Undo, triggered=self.undo)
+        self.redo_act = QAction(_("Redo"), self, shortcut=QKeySequence.Redo, triggered=self.redo)
 
         self.dump_csv = QAction(
             "Dump CSV data", self, triggered=lambda: self.project_save_load_handler.dump_csv(DB))
@@ -241,43 +360,45 @@ class MainEditor(QMainWindow):
         #     "Preload Units...", self, triggered=self.edit_preload_units)
 
         # Database actions
-        database_actions = {_("Units"): NewUnitDatabase.edit,
-                            _("Teams"): TeamDatabase.edit,
-                            _("Factions"): FactionDatabase.edit,
-                            _("Parties"): PartyDatabase.edit,
-                            _("Classes"): NewClassDatabase.edit,
+        # Editors on the edit history open as windows beside this one; the rest
+        # are dialogs that block it until they close
+        database_actions = {_("Units"): windows(NewUnitDatabase.edit),
+                            _("Teams"): windows(TeamDatabase.edit),
+                            _("Factions"): windows(FactionDatabase.edit),
+                            _("Parties"): windows(PartyDatabase.edit),
+                            _("Classes"): windows(NewClassDatabase.edit),
                             _("Tags"): self.edit_tags,
                             _("Game Vars"): self.edit_game_vars,
-                            _("Weapon Types"): WeaponDatabase.edit,
-                            _("Items"): NewItemDatabase.edit,
-                            _("Skills"): NewSkillDatabase.edit,
-                            "AI": AIDatabase.edit,
-                            _("Terrain"): TerrainDatabase.edit,
+                            _("Weapon Types"): windows(WeaponDatabase.edit),
+                            _("Items"): windows(NewItemDatabase.edit),
+                            _("Skills"): windows(NewSkillDatabase.edit),
+                            "AI": windows(AIDatabase.edit),
+                            _("Terrain"): windows(TerrainDatabase.edit),
                             _("Movement Costs"): self.edit_mcost,
-                            _("Stats"): StatTypeDatabase.edit,
+                            _("Stats"): windows(StatTypeDatabase.edit),
                             _("Equations"): self.edit_equations,
-                            _("Constants"): ConstantDatabase.edit,
-                            _("Difficulty Modes"): DifficultyModeDatabase.edit,
-                            _("Supports"): self.edit_supports,
-                            _("Lore"): NewLoreDatabase.edit,
-                            _("Raw Data"): RawDataDatabase.edit,
+                            _("Constants"): windows(ConstantDatabase.edit),
+                            _("Difficulty Modes"): windows(DifficultyModeDatabase.edit),
+                            _("Supports"): windows(support_pair_tab.get_full_editor),
+                            _("Lore"): windows(NewLoreDatabase.edit),
+                            _("Raw Data"): windows(RawDataDatabase.edit),
                             _("Translations"): self.edit_translations,
-                            _("Credit"): NewCreditDatabase.edit
+                            _("Credit"): windows(NewCreditDatabase.edit)
                             }
         self.database_actions = {}
         for name, func in database_actions.items():
             self.database_actions[name] = QAction(
                 "%s..." % name, self, triggered=functools.partial(func, self))
 
-        resource_actions = {"Icons": self.edit_icons,
-                            "Portraits": NewPortraitDatabase.edit,
-                            "Map Animations": MapAnimationDatabase.edit,
-                            "Backgrounds": PanoramaDatabase.edit,
-                            "Map Sprites": NewMapSpriteDatabase.edit,
-                            "Combat Animations": self.edit_combat_animations,
-                            "Tilemaps": self.edit_tilemaps,
-                            "Sounds": self.edit_sounds,
-                            "Fonts": FontDatabase.edit
+        resource_actions = {"Icons": windows(icon_tab.get_full_editor),
+                            "Portraits": windows(NewPortraitDatabase.edit),
+                            "Map Animations": windows(MapAnimationDatabase.edit),
+                            "Backgrounds": windows(PanoramaDatabase.edit),
+                            "Map Sprites": windows(NewMapSpriteDatabase.edit),
+                            "Combat Animations": windows(new_combat_animation_tab.get_full_editor),
+                            "Tilemaps": windows(tile_tab.get_full_editor),
+                            "Sounds": windows(sound_tab.get_full_editor),
+                            "Fonts": windows(FontDatabase.edit)
                             }
         self.resource_actions = {}
         for name, func in resource_actions.items():
@@ -285,7 +406,44 @@ class MainEditor(QMainWindow):
                 "%s..." % name, self, triggered=functools.partial(func, self))
 
         self.modify_events_act = QAction(
-            "Edit Events", self, triggered=functools.partial(EventDatabase.edit, self))
+            "Edit Events", self, triggered=functools.partial(windows(EventDatabase.edit), self))
+
+    def finish_editing(self):
+        """Ends the edit in the focused field of this window or an editor window beside
+        it, which some fields apply only when they lose focus"""
+        focused = QApplication.focusWidget()
+        if focused is None:
+            return
+        window = QWidget.window(focused)
+        if window is self or any(window is editor for editor in self.editor_windows.windows.values()):
+            focused.clearFocus()
+
+    def undo(self):
+        self.finish_editing()
+        try:
+            self.undo_feedback.show_step(HISTORY.undo(), redo=False)
+        except UndoFailed as failure:
+            report_undo_failure(self, failure)
+
+    def redo(self):
+        self.finish_editing()
+        try:
+            self.undo_feedback.show_step(HISTORY.redo(), redo=True)
+        except UndoFailed as failure:
+            report_undo_failure(self, failure)
+
+    def update_undo_actions(self):
+        """Names what Undo and Redo would change, as far as the history has committed,
+        and greys out whichever has nothing to do"""
+        def described(change_set) -> str:
+            # A menu takes & for a shortcut key
+            return HISTORY.describe(change_set).replace('&', '&&')
+
+        last, next_redo = HISTORY.last_change(), HISTORY.next_redo()
+        self.undo_act.setEnabled(last is not None)
+        self.undo_act.setText(_("Undo %s") % described(last) if last else _("Undo"))
+        self.redo_act.setEnabled(next_redo is not None)
+        self.redo_act.setText(_("Redo %s") % described(next_redo) if next_redo else _("Redo"))
 
     def edit_level(self):
         self.app_state_manager.change_and_broadcast(
@@ -316,11 +474,15 @@ class MainEditor(QMainWindow):
         file_menu.addAction(self.quit_act)
 
         edit_menu = QMenu(_("Edit"), self)
+        edit_menu.aboutToShow.connect(self.update_undo_actions)
         for action in self.database_actions.values():
             edit_menu.addAction(action)
         edit_menu.addSeparator()
         for action in self.resource_actions.values():
             edit_menu.addAction(action)
+        edit_menu.addSeparator()
+        edit_menu.addAction(self.undo_act)
+        edit_menu.addAction(self.redo_act)
 
         test_menu = QMenu(_("Test"), self)
         test_menu.addAction(self.test_current_act)
@@ -391,6 +553,9 @@ class MainEditor(QMainWindow):
 
     def create_statusbar(self):
         self.status_bar = self.statusBar()
+        # Permanent, so no status message hides it
+        self.undo_feedback = UndoFeedback(self)
+        self.status_bar.addPermanentWidget(self.undo_feedback)
 
     def set_message(self, msg):
         if msg:
@@ -399,20 +564,24 @@ class MainEditor(QMainWindow):
             self.status_bar.clearMessage()
 
     def closeEvent(self, event):
+        self.finish_editing()
+        self.settings.component_controller.set_geometry(
+            self.__class__.__name__, self.saveGeometry())
         if self.project_save_load_handler.maybe_save():
             logging.info("Setting current project %s" %
                          self.settings.get_current_project())
             self.settings.set_current_project(
                 self.settings.get_current_project())
             event.accept()
+            self.editor_windows.close_all()
+            for window in QApplication.topLevelWidgets():
+                window.close()
         else:
             event.ignore()
-        self.settings.component_controller.set_geometry(
-            self.__class__.__name__, self.saveGeometry())
-        for window in QApplication.topLevelWidgets():
-            window.close()
 
     def test_play_current(self):
+        # The game plays the database as it is in memory
+        self.finish_editing()
         self.test_current_act.setEnabled(False)
         self.test_load_act.setEnabled(False)
         self.test_full_act.setEnabled(False)
@@ -428,6 +597,7 @@ class MainEditor(QMainWindow):
         self.test_full_act.setEnabled(True)
 
     def test_play(self):
+        self.finish_editing()
         self.test_current_act.setEnabled(False)
         self.test_load_act.setEnabled(False)
         self.test_full_act.setEnabled(False)
@@ -442,6 +612,7 @@ class MainEditor(QMainWindow):
         self.test_full_act.setEnabled(True)
 
     def test_play_load(self):
+        self.finish_editing()
         saved_games = GAME_ACTIONS.get_preloaded_games()
         if saved_games:
             save_loc = SaveViewer.get(saved_games, self)
@@ -464,6 +635,7 @@ class MainEditor(QMainWindow):
         self.test_full_act.setEnabled(True)
 
     def new(self):
+        self.finish_editing()
         if self.project_save_load_handler.new():
             # if we made a new game:
             self.set_window_title('Untitled')
@@ -474,6 +646,8 @@ class MainEditor(QMainWindow):
             if not self.mode.GLOBAL_EDITOR:
                 self.app_state_manager.change_and_broadcast(
                     'main_editor_mode', MainEditorScreenStates.GLOBAL_EDITOR)
+            if DB.overworlds:  # Before the level, which the global editor's map then shows
+                self.app_state_manager.change_and_broadcast('selected_overworld', DB.overworlds[0].nid)
             self.app_state_manager.change_and_broadcast(
                 'selected_level', DB.levels[0].nid)  # Needed in order to update map view
             self.app_state_manager.change_and_broadcast(
@@ -490,12 +664,17 @@ class MainEditor(QMainWindow):
         if not self.mode.GLOBAL_EDITOR:
             self.app_state_manager.change_and_broadcast(
                 'main_editor_mode', MainEditorScreenStates.GLOBAL_EDITOR)
+        # So the overworld editor shows this project's overworld. Before the level,
+        # which the global editor's map then shows
+        if DB.overworlds:
+            self.app_state_manager.change_and_broadcast('selected_overworld', DB.overworlds[0].nid)
         self.app_state_manager.change_and_broadcast(
             'selected_level', DB.levels[0].nid)  # Needed in order to update map view
         self.app_state_manager.change_and_broadcast(
             'ui_refresh_signal', None)
 
     def open(self):
+        self.finish_editing()
         if self.project_save_load_handler.open():
             self._open()
 
@@ -514,14 +693,17 @@ class MainEditor(QMainWindow):
         self.status_bar.showMessage('Saved project to %s' % current_proj)
 
     def save(self):
+        self.finish_editing()
         if self.project_save_load_handler.save():
             self._save()
 
     def save_as(self):
+        self.finish_editing()
         if self.project_save_load_handler.save(True):
             self._save()
 
     def remove_unused_resources(self):
+        self.finish_editing()
         # Need to save first before cleaning
         if self.project_save_load_handler.save():
             unused_resources = self.project_save_load_handler.get_unused_files()
@@ -550,10 +732,6 @@ class MainEditor(QMainWindow):
         dialog = GameVarSlotDialog.create()
         dialog.exec_()
 
-    def edit_supports(self, parent=None):
-        dialog = support_pair_tab.get_full_editor(self)
-        dialog.exec_()
-
     def edit_mcost(self, parent=None):
         dialog = McostDialog(self)
         dialog.exec_()
@@ -564,22 +742,6 @@ class MainEditor(QMainWindow):
 
     def edit_translations(self, parent=None):
         dialog = TranslationDialog.create()
-        dialog.exec_()
-
-    def edit_icons(self, parent=None):
-        dialog = icon_tab.get_full_editor(self)
-        dialog.exec_()
-
-    def edit_combat_animations(self, parent=None):
-        dialog = new_combat_animation_tab.get_full_editor(self)
-        dialog.exec_()
-
-    def edit_tilemaps(self, parent=None):
-        dialog = tile_tab.get_full_editor(self)
-        dialog.exec_()
-
-    def edit_sounds(self, parent=None):
-        dialog = sound_tab.get_full_editor(self)
         dialog.exec_()
 
     def edit_preferences(self):
