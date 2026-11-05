@@ -311,6 +311,37 @@ class IdBoxTests(EditorUndoTestCase):
         self.assertNamed(self.NEW)
 
 
+class IdBoxOriginTests(EditorUndoTestCase):
+    """A rename from an ID box is announced as made by the tab showing it"""
+    def rename(self, tab_type, old_nid, new_nid):
+        from app.editor.data_editor import SingleDatabaseEditor
+        dialog = self.open(SingleDatabaseEditor, tab_type)
+        tab = dialog.tab
+        tab.on_select(old_nid)
+        origins = []
+        listener = lambda origin, change_set: origins.append(origin)
+        self.history.listen(listener)
+        self.addCleanup(self.history.unlisten, listener)
+        tab.right_frame.nid_box.edit.setText(new_nid)
+        tab.right_frame.nid_done_editing()
+        self.assertEqual([tab], origins)
+
+    def test_unit(self):
+        from app.editor.unit_editor.new_unit_tab import NewUnitDatabase
+        self.rename(NewUnitDatabase, UNIT, 'Eirika2')
+        self.assertIsNotNone(DB.units.get('Eirika2'))
+
+    def test_credit(self):
+        from app.editor.credit_editor.new_credit_tab import NewCreditDatabase
+        self.rename(NewCreditDatabase, 'New Credit', 'Credit2')
+        self.assertIsNotNone(DB.credit.get('Credit2'))
+
+    def test_class(self):
+        from app.editor.class_editor.new_class_tab import NewClassDatabase
+        self.rename(NewClassDatabase, 'Eirika_Lord', 'Lord2')
+        self.assertIsNotNone(DB.classes.get('Lord2'))
+
+
 class LegacyEditorUndoTests(EditorUndoTestCase):
     def setUp(self):
         super().setUp()

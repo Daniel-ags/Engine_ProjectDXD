@@ -31,6 +31,7 @@ class NewCreditProperties(QWidget):
                  attempt_change_nid: Optional[Callable[[NID, NID], bool]] = None,
                  on_icon_change: Optional[Callable] = None):
         super().__init__(parent)
+        self.window = parent
 
         self.current = current
         self.cached_nid: Optional[NID] = self.current.nid if self.current else None
