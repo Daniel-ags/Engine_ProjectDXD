@@ -11,9 +11,11 @@ from app.engine.state import State
 from app.engine import background, menus, engine, dialog, text_funcs, icons, \
     action, item_system, battle_animation, base_surf, help_menu
 from app.engine.combat.mock_combat import MockCombat
+from app.engine.combat.preview_combat import PreviewCombat
 from app.engine.game_state import game
 from app.engine.fluid_scroll import FluidScroll
 from app.engine.graphics.text.text_renderer import render_text
+
 
 class PromotionChoiceState(State):
     name = 'promotion_choice'
@@ -39,6 +41,13 @@ class PromotionChoiceState(State):
     def start(self):
         self.fluid = FluidScroll()
 
+        # Carrega o ícone do botão L
+        buttons_sheet = SPRITES.get('buttons')
+        self.btn_l = buttons_sheet.subsurface(0, 130, 24, 13) if buttons_sheet else None
+
+        # # Carrega o ícone do botão R
+        # self.btn_r = buttons_sheet.subsurface(24, 130, 24, 13) if buttons_sheet else None
+
         self.can_go_back = game.memory.get('can_go_back', False)
         game.memory['can_go_back'] = None
         self.from_map_combat = game.memory.get('_promo_map_combat', False)
@@ -56,9 +65,22 @@ class PromotionChoiceState(State):
         self.inspector = None
         self.class_details_items = []
 
-        # Menu de Classes (Tela 1) - posicionado em (14, 46) com limite de 3
+        # Diálogo de Confirmação na Tela 2
+        self.confirming = False
+        self.confirm_idx = 0
+        self.confirm_cursor = menus.Cursor()
+        self.confirm_bg = None
+        self.confirm_prompt = ""
+        self.confirm_prompt_w = 0
+        self.confirm_box_w = 136
+        self.confirm_box_h = 48
+
+        # Modo de visualização dos atributos na Tela 2 ('bases' ou 'growths')
+        self.stat_view_mode = 'bases'
+
+        # Menu de Classes (Tela 1) - alinhado em X=6 e elevado em 4px para Y=42
         options = [DB.classes.get(c_nid).name for c_nid in self.class_options]
-        self.menu = menus.Choice(self.unit, options, (10, 46))
+        self.menu = menus.Choice(self.unit, options, (6, 42))
         self.menu.set_limit(3)
         self.child_menu = None
 
@@ -73,19 +95,15 @@ class PromotionChoiceState(State):
         render_text(self.header_surf, ['text'], [header_text], ['new-white'], (title_x, off_y + 3))
         self.header_pos = ((WINWIDTH - header_w) // 2 - 2, 8 - 4)
 
+        # Inicializa o gerenciador encapsulado de combate da prévia
+        self.preview_combat = PreviewCombat(self.unit, self.class_options)
+
         # Pré-carregamento dos elementos visuais e cards da Tela 2
-        self.animations = []
         self.weapon_icons = []
         self.skill_cards = []
         self.name_cards = []
 
         for option in self.class_options:
-            anim = battle_animation.get_battle_anim(self.unit, None, klass=option)
-            if anim:
-                # True: combatente direito olhando para a esquerda
-                anim.pair(self, None, True, 0)
-            self.animations.append(anim)
-
             klass = DB.classes.get(option)
 
             weapons = []
@@ -108,7 +126,7 @@ class PromotionChoiceState(State):
             self.skill_cards.append(self._create_skills_card(immediate_skills, weapons))
             self.name_cards.append(self._create_name_card(klass.name))
 
-        # Plataforma Melee (Duas metades unidas)
+        # Plataforma Melee Fixa (Duas metades unidas)
         if game.tilemap and self.unit.position:
             terrain = game.tilemap.get_terrain(self.unit.position)
             platform_type = DB.terrain.get(terrain).platform
@@ -121,9 +139,6 @@ class PromotionChoiceState(State):
         self.left_platform = engine.image_load(platform)
         self.right_platform = engine.flip_horiz(self.left_platform.copy())
 
-        self.anim_offset = 120
-        self.target_anim_offset = False
-
         self.current_desc = self._get_desc()
 
     def begin(self):
@@ -133,7 +148,7 @@ class PromotionChoiceState(State):
         current_klass = self.class_options[self.menu.get_current_index()]
         klass = DB.classes.get(current_klass)
         text = text_funcs.translate_and_text_evaluate(klass.desc, self=klass)
-        d = dialog.Dialog(text.replace('\n', '{br}'))
+        d = dialog.Dialog(text.replace('\\n', '{br}'))
         d.position = (6, 112)
         d.text_width = WINWIDTH - 28
         d.width = d.text_width + 16
@@ -165,9 +180,9 @@ class PromotionChoiceState(State):
         total_content_w = total_icons * icon_pitch - 2 if total_icons > 0 else FONT['text'].width("---")
         content_w = max(title_w, total_content_w)
         card_w = ((content_w + 12 + 7) // 8) * 8
-        card_h = 40
+        card_h = 40  # Altura original preservada
 
-        card_surf = base_surf.create_ornate_base_surf(card_w, card_h, 'menu_bg_base', gems='all')
+        card_surf = base_surf.create_ornate_base_surf(card_w, card_h, 'menu_bg_base')
         off_x, off_y = 2, 4
 
         title_x = off_x + (card_w - title_w) // 2
@@ -192,49 +207,132 @@ class PromotionChoiceState(State):
         return card_surf, card_w, card_h
 
     def _draw_stat_bonuses(self, surf, klass):
-        promo_gains = klass.promotion if hasattr(klass, 'promotion') and klass.promotion else {}
+        box_x, box_y = 6, 112
+        box_w = 228
         bonus_list = []
 
-        # 1. Coleta os atributos que sofrem alteração (excluindo MOV)
-        for stat in DB.stats:
-            if stat.nid == 'MOV':
-                continue
-            val = promo_gains.get(stat.nid, 0)
-            if val != 0 and abs(val) < 50:
-                bonus_list.append((stat.nid, val))
+        # Inicialização explícita para satisfazer o PyLance
+        mode_title = "Stats"
+        target_mode = "Growths"
 
-        for stat_nid, val in promo_gains.items():
-            if stat_nid != 'MOV' and val != 0 and abs(val) < 50 and stat_nid not in [b[0] for b in bonus_list]:
-                bonus_list.append((stat_nid, val))
+        # ---------------------------------------------------------------------
+        # 1. Coleta dos Dados de Acordo com o Modo Ativo
+        # ---------------------------------------------------------------------
+        if self.stat_view_mode == 'bases':
+            promo_gains = getattr(klass, 'promotion', {}) or {}
+            for stat in DB.stats:
+                if stat.nid == 'MOV':
+                    continue
+                val = promo_gains.get(stat.nid, 0)
+                if val != 0 and abs(val) < 50:
+                    bonus_list.append((stat.nid, val, f"{'+' if val > 0 else ''}{val}"))
 
-        box_x, box_y = 6, 112
+            for stat_nid, val in promo_gains.items():
+                if stat_nid != 'MOV' and val != 0 and abs(val) < 50 and stat_nid not in [b[0] for b in bonus_list]:
+                    bonus_list.append((stat_nid, val, f"{'+' if val > 0 else ''}{val}"))
+
+            mode_title = "Stats"
+            target_mode = "Growths"
+
+        else:
+            target_growths = getattr(klass, 'growth_bonus', getattr(klass, 'growths', {})) or {}
+            current_growths = getattr(self.unit_klass, 'growth_bonus', getattr(self.unit_klass, 'growths', {})) or {}
+
+            raw_growths = []
+            for stat in DB.stats:
+                if stat.nid == 'MOV':
+                    continue
+                val = target_growths.get(stat.nid, 0) - current_growths.get(stat.nid, 0)
+                if val != 0 and abs(val) < 100:
+                    raw_growths.append((stat.nid, val))
+
+            for stat_nid in target_growths.keys():
+                if stat_nid != 'MOV' and stat_nid not in [b[0] for b in raw_growths]:
+                    val = target_growths.get(stat_nid, 0) - current_growths.get(stat_nid, 0)
+                    if val != 0 and abs(val) < 100:
+                        raw_growths.append((stat_nid, val))
+
+            include_pct = len(raw_growths) < 8
+            for s_nid, val in raw_growths:
+                suffix = "%" if include_pct else ""
+                bonus_list.append((s_nid, val, f"{'+' if val > 0 else ''}{val}{suffix}"))
+
+            mode_title = "Growths"
+            target_mode = "Stats"
+
+        # ---------------------------------------------------------------------
+        # 2. Contêiner de Alternância [L] (card_h = text_h + 8)
+        # ---------------------------------------------------------------------
+        text_h = FONT['text'].height
+        card_h = text_h + 8  # 16 + 8 = 24px (altura ideal)
+        card_y = 93
+
+        # Bordas laterais de 4px e envelope do ornate
+        pad = 4
+        off_x = 2
+
+        # Miolo útil (descontando 4px da borda superior e 4px da inferior)
+        inner_h = card_h - 8
+        txt_y = (inner_h - text_h) // 2 + 8
+
+        # Aba Única: Ícone [L] + Texto do Modo Alternativo
+        btn_w = self.btn_l.get_width() if getattr(self, 'btn_l', None) else 0
+        txt_w = FONT['text'].width(target_mode)
+        gap = 3 if btn_w else 0
+        content_w = btn_w + gap + txt_w
+
+        hint_card_w = ((content_w + pad * 2 + 7) // 8) * 8
+        hint_card = base_surf.create_ornate_base_surf(
+            hint_card_w, card_h, 'menu_bg_base_overlay', translucency=0
+        )
+
+        start_x = off_x + (hint_card_w - content_w) // 2
+        if getattr(self, 'btn_l', None):
+            btn_h = self.btn_l.get_height()
+            btn_y = (inner_h - btn_h) // 2 + 8
+            hint_card.blit(self.btn_l, (start_x, btn_y))
+            txt_x = start_x + btn_w + gap
+        else:
+            txt_x = start_x
+
+        render_text(hint_card, ['text'], [target_mode], ['white'], (txt_x, txt_y))
+        # Alinhado na borda esquerda: blit em (6 - 2 = 4)
+        surf.blit(hint_card, (box_x - off_x, card_y - 4))
+        # ---------------------------------------------------------------------
+        # 3. Renderização com Espaçamento Unificado e Simetria Matemática
+        # ---------------------------------------------------------------------
         if not bonus_list:
-            text = "No stat changes upon promotion."
-            render_text(surf, ['text'], [text], ['white'], (box_x + 16, box_y + 16))
+            empty_msg = "No stat changes upon promotion." if self.stat_view_mode == 'bases' else "No growth modifiers for this class."
+            render_text(surf, ['text'], [empty_msg], ['white'], (box_x + 16, box_y + 16))
             return
 
-        # 2. Formatação em grade: linha 1 (chaves) e linha 2 (valores)
         num_stats = len(bonus_list)
-        col_w = min(36, 212 // num_stats)
-        total_w = num_stats * col_w
-        start_x = box_x + (228 - total_w) // 2
+        box_center = box_x + box_w // 2  # Centro absoluto: x = 120
 
-        for col_idx, (s_nid, s_val) in enumerate(bonus_list):
-            item_center_x = start_x + col_idx * col_w + col_w // 2
+        if num_stats == 1:
+            centers = [box_center]
+        else:
+            # Passo fixo de 24px para 9 atributos (máximo proveito dos 228px com 18px de margem em ambos os lados)
+            step = min(32, (box_w - 36) // (num_stats - 1))
+            total_span = (num_stats - 1) * step
+            left_center = box_center - total_span // 2
+            centers = [left_center + i * step for i in range(num_stats)]
 
+        for col_idx, (s_nid, s_val, formatted_val) in enumerate(bonus_list):
+            item_center_x = centers[col_idx]
+
+            # Linha 1: Sigla do Atributo
             key_w = FONT['text'].width(s_nid)
             key_x = item_center_x - key_w // 2
             render_text(surf, ['text'], [s_nid], ['white'], (key_x, box_y + 10))
 
-            sign = "+" if s_val > 0 else ""
-            val_text = f"{sign}{s_val}"
+            # Linha 2: Valor Formatado (+2 / +10% / +10)
             val_color = 'green' if s_val > 0 else 'red'
-            val_w = FONT['text'].width(val_text)
+            val_w = FONT['text'].width(formatted_val)
             val_x = item_center_x - val_w // 2
-            render_text(surf, ['text'], [val_text], [val_color], (val_x, box_y + 26))
+            render_text(surf, ['text'], [formatted_val], [val_color], (val_x, box_y + 26))
 
     def _get_help_targets(self, class_idx):
-        """Monta a lista de alvos para o HelpInspector com coordenadas brutas de cada elemento."""
         if not self.skill_cards or class_idx >= len(self.class_details_items):
             return []
         items = self.class_details_items[class_idx]
@@ -246,8 +344,9 @@ class PromotionChoiceState(State):
         icon_pitch = 18
         total_content_w = total_icons * icon_pitch - 2 if total_icons > 0 else FONT['text'].width("---")
 
-        box_x = 10
-        box_y = 50
+        # Sincroniza a mira do cursor R com os cards
+        box_x = 6
+        box_y = 42  # 44 -> 42
         start_x = box_x + (card_w - total_content_w) // 2
         icons_y = box_y + 18
 
@@ -259,16 +358,27 @@ class PromotionChoiceState(State):
             if item_type == 'skill':
                 name = getattr(item_obj, 'name', 'Skill')
                 desc = getattr(item_obj, 'desc', '') or "No description."
-            else:  # weapon
+            else:
                 w_obj = DB.weapons.get(item_obj) if hasattr(DB, 'weapons') and DB.weapons.get(item_obj) else None
                 name = getattr(w_obj, 'name', item_obj)
                 desc = getattr(w_obj, 'desc', '') or f"Grants proficiency with {name}s."
 
             text = f"{name}: {desc}"
-            # O HelpInspector aplica automaticamente o recuo nativo de (-12, +2)
             targets.append((icon_x, icon_y, text))
 
         return targets
+
+    def _open_confirmation(self, klass_name):
+        self.confirming = True
+        self.confirm_idx = 0
+        self.confirm_prompt = f"Promote to {klass_name}?"
+        self.confirm_prompt_w = FONT['text'].width(self.confirm_prompt)
+        min_w = 88
+        self.confirm_box_w = max(min_w, ((self.confirm_prompt_w + 16 + 7) // 8) * 8)
+        self.confirm_box_h = 48
+        self.confirm_bg = base_surf.create_ornate_base_surf(
+            self.confirm_box_w, self.confirm_box_h, 'menu_bg_base', gems='all', translucency=0
+        )
 
     def take_input(self, event):
         first_push = self.fluid.update()
@@ -278,18 +388,48 @@ class PromotionChoiceState(State):
         # Tela 2: Detalhes da Promoção
         # ---------------------------------------------------------------------
         if self.in_details:
-            # 1. Se a inspeção estiver aberta, delega para o HelpInspector
+            # 1. Modo de Confirmação (Yes / No)
+            if self.confirming:
+                if 'LEFT' in directions or event == 'LEFT':
+                    if self.confirm_idx != 0:
+                        get_sound_thread().play_sfx('Select 5')
+                        self.confirm_idx = 0
+                elif 'RIGHT' in directions or event == 'RIGHT':
+                    if self.confirm_idx != 1:
+                        get_sound_thread().play_sfx('Select 5')
+                        self.confirm_idx = 1
+
+                if event == 'BACK':
+                    get_sound_thread().play_sfx('Select 4')
+                    self.confirming = False
+                elif event == 'SELECT':
+                    if self.confirm_idx == 0:  # Yes
+                        get_sound_thread().play_sfx('Select 1')
+                        self.confirming = False
+                        self._proceed(self.class_options[self.menu.get_current_index()])
+                    elif self.confirm_idx == 1:  # No
+                        get_sound_thread().play_sfx('Select 4')
+                        self.confirming = False
+                return
+
+            # 2. Se a inspeção estiver ativa, delega para o HelpInspector
             if self.inspector:
                 if not self.inspector.handle_input(event, directions):
                     self.inspector = None
                 return
 
-            # 2. Abertura da inspeção
+            # 3. Abre a inspeção ao pressionar R (INFO)
             if event == 'INFO':
                 current_idx = self.menu.get_current_index()
                 targets = self._get_help_targets(current_idx)
                 if targets:
                     self.inspector = help_menu.HelpInspector(targets, orientation='horizontal')
+                return
+            
+            # Alternância de modo na caixa inferior (Bases <-> Growths)
+            if event == 'AUX':
+                self.stat_view_mode = 'growths' if self.stat_view_mode == 'bases' else 'bases'
+                get_sound_thread().play_sfx('Select 5')
                 return
 
             if event == 'BACK':
@@ -297,7 +437,9 @@ class PromotionChoiceState(State):
                 self.in_details = False
             elif event == 'SELECT':
                 get_sound_thread().play_sfx('Select 1')
-                self._proceed(self.class_options[self.menu.get_current_index()])
+                current_idx = self.menu.get_current_index()
+                klass = DB.classes.get(self.class_options[current_idx])
+                self._open_confirmation(klass.name)
             return
 
         # ---------------------------------------------------------------------
@@ -306,19 +448,19 @@ class PromotionChoiceState(State):
         current_idx = self.menu.get_current_index()
         self.menu.handle_mouse()
         new_idx = self.menu.get_current_index()
-        if current_idx != new_idx:
-            self.target_anim_offset = True
-            self.current_desc = self._get_desc()
 
         if 'DOWN' in directions:
             if self.menu.move_down(first_push):
                 get_sound_thread().play_sfx('Select 6')
-            self.target_anim_offset = True
             self.current_desc = self._get_desc()
         elif 'UP' in directions:
             if self.menu.move_up(first_push):
                 get_sound_thread().play_sfx('Select 6')
-            self.target_anim_offset = True
+            self.current_desc = self._get_desc()
+
+        new_idx = self.menu.get_current_index()
+        if current_idx != new_idx:
+            self.preview_combat.change_class(new_idx)
             self.current_desc = self._get_desc()
 
         elif event == 'BACK':
@@ -334,6 +476,8 @@ class PromotionChoiceState(State):
         elif event == 'SELECT':
             get_sound_thread().play_sfx('Select 1')
             self.in_details = True
+            # Estabiliza o combatente imediatamente ao entrar na Tela 2
+            self.preview_combat.stabilize(self.menu.get_current_index())
 
     def update(self):
         if not self.in_details:
@@ -341,22 +485,15 @@ class PromotionChoiceState(State):
             if self.current_desc:
                 self.current_desc.update()
 
+        # Atualiza a animação do cursor e do balão durante a inspeção
         if self.inspector:
             self.inspector.update()
 
-        if self.target_anim_offset:
-            self.anim_offset += 8
-            if self.anim_offset >= 120:
-                self.target_anim_offset = False
-                self.anim_offset = 120
-        elif self.anim_offset > 0:
-            self.anim_offset -= 8
-            if self.anim_offset < 0:
-                self.anim_offset = 0
+        if self.confirming:
+            self.confirm_cursor.update()
 
-        anim = self.animations[self.menu.get_current_index()]
-        if anim:
-            anim.update()
+        # Atualiza a animação de combate encapsulada
+        self.preview_combat.update()
 
     def draw(self, surf):
         if not self.started:
@@ -364,24 +501,22 @@ class PromotionChoiceState(State):
 
         self.bg.draw(surf)
 
-        current_idx = self.menu.get_current_index()
-
         # ---------------------------------------------------------------------
-        # Plataforma Dupla Melee com a calibração de encaixe na borda
+        # Plataforma Dupla Melee Estática
         # ---------------------------------------------------------------------
         platform_y = 124 - self.right_platform.get_height()
-        right_plat_x = WINWIDTH - self.right_platform.get_width() + self.anim_offset + 28
+        right_plat_x = WINWIDTH - self.right_platform.get_width() + 24
         left_plat_x = right_plat_x - self.left_platform.get_width()
 
         surf.blit(self.left_platform, (left_plat_x, platform_y))
         surf.blit(self.right_platform, (right_plat_x, platform_y))
 
-        sprite_offset_x = 26 + self.anim_offset
+        # ---------------------------------------------------------------------
+        # Renderização do Combatente (Encapsulada via PreviewCombat)
+        # ---------------------------------------------------------------------
+        sprite_offset_x = 26
         sprite_offset_y = platform_y - (WINHEIGHT - 74)
-
-        anim = self.animations[current_idx]
-        if anim:
-            anim.draw(surf, (sprite_offset_x, sprite_offset_y))
+        self.preview_combat.draw(surf, (sprite_offset_x, sprite_offset_y))
 
         # ---------------------------------------------------------------------
         # Renderização Específica de Cada Tela
@@ -399,17 +534,19 @@ class PromotionChoiceState(State):
                 self.current_desc.draw(surf)
         else:
             # TELA 2: Detalhes e Status Bônus
+            current_idx = self.menu.get_current_index()
+
             # 1. Nome da classe centralizado no topo
             if self.name_cards:
                 card_surf, card_w, card_h = self.name_cards[current_idx]
                 name_x = (WINWIDTH - card_w) // 2
                 surf.blit(card_surf, (name_x - 2, 8 - 4))
 
-            # 2. Contêiner de Skills & Weapons
+            # 2. Contêiner de Skills & Weapons (Movido 2px para cima: Y=42)
             if self.skill_cards:
                 card_surf, card_w, card_h = self.skill_cards[current_idx]
-                box_x = 10
-                box_y = 50
+                box_x = 6
+                box_y = 42
                 surf.blit(card_surf, (box_x - 2, box_y - 4))
 
             # 3. Rodapé populado com os Status Bônus
@@ -417,9 +554,36 @@ class PromotionChoiceState(State):
             klass = DB.classes.get(self.class_options[current_idx])
             self._draw_stat_bonuses(surf, klass)
 
-            # 4. Modo de Inspeção Unificado
+            # 4. Modo de Inspeção Unificado (Cursor com bobbing e Balão)
             if self.inspector:
                 self.inspector.draw(surf)
+
+            # 5. Diálogo de Confirmação (Promote to [Class]?) com Ornate e 4 gemas
+            if self.confirming and self.confirm_bg:
+                box_x = (WINWIDTH - self.confirm_box_w) // 2
+                box_y = (WINHEIGHT - self.confirm_box_h) // 2
+                # Desconta o envelope transparente (-2, -4) da moldura ornate
+                surf.blit(self.confirm_bg, (box_x - 2, box_y - 4))
+
+                prompt_x = box_x + (self.confirm_box_w - self.confirm_prompt_w) // 2
+                render_text(surf, ['text'], [self.confirm_prompt], ['white'], (prompt_x, box_y + 8))
+
+                center_x = box_x + self.confirm_box_w // 2
+                yes_color = 'yellow' if self.confirm_idx == 0 else 'white'
+                no_color = 'yellow' if self.confirm_idx == 1 else 'white'
+
+                # Opções Yes e No perfeitamente simétricas em relação à linha central
+                yes_w = FONT['text'].width("Yes")
+                gap = 10
+                yes_x = center_x - gap - yes_w
+                no_x = center_x + gap
+
+                render_text(surf, ['text'], ["Yes"], [yes_color], (yes_x, box_y + 26))
+                render_text(surf, ['text'], ["No"], [no_color], (no_x, box_y + 26))
+
+                # Cursor aproximado a 6px do início do texto (mesmo offset dos ícones)
+                cursor_x = (yes_x - 6) if self.confirm_idx == 0 else (no_x - 6)
+                self.confirm_cursor.draw(surf, cursor_x, box_y + 26)
 
         return surf
 
@@ -446,6 +610,7 @@ class ClassChangeChoiceState(PromotionChoiceState):
         if self.from_map_combat:
             game.memory['_promo_finalize_turn'] = True
         game.state.change('transition_to_with_pop')
+
 
 class PromotionState(State, MockCombat):
     name = 'promotion'
@@ -582,6 +747,7 @@ class PromotionState(State, MockCombat):
         self.foreground.draw(surf)
 
         return surf
+
 
 class ClassChangeState(PromotionState):
     name = 'class_change'
