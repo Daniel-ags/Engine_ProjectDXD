@@ -2974,7 +2974,6 @@
             "else",
             "speak;;What! You don't have a weapon! Get out of here!;top_right;160;noir",
             "end",
-            "transition;close",
             "# Clean up after a round at the arena.",
             "change_background",
             "hide_layer;arena;immediate",
