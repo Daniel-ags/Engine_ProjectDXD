@@ -2136,7 +2136,10 @@ def give_exp(self: Event, global_unit, experience: int, flags=None):
     if 'silent' in flags:
         old_exp = unit.exp
         if old_exp + exp >= 100:
-            if exp_funcs.can_give_exp(unit, exp):
+            if unit.level >= klass.max_level and exp_funcs.can_give_exp(unit, exp):
+                # Promotion needs its screen, so silent exp stops just short of it
+                action.do(action.SetExp(unit, 99))
+            elif exp_funcs.can_give_exp(unit, exp):
                 action.do(action.GainExp(unit, exp))
                 # Since autolevel also fills current hp and current mana to max
                 # We keep track of HP to reset back
