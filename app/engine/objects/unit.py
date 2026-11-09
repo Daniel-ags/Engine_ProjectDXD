@@ -461,15 +461,17 @@ class UnitObject(Prefab):
         """
         Verifica se a skill pode ser equipada pela unidade.
         """
+        target_nid = skill_nid if isinstance(skill_nid, str) else getattr(skill_nid, 'nid', skill_nid)
+
         # 1. Deve ter sido aprendida previamente
-        if skill_nid not in self.learned_skills:
+        if target_nid not in self.learned_skills:
             return False
 
         # 2. Não pode já estar equipada
-        if any(s.get().nid == skill_nid for s in self._skills):
+        if any(s.get().nid == target_nid for s in self._skills):
             return False
 
-        # 3. Limite de slots (aqui entra a verificação!)
+        # 3. Limite de slots
         if len(self.get_equipped_skills()) >= self.max_skills:
             return False
 
@@ -479,11 +481,13 @@ class UnitObject(Prefab):
         """
         Equipa uma habilidade aprendida na unidade respeitando o ciclo do skill_system.
         """
-        if not self.can_equip_skill(skill_nid):
+        target_nid = skill_nid if isinstance(skill_nid, str) else getattr(skill_nid, 'nid', skill_nid)
+
+        if not self.can_equip_skill(target_nid):
             return False
 
         # Cria a instância da skill vinculada à unidade
-        new_skill = item_funcs.create_skill(self, skill_nid)
+        new_skill = item_funcs.create_skill(self, target_nid)
         if not new_skill:
             return False
 
@@ -494,7 +498,8 @@ class UnitObject(Prefab):
         self._skills.append(unit_skill)
         skill_system.after_add(self, new_skill)
 
-        self._visible_skills_cache.clear()
+        # Invalida o cache corretamente atribuindo None (jamais usar .clear())
+        self._visible_skills_cache = None
         return True
 
     def can_unequip_skill(self, skill_nid: NID) -> bool:
@@ -502,7 +507,8 @@ class UnitObject(Prefab):
         Verifica se a skill está equipada e se pode ser removida pelo jogador
         (ou seja, se possui o componente 'class_skill').
         """
-        target = next((s for s in self._skills if s.get().nid == skill_nid), None)
+        target_nid = skill_nid if isinstance(skill_nid, str) else getattr(skill_nid, 'nid', skill_nid)
+        target = next((s for s in self._skills if s.get().nid == target_nid), None)
         if not target:
             return False
         skill_obj = target.get()
@@ -512,10 +518,12 @@ class UnitObject(Prefab):
         """
         Desequipa uma habilidade ativa da unidade respeitando o ciclo do skill_system.
         """
-        if not self.can_unequip_skill(skill_nid):
+        target_nid = skill_nid if isinstance(skill_nid, str) else getattr(skill_nid, 'nid', skill_nid)
+
+        if not self.can_unequip_skill(target_nid):
             return False
 
-        target = next((s for s in self._skills if s.get().nid == skill_nid), None)
+        target = next((s for s in self._skills if s.get().nid == target_nid), None)
         skill_obj = target.get()
 
         # Ciclo de remoção de efeitos da engine
@@ -523,7 +531,8 @@ class UnitObject(Prefab):
         self._skills.remove(target)
         skill_system.after_remove(self, skill_obj)
 
-        self._visible_skills_cache.clear()
+        # Invalida o cache corretamente atribuindo None (jamais usar .clear())
+        self._visible_skills_cache = None
         return True
 
     def add_skill(self, skill, source=None, source_type=SourceType.DEFAULT, test=False):

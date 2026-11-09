@@ -21,8 +21,8 @@ from app.engine.state import State
 from app.engine.state import MapState
 from app.engine.game_state import game
 from app.engine import menus, base_surf, background, text_funcs, \
-    image_mods, gui, icons, prep, record_book, unit_sprite, action, \
-    engine, equations, evaluate, skill_system, help_menu
+    image_mods, gui, icons, prep, record_book, action, \
+    engine, equations, evaluate, help_menu, aura_funcs
 from app.engine.fluid_scroll import FluidScroll
 from app.engine.graphics.text.text_renderer import render_text
 from app.engine.persistent_records import RECORDS
@@ -284,7 +284,10 @@ class BaseSkillsManageState(State):
         self.unit = game.memory['current_unit']
         self.bg = game.memory.get('base_bg') or base_background()
 
-        self.clean_all_orphaned_auras()
+        # Remove todas as auras de combate de todas as unidades ao entrar na Base
+        for u in game.get_units_in_party():
+            aura_funcs.remove_all_auras(u)
+
         self.current_pane = 'equipped'  # 'equipped' ou 'available'
         self.help_dialog = None
         self.help_pos = (0, 0)          # Janela de ajuda modal (INFO)
@@ -297,125 +300,6 @@ class BaseSkillsManageState(State):
 
     def begin(self):
         self.fluid.reset_on_change_state()
-
-    def is_aura_skill(self, prefab) -> bool:
-        """Verifica se a habilidade possui componentes relacionados a auras."""
-        if not prefab:
-            return False
-        for comp in getattr(prefab, 'components', None) or []:
-            if comp and hasattr(comp, 'nid') and 'aura' in comp.nid.lower():
-                return True
-        return False
-
-    def get_aura_subskill_nids(self, skill_or_nid) -> set:
-        """Extrai todos os NIDs de subskills/buffs gerados por uma aura."""
-        skill_nid = skill_or_nid if isinstance(skill_or_nid, str) else skill_or_nid.nid
-        prefab = DB.skills.get(skill_nid)
-        subskills = set()
-        if not prefab:
-            return subskills
-
-        # 'or []' impede iteração sobre None caso prefab.subskills seja None
-        for sub in getattr(prefab, 'subskills', None) or []:
-            if isinstance(sub, str):
-                subskills.add(sub)
-
-        for comp in getattr(prefab, 'components', None) or []:
-            val = getattr(comp, 'value', None)
-            if isinstance(val, str) and val in DB.skills:
-                subskills.add(val)
-            elif isinstance(val, (list, tuple, set)):
-                for item in val:
-                    if isinstance(item, str) and item in DB.skills:
-                        subskills.add(item)
-            elif isinstance(val, dict):
-                for k, v in val.items():
-                    if isinstance(k, str) and k in DB.skills:
-                        subskills.add(k)
-                    if isinstance(v, str) and v in DB.skills:
-                        subskills.add(v)
-
-            for attr in ('skill', 'subskill', 'target_skill', 'aura_skill', 'buff', 'status'):
-                attr_val = getattr(comp, attr, None)
-                if isinstance(attr_val, str) and attr_val in DB.skills:
-                    subskills.add(attr_val)
-
-        parent_low = skill_nid.lower()
-        for other in DB.skills:
-            if other.nid != skill_nid:
-                o_low = other.nid.lower()
-                if o_low.startswith(f"{parent_low}_") or o_low.startswith(f"{parent_low}-"):
-                    subskills.add(other.nid)
-
-        return subskills
-
-    def clean_aura_ghosts(self, source_unit, unequipped_skill):
-        """Limpa as subskills dos aliados e esvazia o rastreamento interno do componente."""
-        skill_obj = next((s for s in source_unit.skills if s.nid == unequipped_skill.nid), unequipped_skill)
-        for comp in getattr(skill_obj, 'components', None) or []:
-            for attr in ('applied', 'targets', 'applied_units', 'target_units'):
-                if hasattr(comp, attr):
-                    val = getattr(comp, attr)
-                    if isinstance(val, dict):
-                        val.clear()
-                    elif isinstance(val, (list, set)):
-                        if isinstance(val, list):
-                            val.clear()
-                        else:
-                            val.difference_update(set(val))
-
-        buff_nids = self.get_aura_subskill_nids(unequipped_skill)
-        if not buff_nids:
-            return
-
-        other_active = any(
-            any(s.nid == unequipped_skill.nid for s in u.get_equipped_skills())
-            for u in game.get_units_in_party()
-            if u is not source_unit
-        )
-        if other_active:
-            return
-
-        all_units = {u for u in game.get_units_in_party()} | {u for u in game.units}
-        for target in all_units:
-            ghosts = [s for s in list(target.skills) if s.nid in buff_nids]
-            for ghost in ghosts:
-                if ghost in target.skills:
-                    target.skills.remove(ghost)
-                if hasattr(target, 'reset_skills'):
-                    target.reset_skills()
-
-        if hasattr(skill_system, 'update_aura'):
-            try:
-                skill_system.update_aura(source_unit)
-            except Exception:
-                pass
-
-    def clean_all_orphaned_auras(self):
-        """Expurga quaisquer subskills órfãs acumuladas na sessão."""
-        all_units = {u for u in game.get_units_in_party()} | {u for u in game.units}
-
-        active_equipped_nids = set()
-        for u in all_units:
-            eq = u.get_equipped_skills() if hasattr(u, 'get_equipped_skills') else u.skills
-            for s in eq:
-                active_equipped_nids.add(s.nid)
-
-        orphaned_buff_nids = set()
-        for prefab in DB.skills:
-            if self.is_aura_skill(prefab) and prefab.nid not in active_equipped_nids:
-                orphaned_buff_nids.update(self.get_aura_subskill_nids(prefab))
-
-        if not orphaned_buff_nids:
-            return
-
-        for target in all_units:
-            ghosts = [s for s in list(target.skills) if s.nid in orphaned_buff_nids]
-            for ghost in ghosts:
-                if ghost in target.skills:
-                    target.skills.remove(ghost)
-                if hasattr(target, 'reset_skills'):
-                    target.reset_skills()
 
     def refresh_skill_lists(self):
         self.equipped_skills = self.unit.get_equipped_skills()
@@ -560,15 +444,6 @@ class BaseSkillsManageState(State):
             if self.current_pane == 'equipped' and self.equipped_skills:
                 skill = self.equipped_skills[cur_idx]
                 if self.unit.unequip_skill(skill.nid):
-                    parent_skill_obj = next((s for s in self.unit.skills if s.nid == skill.nid), None)
-                    if parent_skill_obj:
-                        try:
-                            action.RemoveSkill(self.unit, parent_skill_obj).do()
-                        except Exception:
-                            if parent_skill_obj in self.unit.skills:
-                                self.unit.skills.remove(parent_skill_obj)
-
-                    self.clean_aura_ghosts(self.unit, skill)
                     get_sound_thread().play_sfx('Select 1')
                     self.refresh_skill_lists()
                     self.build_menus()
@@ -730,74 +605,6 @@ class BaseSkillsSelectState(prep.PrepManageState):
             render_text(card_surf, ['text'], [f"+{len(eq_skills) - 3} more..."], ['grey'], (6, 65))
 
         surf.blit(card_surf, topleft)
-
-    def clean_aura_ghosts(self, source_unit, unequipped_skill):
-        """Remove subskills/buffs espalhados pelo grupo originados desta skill desequipada"""
-        aura_subskill_nids = set()
-        for comp in getattr(unequipped_skill, 'components', []):
-            if 'aura' in comp.nid.lower():
-                val = getattr(comp, 'value', None)
-                if isinstance(val, str):
-                    aura_subskill_nids.add(val)
-                elif hasattr(comp, 'skill') and isinstance(comp.skill, str):
-                    aura_subskill_nids.add(comp.skill)
-
-        all_units = {u for u in game.get_units_in_party()} | {u for u in game.units}
-
-        for target in all_units:
-            ghosts = []
-            for s in list(target.skills):
-                parent_skill = getattr(s, 'parent_skill', None)
-                parent_unit = getattr(s, 'parent_unit', None) or getattr(s, 'initiator_nid', None)
-
-                is_direct_child = (
-                    parent_skill == getattr(unequipped_skill, 'uid', None) or
-                    parent_skill == unequipped_skill.nid or
-                    parent_skill == unequipped_skill
-                )
-                is_aura_buff = (
-                    s.nid in aura_subskill_nids and 
-                    (parent_unit == source_unit.nid or parent_unit == source_unit or getattr(s, 'subskill', False))
-                )
-
-                if is_direct_child or is_aura_buff:
-                    ghosts.append(s)
-
-            for ghost in ghosts:
-                try:
-                    action.RemoveSkill(target, ghost).do()
-                except Exception:
-                    if ghost in target.skills:
-                        target.skills.remove(ghost)
-                if hasattr(target, 'reset_skills'):
-                    target.reset_skills()
-
-    def clean_all_orphaned_auras(self):
-        """Cura o save: expurga quaisquer subskills órfãs cujo pai não esteja mais equipado por ninguém."""
-        all_units = {u for u in game.get_units_in_party()} | {u for u in game.units}
-
-        active_skill_uids = set()
-        active_skill_nids = set()
-        for u in all_units:
-            eq = u.get_equipped_skills() if hasattr(u, 'get_equipped_skills') else u.skills
-            for s in eq:
-                active_skill_uids.add(getattr(s, 'uid', None))
-                active_skill_nids.add(s.nid)
-
-        for target in all_units:
-            ghosts = []
-            for s in list(target.skills):
-                if getattr(s, 'subskill', False):
-                    p_skill = getattr(s, 'parent_skill', None)
-                    if p_skill and (p_skill not in active_skill_uids and p_skill not in active_skill_nids):
-                        ghosts.append(s)
-
-            for ghost in ghosts:
-                try:
-                    action.RemoveSkill(target, ghost).do()
-                except Exception:
-                    if ghost in target.skills:
-                        target.skills.remove(ghost)
 
     def draw(self, surf):
         if self.bg:

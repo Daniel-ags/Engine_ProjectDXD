@@ -45,9 +45,6 @@ class PromotionChoiceState(State):
         buttons_sheet = SPRITES.get('buttons')
         self.btn_l = buttons_sheet.subsurface(0, 130, 24, 13) if buttons_sheet else None
 
-        # # Carrega o ícone do botão R
-        # self.btn_r = buttons_sheet.subsurface(24, 130, 24, 13) if buttons_sheet else None
-
         self.can_go_back = game.memory.get('can_go_back', False)
         game.memory['can_go_back'] = None
         self.from_map_combat = game.memory.get('_promo_map_combat', False)
@@ -78,10 +75,19 @@ class PromotionChoiceState(State):
         # Modo de visualização dos atributos na Tela 2 ('bases' ou 'growths')
         self.stat_view_mode = 'bases'
 
-        # Menu de Classes (Tela 1) - alinhado em X=6 e elevado em 4px para Y=42
+        # Instancia os chibis das classes com MapSpriteDecoration
+        self.class_chibis = [
+            menus.MapSpriteDecoration(c_nid, team=self.unit.team)
+            for c_nid in self.class_options
+        ]
+
+        # Menu de Classes calibrado para a caixa de 72px
         options = [DB.classes.get(c_nid).name for c_nid in self.class_options]
-        self.menu = menus.Choice(self.unit, options, (6, 42))
-        self.menu.set_limit(3)
+        self.menu = menus.VisualChoice(
+            self.unit, options, (6, 38),
+            decorations=self.class_chibis,
+            limit=3
+        )
         self.child_menu = None
 
         # Cabeçalho Superior Centralizado da Tela 1 (Ornate com tamanho modular)
@@ -278,8 +284,8 @@ class PromotionChoiceState(State):
         # Aba Única: Ícone [L] + Texto do Modo Alternativo
         btn_w = self.btn_l.get_width() if getattr(self, 'btn_l', None) else 0
         txt_w = FONT['text'].width(target_mode)
-        gap = 3 if btn_w else 0
-        content_w = btn_w + gap + txt_w
+        gap = 0
+        content_w = btn_w + txt_w
 
         hint_card_w = ((content_w + pad * 2 + 7) // 8) * 8
         hint_card = base_surf.create_ornate_base_surf(
@@ -546,7 +552,7 @@ class PromotionChoiceState(State):
             if self.skill_cards:
                 card_surf, card_w, card_h = self.skill_cards[current_idx]
                 box_x = 6
-                box_y = 42
+                box_y = 38
                 surf.blit(card_surf, (box_x - 2, box_y - 4))
 
             # 3. Rodapé populado com os Status Bônus

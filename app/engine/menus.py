@@ -2392,3 +2392,147 @@ class PrepGBA(Choice):
             FONT[chp_font].blit(chapter, surf, (x_offset + 20, y_offset + chp_height - FONT[chp_font].height - 1))
 
         return surf
+
+class MapSpriteDecoration:
+    """
+    Decoração de sprite de mapa universal.
+    Ancora o chão do sprite (Y=38 no frame) rente à margem inferior de 1px da linha.
+    """
+    def __init__(self, klass_nid, team='player', sprite_height=18, offset_x=24):
+        from app.engine.unit_sprite import load_klass_sprite
+        self.map_sprite = load_klass_sprite(klass_nid, team)
+        self.is_active = False
+        self.offset_x = offset_x
+        # O chão do sprite em Y=38 pousa a 1px do fim da linha (38 - sprite_height)
+        self.offset_y = 38 - sprite_height
+
+    def set_active(self, active: bool):
+        self.is_active = active
+
+    def get_width(self) -> int:
+        return 16
+
+    def draw(self, surf, x, y=None):
+        if y is None:
+            x, y = x
+        if not self.map_sprite:
+            return
+        state = 'active' if self.is_active else 'passive'
+        frame = self.map_sprite.create_image(state)
+        surf.blit(frame, (x - self.offset_x, y - self.offset_y))
+
+
+class VisualOption(menu_options.BasicOption):
+    """
+    Opção visual com altura de linha (sprite + 2px de respiro)
+    e texto centralizado.
+    """
+    SPRITE_HEIGHT = 18
+    ROW_HEIGHT = SPRITE_HEIGHT + 2  # 20px (1px respiro topo, 1px base)
+
+    def __init__(self, idx, option, decoration=None, deco_width=20, deco_spacing=4):
+        super().__init__(idx, option)
+        self.decoration = decoration
+        self.deco_width = deco_width
+        self.deco_spacing = deco_spacing
+
+    def height(self):
+        return self.ROW_HEIGHT
+
+    def width(self):
+        base_w = super().width()
+        if self.decoration is not None and self.deco_width > 0:
+            return base_w + self.deco_width + self.deco_spacing
+        return base_w
+
+    def draw_decoration(self, surf, x, y):
+        if not self.decoration:
+            return
+        deco_x = x + 3
+        # Inicia a 1px do topo da linha
+        deco_y = y + 1
+        if hasattr(self.decoration, 'draw'):
+            self.decoration.draw(surf, deco_x, deco_y)
+        elif hasattr(self.decoration, 'get_width'):
+            surf.blit(self.decoration, (deco_x, deco_y))
+
+    def draw(self, surf, x, y):
+        # Texto centralizado em relação à altura total da linha
+        text_y = y + (self.ROW_HEIGHT - FONT['text'].height) // 2
+        if self.decoration is not None and self.deco_width > 0:
+            self.draw_decoration(surf, x, y)
+            super().draw(surf, x + self.deco_width + self.deco_spacing, text_y)
+        else:
+            super().draw(surf, x, text_y)
+
+
+class VisualChoice(Choice):
+    """
+    Subclasse de Choice com altura arredondada para o múltiplo de 8 superior
+    e centralização simétrica do conteúdo.
+    """
+    def __init__(self, owner, options, topleft=None, decorations=None, background='menu_bg_base',
+                 info=None, limit=None, deco_spacing=4, deco_width=20):
+        self.raw_decorations = list(decorations) if decorations else []
+        self.deco_spacing = deco_spacing
+        self.deco_width = deco_width
+        super().__init__(owner, options, topleft, background=background, info=info)
+        if limit is not None:
+            self.set_limit(limit)
+
+        # Centraliza o bloco de opções na área útil da caixa
+        total_options_h = sum(opt.height() for opt in self.options[:self.limit])
+        inner_h = self.get_menu_height() - 8
+        self.y_offset = max(0, (inner_h - total_options_h) // 2)
+
+    def get_menu_height(self):
+        raw_h = super().get_menu_height()
+        # Múltiplo de 8 superior mais próximo da altura total
+        return ((raw_h + 7) // 8) * 8
+
+    def draw_scroll_bar(self, surf, topleft):
+        """Alinha a barra de rolagem à altura e posição das opções visuais."""
+        right = topleft[0] + self.get_menu_width()
+        topright = (right, topleft[1] + self.y_offset)
+        row_h = self.options[0].height() if self.options else 16
+        self.scroll_bar.draw(surf, topright, self.scroll, self.limit, len(self.options), row_h)
+
+    def create_options(self, options, info_descs=None):
+        self.options.clear()
+        if not options and not getattr(self, 'hard_limit', False):
+            null_option = menu_options.NullOption(0)
+            self.options.append(null_option)
+        else:
+            for idx, option in enumerate(options):
+                deco = self.raw_decorations[idx] if idx < len(self.raw_decorations) else None
+                visual_option = VisualOption(
+                    idx, option,
+                    decoration=deco,
+                    deco_width=self.deco_width,
+                    deco_spacing=self.deco_spacing
+                )
+                if info_descs and idx < len(info_descs) and info_descs[idx]:
+                    visual_option.help_box = help_menu.HelpDialog(info_descs[idx])
+                self.options.append(visual_option)
+
+    def set_decorations(self, decorations):
+        self.raw_decorations = list(decorations)
+        raw_opts = [opt.get() for opt in self.options if opt.get() is not None]
+        self.create_options(raw_opts)
+        self.update_bg()
+
+    def update(self):
+        super().update()
+        cur_idx = self.get_current_index()
+        for idx, option in enumerate(self.options):
+            deco = getattr(option, 'decoration', None)
+            if deco:
+                if hasattr(deco, 'set_active'):
+                    deco.set_active(idx == cur_idx)
+                elif hasattr(deco, 'change_state'):
+                    deco.change_state('active' if idx == cur_idx else 'passive')
+                if hasattr(deco, 'update'):
+                    try:
+                        deco.update()
+                    except TypeError:
+                        pass

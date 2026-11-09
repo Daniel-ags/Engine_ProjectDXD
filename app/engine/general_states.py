@@ -2777,15 +2777,8 @@ class AlertState(State):
     def back(self):
         if game.alerts:
             game.alerts.pop()
-
-        if game.alerts:
-            next_alert = game.alerts[-1]
-            if hasattr(next_alert, 'time_to_start'):
-                next_alert.time_to_start = engine.get_time()
-            return 'repeat'
-        else:
-            game.state.back()
-            return 'repeat'
+        game.state.back()
+        return 'repeat'
 
     def take_input(self, event):
         if not game.alerts:

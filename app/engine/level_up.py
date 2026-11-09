@@ -7,7 +7,7 @@ from app.data.resources.resources import RESOURCES
 from app.data.database.database import DB
 
 from app.utilities import utils
-from app.engine import engine, image_mods, icons, unit_funcs, \
+from app.engine import engine, image_mods, icons, unit_funcs, aura_funcs, \
     action, banner, skill_system, exp_funcs, item_funcs, base_surf, menus, help_menu
 from app.engine.sprites import SPRITES
 from app.engine.sound import get_sound_thread
@@ -341,7 +341,7 @@ class ExpState(State):
                 if self.combat_object:
                     self.combat_object.lighten_ui()
 
-                # Experiência de armas
+                # Experiência e ranks de arma
                 if self.new_wexp:
                     for weapon_nid, value in self.new_wexp.items():
                         action.do(action.AddWexp(self.unit, weapon_nid, value))
@@ -358,21 +358,32 @@ class ExpState(State):
                     else:
                         ExpState.give_new_class_skills(self.unit)
 
-                # Transições finais
+                # Despacho inicial limpo
                 if game.memory.get('skill_swap_queue'):
-                    self.state.change('wait_for_skill_swap')
+                    self.state.change('wait_for_swap')
                     game.state.change('skill_swap_levelup')
                 elif game.alerts:
-                    self.state.change('wait_for_skill_swap')
+                    self.state.change('drain_alerts')
+                else:
+                    self.state.clear()
+                    game.state.back()
+
+        elif self.state.get_state() == 'wait_for_swap':
+            # Responsabilidade 1: Aguardar exclusivamente o término da tela modal de troca
+            if not game.memory.get('skill_swap_queue') and game.state.state and game.state.state[-1] == self:
+                if game.alerts:
+                    self.state.change('drain_alerts')
                     game.state.change('alert')
                 else:
                     self.state.clear()
                     game.state.back()
 
-        elif self.state.get_state() == 'wait_for_skill_swap':
-            # Aguarda a fila de trocas e todos os alertas fecharem naturalmente
-            if not game.memory.get('skill_swap_queue') and not game.alerts:
-                if game.state.state and game.state.state[-1] == self:
+        elif self.state.get_state() == 'drain_alerts':
+            # Responsabilidade 2: Bombear cada banner individualmente até a fila esvaziar
+            if game.state.state and game.state.state[-1] == self:
+                if game.alerts:
+                    game.state.change('alert')
+                else:
                     self.state.clear()
                     game.state.back()
 
@@ -483,18 +494,19 @@ class ExpState(State):
                     if not is_slot_skill or len(unit.get_equipped_skills()) < unit.max_skills:
                         act = action.AddSkill(unit, skill_nid, source=source, source_type=source_type)
                         action.do(act)
+
+                        # Propaga aura se estiver no mapa
+                        if act.skill_obj and hasattr(act.skill_obj, 'aura') and act.skill_obj.aura and hasattr(act.skill_obj, 'subskill'):
+                            if unit.position and getattr(game, 'board', None):
+                                aura_funcs.propagate_aura(unit, act.skill_obj, game)
+
                         if act.skill_obj and not skill_system.hidden(act.skill_obj, unit):
-                            msg = f"{unit.name} learned {act.skill_obj.name}!"
+                            msg = f"{unit.name} learned {act.skill_obj.name}"
                             alert = CustomSkillBanner(unit, act.skill_obj, msg)
                             game.alerts.append(alert)
                     else:
                         if unit.team == 'player':
-                            if 'skill_swap_queue' not in game.memory or not game.memory['skill_swap_queue']:
-                                game.memory['skill_swap_queue'] = []
                             game.memory['skill_swap_queue'].append((unit, skill_nid, source, source_type))
-
-        if game.memory.get('skill_swap_queue'):
-            game.state.change('skill_swap_levelup')
 
     @staticmethod
     def give_new_class_skills(unit: UnitObject):
@@ -938,35 +950,50 @@ class SkillSwapLevelUpState(State):
         unit = self._get_live_unit()
         old_skill = self.equipped_skills[self.pending_skill_idx]
 
-        if not hasattr(unit, 'learned_skills') or unit.learned_skills is None:
+        # 1. Garante o registro permanente da nova skill na reserva
+        if not hasattr(unit, 'learned_skills'):
             unit.learned_skills = []
         if self.new_skill_nid not in unit.learned_skills:
             unit.learned_skills.append(self.new_skill_nid)
 
+        # 2. Se a skill desequipada for uma aura, remove do tabuleiro e dos aliados nativamente
+        if hasattr(old_skill, 'aura') and old_skill.aura and hasattr(old_skill, 'subskill'):
+            if unit.position and getattr(game, 'board', None):
+                aura_funcs.release_aura(unit, old_skill, game)
+
+        # 3. Desequipa a habilidade da unidade
         if hasattr(unit, 'unequip_skill'):
             unit.unequip_skill(old_skill.nid)
+        else:
+            parent_skill_obj = next((s for s in unit.skills if s.nid == old_skill.nid), None)
+            if parent_skill_obj:
+                try:
+                    action.RemoveSkill(unit, parent_skill_obj).do()
+                except Exception:
+                    if parent_skill_obj in unit.skills:
+                        unit.skills.remove(parent_skill_obj)
 
-        parent_skill_obj = next((s for s in unit.skills if s.nid == old_skill.nid), None)
-        if parent_skill_obj:
-            try:
-                action.RemoveSkill(unit, parent_skill_obj).do()
-            except Exception:
-                if parent_skill_obj in unit.skills:
-                    unit.skills.remove(parent_skill_obj)
-
-        self.clean_aura_ghosts(unit, old_skill)
-
-        act = action.AddSkill(unit, self.new_skill_nid, source=self.source, source_type=self.source_type)
+        # 4. Adiciona a nova habilidade nos slots ativos da engine
+        source = unit.klass if self.source_type == SourceType.KLASS else unit.nid
+        act = action.AddSkill(unit, self.new_skill_nid, source=source, source_type=self.source_type)
         action.do(act)
 
-        if hasattr(unit, 'equip_skill'):
-            unit.equip_skill(self.new_skill_nid)
-        if hasattr(unit, 'reset_skills'):
-            unit.reset_skills()
+        # 5. Se a nova skill for uma aura, propaga imediatamente pelo tabuleiro
+        new_skill_obj = act.skill_obj or self.new_skill_obj
+        if new_skill_obj and hasattr(new_skill_obj, 'aura') and new_skill_obj.aura and hasattr(new_skill_obj, 'subskill'):
+            if unit.position and getattr(game, 'board', None):
+                aura_funcs.propagate_aura(unit, new_skill_obj, game)
 
-        skill_obj_to_show = getattr(act, 'skill_obj', None) or getattr(act, 'skill', None) or self.new_skill_obj
-        swap_text = f"{unit.name} learned {skill_obj_to_show.name}.\nReserved {old_skill.name} !"
+        # 6. Atualiza o cache de skills da unidade
+        if hasattr(unit, '_visible_skills_cache'):
+            unit._visible_skills_cache = None
+
+        # 7. Dispara o banner formatado via _finish_and_alert
+        skill_obj_to_show = act.skill_obj or self.new_skill_obj
+        swap_text = f"{unit.name} swapped {old_skill.name}\nfor {skill_obj_to_show.name}!"
         self._finish_and_alert(unit, skill_obj_to_show, custom_text=swap_text)
+
+        self.finish()
 
     def _execute_keep_learned(self):
         unit = self._get_live_unit()
@@ -977,41 +1004,6 @@ class SkillSwapLevelUpState(State):
 
         reserve_text = f"{unit.name} reserved {self.new_skill_obj.name}!"
         self._finish_and_alert(unit, self.new_skill_obj, custom_text=reserve_text)
-
-    def get_aura_subskill_nids(self, skill_or_nid) -> set:
-        skill_nid = skill_or_nid if isinstance(skill_or_nid, str) else skill_or_nid.nid
-        prefab = DB.skills.get(skill_nid)
-        subskills = set()
-        if not prefab:
-            return subskills
-
-        for sub in getattr(prefab, 'subskills', None) or []:
-            if isinstance(sub, str):
-                subskills.add(sub)
-
-        for comp in getattr(prefab, 'components', None) or []:
-            val = getattr(comp, 'value', None)
-            if isinstance(val, str) and val in DB.skills:
-                subskills.add(val)
-            elif isinstance(val, (list, tuple, set)):
-                subskills.update(item for item in val if isinstance(item, str) and item in DB.skills)
-            for attr in ('skill', 'subskill', 'target_skill', 'aura_skill', 'buff', 'status'):
-                attr_val = getattr(comp, attr, None)
-                if isinstance(attr_val, str) and attr_val in DB.skills:
-                    subskills.add(attr_val)
-        return subskills
-
-    def clean_aura_ghosts(self, source_unit, unequipped_skill):
-        buff_nids = self.get_aura_subskill_nids(unequipped_skill)
-        if not buff_nids:
-            return
-        for target in set(game.units):
-            ghosts = [s for s in list(target.skills) if s.nid in buff_nids]
-            for ghost in ghosts:
-                if ghost in target.skills:
-                    target.skills.remove(ghost)
-                if hasattr(target, 'reset_skills'):
-                    target.reset_skills()
 
     def take_input(self, event):
         first_push = self.fluid.update()
