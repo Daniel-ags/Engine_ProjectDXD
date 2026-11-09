@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Tuple
+from typing import Optional, Tuple
 
 class MovementComponent:
     grid_move = True
@@ -39,6 +39,13 @@ class MovementComponent:
         return None
 
     def get_camera_position(self) -> Tuple[float, float]:
+        return None
+
+    def get_paced_camera_position(self) -> Optional[Tuple[float, float]]:
+        """
+        # Where the camera keeps pace with, pixel for pixel, every frame,
+        # or None when it eases over to get_camera_position instead
+        """
         return None
 
     def should_camera_center(self) -> bool:
