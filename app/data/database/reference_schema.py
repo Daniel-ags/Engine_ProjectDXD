@@ -343,6 +343,7 @@ SCHEMA: Dict[type, Dict[str, FieldDeclarations]] = {
         'support_rank': Ref(DType.SUPPORT_RANKS, unique=True),
         'requirement': NOT_REF,
         'gate': NOT_REF,
+        'gate_message': NOT_REF,
         'damage': NOT_REF,
         'resist': NOT_REF,
         'accuracy': NOT_REF,
