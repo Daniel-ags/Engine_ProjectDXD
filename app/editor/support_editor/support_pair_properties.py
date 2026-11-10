@@ -32,7 +32,7 @@ class SupportPairProperties(QWidget):
         self.one_way_box.edit.stateChanged.connect(self.one_way_changed)
         main_layout.addWidget(self.one_way_box)
 
-        attrs = ('support_rank', 'requirement', 'gate', 'damage', 'resist', 'accuracy', 'avoid', 'crit', 'dodge', 'attack_speed', 'defense_speed')
+        attrs = ('support_rank', 'requirement', 'gate', 'gate_message', 'damage', 'resist', 'accuracy', 'avoid', 'crit', 'dodge', 'attack_speed', 'defense_speed')
         self.rank_bonus = AppendMultiListWidget(
             SupportRankRequirementList(), "Rank Requirements & Personal Bonuses",
             attrs, SupportRankRequirementDelegate, self)
@@ -74,8 +74,8 @@ class SupportPairProperties(QWidget):
 class SupportRankRequirementDelegate(QStyledItemDelegate):
     rank_column = 0
     requirement_column = 1
-    str_column = 2
-    float_columns = (3, 4, 5, 6, 7, 8, 9, 10)
+    str_columns = (2, 3)
+    float_columns = (4, 5, 6, 7, 8, 9, 10, 11)
 
     def createEditor(self, parent, option, index):
         if index.column() in self.float_columns:
@@ -86,7 +86,7 @@ class SupportRankRequirementDelegate(QStyledItemDelegate):
             editor = QSpinBox(parent)
             editor.setRange(0, 65535)  # No negative rank unlocks allowed
             return editor
-        elif index.column() == self.str_column:
+        elif index.column() in self.str_columns:
             editor = QLineEdit(parent)
             return editor
         elif index.column() == self.rank_column:

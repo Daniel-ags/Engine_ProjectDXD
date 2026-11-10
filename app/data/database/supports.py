@@ -134,10 +134,11 @@ constants = ConstantCatalog([
 ])
 
 class SupportRankRequirement(SupportRankBonus):
-    def __init__(self, support_rank, requirement, gate, effects):
+    def __init__(self, support_rank, requirement, gate, gate_message, effects):
         self.support_rank = support_rank
         self.requirement: int = requirement
         self.gate: str = gate
+        self.gate_message: str = gate_message
 
         self.damage = float(effects[0])
         self.resist = float(effects[1])
@@ -150,7 +151,7 @@ class SupportRankRequirement(SupportRankBonus):
 
     @classmethod
     def default(cls):
-        return cls(None, 0, '', [0]*8)
+        return cls(None, 0, '', '', [0]*8)
 
     @classmethod
     def copy(cls, other):

@@ -22,7 +22,7 @@ from app.engine.state import MapState
 from app.engine.game_state import game
 from app.engine import menus, base_surf, background, text_funcs, \
     image_mods, gui, icons, prep, record_book, unit_sprite, action, \
-    engine, equations, evaluate
+    engine, equations, evaluate, banner
 from app.engine.fluid_scroll import FluidScroll
 from app.engine.graphics.text.text_renderer import render_text
 from app.engine.persistent_records import RECORDS
@@ -397,6 +397,14 @@ class SupportDisplay():
                 game.events.trigger(triggers.OnSupport(game.get_unit(self.unit_nid), game.get_unit(other_unit_nid), None, rank, False))
                 action.do(action.UnlockSupportRank(pair.nid, rank))
                 return True
+            elif bonus.gate and not game.game_vars[bonus.gate]:
+                if bonus.gate_message and pair.points == bonus.requirement:
+                    gate_message = bonus.gate_message
+                    game.alerts.append(banner.Custom(gate_message, 'Select 1'))
+                    game.state.change('alert')
+                    return True
+                else:
+                    return False
         return False
 
     def get_num_ranks(self, other_unit_nid) -> int:
