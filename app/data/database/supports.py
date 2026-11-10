@@ -155,7 +155,7 @@ class SupportRankRequirement(SupportRankBonus):
 
     @classmethod
     def copy(cls, other):
-        return cls(other.support_rank, other.requirement, other.gate, other.effects)
+        return cls(other.support_rank, other.requirement, other.gate, other.gate_message, other.effects)
 
 class SupportRankRequirementList(SupportRankBonusList):
     def add_new_default(self, db):

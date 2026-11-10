@@ -398,7 +398,7 @@ class SupportDisplay():
                 action.do(action.UnlockSupportRank(pair.nid, rank))
                 return True
             elif bonus.gate and not game.game_vars[bonus.gate]:
-                if bonus.gate_message and pair.points == bonus.requirement:
+                if bonus.gate_message and rank in pair.locked_ranks:
                     gate_message = bonus.gate_message
                     game.alerts.append(banner.Custom(gate_message, 'Select 1'))
                     game.state.change('alert')
