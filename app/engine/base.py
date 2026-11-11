@@ -1,3 +1,4 @@
+import pygame
 import math
 import random
 import logging
@@ -22,7 +23,7 @@ from app.engine.state import MapState
 from app.engine.game_state import game
 from app.engine import menus, base_surf, background, text_funcs, \
     image_mods, gui, icons, prep, record_book, action, \
-    engine, equations, evaluate, help_menu, aura_funcs
+    engine, equations, evaluate, skill_system, help_menu, aura_funcs
 from app.engine.fluid_scroll import FluidScroll
 from app.engine.graphics.text.text_renderer import render_text
 from app.engine.persistent_records import RECORDS
@@ -276,22 +277,191 @@ class BaseMarketSelectState(prep.PrepManageState):
             game.memory['next_state'] = 'info_menu'
             game.state.change('transition_to')
 
+def _apply_grayscale_filter(surf, brightness: float = 0.68):
+    """Converte ícone e texto da linha para escala de cinza preservando transparência."""
+    gray = pygame.transform.grayscale(surf)
+    if brightness < 1.0:
+        shade = int(255 * brightness)
+        gray.fill((shade, shade, shade, 255), special_flags=pygame.BLEND_RGBA_MULT)
+    return gray
+
+class TitledChoice(menus.Choice):
+    """
+    Subclasse de menus.Choice com contêiner integrado, geometria parametrizada
+    e suporte a filtro grayscale por linha para itens inativos.
+    """
+    TITLE_TOP_PAD = 3
+    TITLE_LEFT_PAD = 4
+    TITLE_HEIGHT = 14
+    LIST_INDENT = 2
+    SCROLLBAR_RIGHT_OFFSET = 3
+    BG_TRANSLUCENCY = 0.1
+    OPTION_EXTRA_WIDTH = 16
+    DEFAULT_GRAY_BRIGHTNESS = 0.68
+
+    def __init__(self, options, topleft, title="", width=112, height=72, limit=3, background='menu_bg_base'):
+        self.title = title
+        self.box_width = width
+        self.box_height = height
+        self.box_topleft = topleft
+
+        self.title_x = self.box_topleft[0] + self.TITLE_LEFT_PAD
+        inner_x = self.title_x + self.LIST_INDENT
+        inner_topleft = (inner_x, self.box_topleft[1] + self.TITLE_HEIGHT)
+
+        super().__init__(None, options, inner_topleft, background=None)
+        self.set_limit(limit)
+        self.width = self.get_menu_width()
+
+        self._custom_bg = base_surf.create_base_surf(self.box_width, self.box_height, background)
+        self._custom_bg = image_mods.make_translucent(self._custom_bg, self.BG_TRANSLUCENCY)
+
+        self.target_scroll_x = self.box_topleft[0] + self.box_width + self.SCROLLBAR_RIGHT_OFFSET
+        self._lock_internal_scrollbar()
+
+    def _lock_internal_scrollbar(self):
+        sb = getattr(self, 'scroll_bar', None) or getattr(self, 'scrollbar', None)
+        if sb and hasattr(sb, 'draw'):
+            orig_draw = sb.draw
+            fixed_x = self.target_scroll_x
+
+            def locked_draw(surf, topright=None, *args, **kwargs):
+                if topright is not None:
+                    topright = (fixed_x, topright[1])
+                elif 'topright' in kwargs:
+                    kwargs['topright'] = (fixed_x, kwargs['topright'][1])
+                return orig_draw(surf, topright, *args, **kwargs)
+
+            sb.draw = locked_draw
+
+    def set_title(self, title: str):
+        self.title = title
+
+    def set_option_grayscale(self, idx: int, grayscale: bool, brightness: float = DEFAULT_GRAY_BRIGHTNESS):
+        """Aplica ou remove o filtro monocromático cinza na linha especificada."""
+        if not (0 <= idx < len(self.options)):
+            return
+
+        opt = self.options[idx]
+        if not hasattr(opt, '_orig_draw'):
+            opt._orig_draw = opt.draw
+
+        opt._is_grayscale = grayscale
+        opt._gray_brightness = brightness
+        opt._gray_cache = None
+
+        if not getattr(opt, '_gray_wrapped', False):
+            opt._gray_wrapped = True
+            menu_ref = self
+
+            def filtered_draw(surf, x, y):
+                if not getattr(opt, '_is_grayscale', False):
+                    return opt._orig_draw(surf, x, y)
+
+                row_w = max(menu_ref.box_width, opt.width() + menu_ref.OPTION_EXTRA_WIDTH)
+                row_h = opt.height()
+                cache_key = (getattr(opt, 'display_text', str(opt.get())), row_w, row_h, opt._gray_brightness)
+
+                if getattr(opt, '_gray_cache_key', None) != cache_key or getattr(opt, '_gray_cache', None) is None:
+                    raw_row = engine.create_surface((row_w, row_h), transparent=True)
+                    opt._orig_draw(raw_row, 0, 0)
+                    opt._gray_cache = _apply_grayscale_filter(raw_row, opt._gray_brightness)
+                    opt._gray_cache_key = cache_key
+
+                surf.blit(opt._gray_cache, (x, y))
+
+            opt.draw = filtered_draw
+
+    def get_menu_width(self):
+        left_margin = (self.title_x + self.LIST_INDENT) - self.box_topleft[0]
+        return self.box_width - left_margin
+
+    def draw_scroll_bar(self, surf, topleft):
+        sb = getattr(self, 'scroll_bar', None) or getattr(self, 'scrollbar', None)
+        if sb and hasattr(sb, 'draw'):
+            target_y = self.box_topleft[1] + self.TITLE_HEIGHT
+            sb.draw(surf, (self.target_scroll_x, target_y), self.scroll, self.limit, len(self.options))
+
+    def draw(self, surf):
+        if not getattr(self, 'options', None):
+            return surf
+
+        surf.blit(self._custom_bg, self.box_topleft)
+
+        if self.title:
+            title_color = 'yellow' if getattr(self, 'draw_cursor', False) else 'grey'
+            title_pos = (self.title_x, self.box_topleft[1] + self.TITLE_TOP_PAD)
+            render_text(surf, ['text'], [self.title], [title_color], title_pos)
+
+        super().draw(surf)
+        return surf
+
+
 class BaseSkillsManageState(State):
     name = 'base_skills_manage'
+
+    # Dimensões e espaçamento horizontal da tela
+    SCREEN_MARGIN_X = 4
+    PANEL_GAP_X = 8
+    FULL_PANEL_W = WINWIDTH - (SCREEN_MARGIN_X * 2)
+    HALF_PANEL_W = (FULL_PANEL_W - PANEL_GAP_X) // 2
+    LEFT_PANEL_X = SCREEN_MARGIN_X
+    RIGHT_PANEL_X = LEFT_PANEL_X + HALF_PANEL_W + PANEL_GAP_X
+
+    # Dimensões e ancoragem vertical dos 3 blocos
+    HEADER_Y = 0
+    HEADER_H = 40
+    FOOTER_PANEL_H = 32
+    FOOTER_PANEL_Y = WINHEIGHT - FOOTER_PANEL_H
+    LIST_PANEL_Y = HEADER_Y + HEADER_H
+    LIST_PANEL_H = FOOTER_PANEL_Y - LIST_PANEL_Y
+
+    # Grade interna das listas de habilidades
+    ROW_HEIGHT = 16
+    BORDER_PAD_Y = 8
+    VISIBLE_SKILL_ROWS = (LIST_PANEL_H - TitledChoice.TITLE_HEIGHT - BORDER_PAD_Y) // ROW_HEIGHT
+
+    # Estilo visual padrão
+    MENU_BG_STYLE = 'menu_bg_base'
+    BG_TRANSLUCENCY = 0.1
+    EMPTY_PLACEHOLDER = '---'
+    INACTIVE_SKILL_BRIGHTNESS = 0.68
+
+    # Coordenadas internas do cabeçalho superior
+    CHIBI_POS = (8, 3)
+    MAP_SPRITE_POS = (8, 5)
+    UNIT_TEXT_X = 46
+    UNIT_NAME_Y = 5
+    UNIT_CLASS_Y = 19
+    SLOTS_LABEL_X = 146
+    SLOTS_COUNT_X = 188
+    SLOTS_Y = 12
+
+    # Sprites e espaçamento da barra de comandos inferior
+    BUTTON_SPRITE_SHEET = 'buttons'
+    BUTTON_A_RECT = (0, 66, 14, 13)
+    BUTTON_B_RECT = (0, 82, 14, 13)
+    BUTTON_R_RECT = (0, 146, 24, 13)
+    BUTTON_ICON_TEXT_GAP = 2
+    BUTTON_GROUP_GAP = 12
+    BUTTON_VERTICAL_NUDGE = 1
+
+    # Parâmetros do balão de ajuda (INFO)
+    HELP_PANEL_RIGHT_INSET = 4
 
     def start(self):
         self.fluid = FluidScroll()
         self.unit = game.memory['current_unit']
         self.bg = game.memory.get('base_bg') or base_background()
 
-        # Remove todas as auras de combate de todas as unidades ao entrar na Base
         for u in game.get_units_in_party():
             aura_funcs.remove_all_auras(u)
 
-        self.current_pane = 'equipped'  # 'equipped' ou 'available'
+        self.current_pane = 'personal'
         self.help_dialog = None
-        self.help_pos = (0, 0)          # Janela de ajuda modal (INFO)
+        self.help_pos = (0, 0)
 
+        self._load_button_sprites()
         self.refresh_skill_lists()
         self.build_menus()
 
@@ -301,63 +471,78 @@ class BaseSkillsManageState(State):
     def begin(self):
         self.fluid.reset_on_change_state()
 
+    def _load_button_sprites(self):
+        sprite = SPRITES.get(self.BUTTON_SPRITE_SHEET)
+        self.btn_a_surf = sprite.subsurface(*self.BUTTON_A_RECT)
+        self.btn_b_surf = sprite.subsurface(*self.BUTTON_B_RECT)
+        self.btn_r_surf = sprite.subsurface(*self.BUTTON_R_RECT)
+
     def refresh_skill_lists(self):
-        self.equipped_skills = self.unit.get_equipped_skills()
-        equipped_nids = {s.nid for s in self.equipped_skills}
-        self.available_skills = [
-            DB.skills.get(nid) for nid in self.unit.learned_skills
-            if nid not in equipped_nids and DB.skills.get(nid)
-        ]
+        # 1. Habilidades Inatas da Classe (Painel Direito)
+        self.class_skills = list(self.unit.current_class_skills)
+
+        # 2. Habilidades Pessoais (Painel Esquerdo: Ativas no topo, Inativas no fim)
+        self.equipped_skills = list(self.unit.personal_skills)
+
+        active_nids = {s.nid for s in self.unit.skills}
+        self.available_skills = []
+        for s_nid in getattr(self.unit, 'learned_skills', []):
+            if s_nid not in active_nids:
+                skill_prefab = DB.skills.get(s_nid)
+                if skill_prefab:
+                    self.available_skills.append(skill_prefab)
+
+        self.personal_skills = self.equipped_skills + self.available_skills
 
     def build_menus(self):
-        equipped_names = [s.name for s in self.equipped_skills] or ['---']
-        available_names = [s.name for s in self.available_skills] or ['---']
+        personal_names = [s.name for s in self.personal_skills] or [self.EMPTY_PLACEHOLDER]
+        class_names = [s.name for s in self.class_skills] or [self.EMPTY_PLACEHOLDER]
 
-        self.equipped_menu = menus.Choice(None, equipped_names, topleft=(4, 63), background=None)
-        self.equipped_menu.set_limit(5)
+        self.personal_menu = TitledChoice(
+            options=personal_names,
+            topleft=(self.LEFT_PANEL_X, self.LIST_PANEL_Y),
+            title="Personal Skills",
+            width=self.HALF_PANEL_W,
+            height=self.LIST_PANEL_H,
+            limit=self.VISIBLE_SKILL_ROWS,
+            background=self.MENU_BG_STYLE
+        )
 
-        self.available_menu = menus.Choice(None, available_names, topleft=(124, 63), background=None)
-        self.available_menu.set_limit(5)
+        # Aplica o filtro cinza nas habilidades pessoais desequipadas (ou no placeholder)
+        equipped_count = len(self.equipped_skills)
+        for idx in range(len(self.personal_menu.options)):
+            is_inactive = (not self.personal_skills) or (idx >= equipped_count)
+            self.personal_menu.set_option_grayscale(idx, is_inactive, self.INACTIVE_SKILL_BRIGHTNESS)
 
-        def lock_scrollbar(menu, target_x):
+        self.class_menu = TitledChoice(
+            options=class_names,
+            topleft=(self.RIGHT_PANEL_X, self.LIST_PANEL_Y),
+            title="Class Skills",
+            width=self.HALF_PANEL_W,
+            height=self.LIST_PANEL_H,
+            limit=self.VISIBLE_SKILL_ROWS,
+            background=self.MENU_BG_STYLE
+        )
 
-            sb = getattr(menu, 'scroll_bar', None) or getattr(menu, 'scrollbar', None)
-            if not sb:
-                for attr in dir(menu):
-                    val = getattr(menu, attr, None)
-                    if val is not None and hasattr(val, 'draw') and 'scroll' in attr.lower():
-                        sb = val
-                        break
-
-            if sb and hasattr(sb, 'draw'):
-                orig_draw = sb.draw
-                def custom_draw(surf, topright=None, *args, **kwargs):
-                    if topright is not None:
-                        topright = (target_x, topright[1])
-                    elif 'topright' in kwargs:
-                        kwargs['topright'] = (target_x, kwargs['topright'][1])
-                    return orig_draw(surf, topright, *args, **kwargs)
-                sb.draw = custom_draw
-
-        lock_scrollbar(self.equipped_menu, 119)
-        lock_scrollbar(self.available_menu, 239)
+        for idx in range(len(self.class_menu.options)):
+            self.class_menu.set_option_grayscale(idx, not self.class_skills, self.INACTIVE_SKILL_BRIGHTNESS)
 
         self._update_cursors()
 
     def _update_cursors(self):
-        self.equipped_menu.draw_cursor = (self.current_pane == 'equipped')
-        self.available_menu.draw_cursor = (self.current_pane == 'available')
+        self.personal_menu.draw_cursor = (self.current_pane == 'personal')
+        self.class_menu.draw_cursor = (self.current_pane == 'class')
+
+    def _is_personal_idx_equipped(self, idx: int) -> bool:
+        return 0 <= idx < len(self.equipped_skills)
 
     def _get_hovered_skill(self):
-        if self.current_pane == 'equipped' and self.equipped_skills:
-            idx = self.equipped_menu.get_current_index()
-            if idx < len(self.equipped_skills):
-                return self.equipped_skills[idx]
-        elif self.current_pane == 'available' and self.available_skills:
-            idx = self.available_menu.get_current_index()
-            if idx < len(self.available_skills):
-                return self.available_skills[idx]
-        return None
+        if self.current_pane == 'personal':
+            idx = self.personal_menu.get_current_index()
+            return self.personal_skills[idx] if idx < len(self.personal_skills) else None
+        else:
+            idx = self.class_menu.get_current_index()
+            return self.class_skills[idx] if idx < len(self.class_skills) else None
 
     def _update_help_dialog(self):
         hovered = self._get_hovered_skill()
@@ -365,15 +550,12 @@ class BaseSkillsManageState(State):
             self.help_dialog = None
             return
 
-        active_menu = self.equipped_menu if self.current_pane == 'equipped' else self.available_menu
+        active_menu = self.personal_menu if self.current_pane == 'personal' else self.class_menu
         rel_idx = active_menu.get_current_index() - getattr(active_menu, 'scroll', 0)
+        panel_x = self.LEFT_PANEL_X if self.current_pane == 'personal' else self.RIGHT_PANEL_X
 
-        # Ancora o balão à direita do painel ativo
-        if self.current_pane == 'equipped':
-            anchor_x = 112
-        else:
-            anchor_x = 232
-        anchor_y = active_menu.topleft[1] + (rel_idx * 16) + 8
+        anchor_x = panel_x + self.HALF_PANEL_W - self.HELP_PANEL_RIGHT_INSET
+        anchor_y = active_menu.topleft[1] + (rel_idx * self.ROW_HEIGHT) + (self.ROW_HEIGHT // 2)
         self.help_pos = (anchor_x, anchor_y)
 
         desc = getattr(hovered, 'desc', '') or "No description available."
@@ -383,9 +565,9 @@ class BaseSkillsManageState(State):
     def take_input(self, event):
         first_push = self.fluid.update()
         directions = self.fluid.get_directions()
-        active_menu = self.equipped_menu if self.current_pane == 'equipped' else self.available_menu
+        active_menu = self.personal_menu if self.current_pane == 'personal' else self.class_menu
 
-        # Modo com Ajuda Ativa (INFO / HelpDialog aberto)
+        # 1. Navegação com Balão de Ajuda (INFO / R) Aberto
         if self.help_dialog:
             if event in ('INFO', 'BACK', 'SELECT'):
                 self.help_dialog = None
@@ -397,12 +579,12 @@ class BaseSkillsManageState(State):
                 moved = active_menu.move_down(first_push)
             elif 'UP' in directions:
                 moved = active_menu.move_up(first_push)
-            elif 'RIGHT' in directions and self.current_pane == 'equipped':
-                self.current_pane = 'available'
+            elif 'RIGHT' in directions and self.current_pane == 'personal':
+                self.current_pane = 'class'
                 self._update_cursors()
                 moved = True
-            elif 'LEFT' in directions and self.current_pane == 'available':
-                self.current_pane = 'equipped'
+            elif 'LEFT' in directions and self.current_pane == 'class':
+                self.current_pane = 'personal'
                 self._update_cursors()
                 moved = True
 
@@ -411,24 +593,47 @@ class BaseSkillsManageState(State):
                 self._update_help_dialog()
             return
 
-        # Navegação normal
+        # 2. Navegação Normal entre Personal Skills e Class Skills
         active_menu.handle_mouse()
 
         if 'DOWN' in directions:
             if active_menu.move_down(first_push):
                 get_sound_thread().play_sfx('Select 5')
+
         elif 'UP' in directions:
             if active_menu.move_up(first_push):
                 get_sound_thread().play_sfx('Select 5')
 
-        elif 'RIGHT' in directions and self.current_pane == 'equipped':
-            self.current_pane = 'available'
+        elif 'RIGHT' in directions and self.current_pane == 'personal':
+            self.current_pane = 'class'
             self._update_cursors()
             get_sound_thread().play_sfx('Select 6')
-        elif 'LEFT' in directions and self.current_pane == 'available':
-            self.current_pane = 'equipped'
+
+        elif 'LEFT' in directions and self.current_pane == 'class':
+            self.current_pane = 'personal'
             self._update_cursors()
             get_sound_thread().play_sfx('Select 6')
+
+        elif event == 'SELECT':
+            if self.current_pane == 'personal' and self.personal_skills:
+                cur_idx = self.personal_menu.get_current_index()
+                skill = self.personal_skills[cur_idx]
+
+                if self._is_personal_idx_equipped(cur_idx):
+                    success = self.unit.unequip_skill(skill.nid)
+                else:
+                    success = self.unit.equip_skill(skill.nid)
+
+                if success:
+                    get_sound_thread().play_sfx('Select 1')
+                    self.refresh_skill_lists()
+                    self.build_menus()
+                    clamped_idx = min(cur_idx, max(0, len(self.personal_skills) - 1))
+                    self.personal_menu.move_to(clamped_idx)
+                else:
+                    get_sound_thread().play_sfx('Error')
+            else:
+                get_sound_thread().play_sfx('Error')
 
         elif event == 'INFO':
             if self._get_hovered_skill():
@@ -439,102 +644,107 @@ class BaseSkillsManageState(State):
             get_sound_thread().play_sfx('Select 4')
             game.state.change('transition_pop')
 
-        elif event == 'SELECT':
-            cur_idx = active_menu.get_current_index()
-            if self.current_pane == 'equipped' and self.equipped_skills:
-                skill = self.equipped_skills[cur_idx]
-                if self.unit.unequip_skill(skill.nid):
-                    get_sound_thread().play_sfx('Select 1')
-                    self.refresh_skill_lists()
-                    self.build_menus()
-                    self.equipped_menu.move_to(min(cur_idx, max(0, len(self.equipped_skills) - 1)))
-                else:
-                    get_sound_thread().play_sfx('Error')
-
-            elif self.current_pane == 'available' and self.available_skills:
-                skill = self.available_skills[cur_idx]
-                if self.unit.equip_skill(skill.nid):
-                    get_sound_thread().play_sfx('Select 1')
-                    self.refresh_skill_lists()
-                    self.build_menus()
-                    self.available_menu.move_to(min(cur_idx, max(0, len(self.available_skills) - 1)))
-                else:
-                    get_sound_thread().play_sfx('Error')
-
     def update(self):
         super().update()
-        if self.equipped_menu:
-            self.equipped_menu.update()
-        if self.available_menu:
-            self.available_menu.update()
+        if self.personal_menu:
+            self.personal_menu.update()
+        if self.class_menu:
+            self.class_menu.update()
         if self.help_dialog and hasattr(self.help_dialog, 'update'):
             self.help_dialog.update()
+
+    def _draw_footer_commands(self, surf):
+        footer_surf = base_surf.create_base_surf(self.FULL_PANEL_W, self.FOOTER_PANEL_H, self.MENU_BG_STYLE)
+        footer_surf = image_mods.make_translucent(footer_surf, self.BG_TRANSLUCENCY)
+        surf.blit(footer_surf, (self.LEFT_PANEL_X, self.FOOTER_PANEL_Y))
+
+        if self.current_pane == 'personal' and self.personal_skills:
+            cur_idx = self.personal_menu.get_current_index()
+            if self._is_personal_idx_equipped(cur_idx):
+                a_label, a_color = "Unequip", 'white'
+            else:
+                a_label, a_color = "Equip", 'white'
+        else:
+            a_label, a_color = self.EMPTY_PLACEHOLDER, 'grey'
+
+        commands = [
+            (self.btn_a_surf, a_label, a_color),
+            (self.btn_b_surf, "Back", 'white'),
+            (self.btn_r_surf, "Info", 'white'),
+        ]
+
+        group_widths = [
+            btn.get_width() + self.BUTTON_ICON_TEXT_GAP + FONT['text'].width(label)
+            for btn, label, _ in commands
+        ]
+        total_w = sum(group_widths) + self.BUTTON_GROUP_GAP * (len(commands) - 1)
+
+        curr_x = self.LEFT_PANEL_X + (self.FULL_PANEL_W - total_w) // 2
+        text_y = self.FOOTER_PANEL_Y + (self.FOOTER_PANEL_H - self.ROW_HEIGHT) // 2
+        btn_y = text_y + self.BUTTON_VERTICAL_NUDGE
+
+        for (btn, label, color), item_w in zip(commands, group_widths):
+            surf.blit(btn, (curr_x, btn_y))
+            text_x = curr_x + btn.get_width() + self.BUTTON_ICON_TEXT_GAP
+            render_text(surf, ['text'], [label], [color], (text_x, text_y))
+            curr_x += item_w + self.BUTTON_GROUP_GAP
 
     def draw(self, surf):
         if self.bg:
             self.bg.draw(surf)
 
-        base = base_surf.create_base_surf(232, 40, 'menu_bg_base')
-        top_surf = engine.create_surface((232, 42), transparent=True)
-        top_surf.blit(engine.subsurface(base, (0, 0, 232, 34)), (0, 0))
-        top_surf.blit(engine.subsurface(base, (0, 32, 232, 8)), (0, 34))
-        top_surf = image_mods.make_translucent(top_surf, 0.1)
-        surf.blit(top_surf, (4, 3))
+        # 1. Cabeçalho Superior
+        top_surf = base_surf.create_base_surf(self.FULL_PANEL_W, self.HEADER_H, self.MENU_BG_STYLE)
+        top_surf = image_mods.make_translucent(top_surf, self.BG_TRANSLUCENCY)
+        surf.blit(top_surf, (self.LEFT_PANEL_X, self.HEADER_Y))
 
         drawn_visual = False
         if hasattr(icons, 'draw_chibi') and getattr(self.unit, 'portrait_nid', None):
             try:
-                icons.draw_chibi(surf, self.unit.portrait_nid, (8, 8))
+                icons.draw_chibi(surf, self.unit.portrait_nid, self.CHIBI_POS)
                 drawn_visual = True
             except Exception:
                 drawn_visual = False
         if not drawn_visual and hasattr(self.unit, 'sprite'):
             try:
                 char_surf = self.unit.sprite.create_image('active')
-                surf.blit(char_surf, (8, 10))
+                surf.blit(char_surf, self.MAP_SPRITE_POS)
             except Exception:
                 pass
 
-        render_text(surf, ['text'], [self.unit.name], ['white'], (46, 8))
+        render_text(surf, ['text'], [self.unit.name], ['white'], (self.UNIT_TEXT_X, self.UNIT_NAME_Y))
         klass = DB.classes.get(self.unit.klass)
         klass_name = klass.name if klass else ''
-        render_text(surf, ['text'], [klass_name], ['white'], (46, 22))
+        render_text(surf, ['text'], [klass_name], ['white'], (self.UNIT_TEXT_X, self.UNIT_CLASS_Y))
 
+        slots_count = f"{len(self.equipped_skills)}/{self.unit.max_skills}"
         slots_color = 'yellow' if len(self.equipped_skills) < self.unit.max_skills else 'green'
-        render_text(surf, ['text'], ["Slots:"], ['white'], (146, 15))
-        render_text(surf, ['text'], [f"{len(self.equipped_skills)}/{self.unit.max_skills}"], [slots_color], (188, 15))
+        render_text(surf, ['text'], ["Slots:"], ['white'], (self.SLOTS_LABEL_X, self.SLOTS_Y))
+        render_text(surf, ['text'], [slots_count], [slots_color], (self.SLOTS_COUNT_X, self.SLOTS_Y))
 
-        left_surf = base_surf.create_base_surf(112, 112, 'menu_bg_base')
-        left_surf = image_mods.make_translucent(left_surf, 0.1)
-        surf.blit(left_surf, (4, 46))
+        # 2. Painéis Centrais Simétricos (Personal Skills e Class Skills)
+        if self.personal_menu:
+            self.personal_menu.draw(surf)
 
-        title_color_eq = 'yellow' if self.current_pane == 'equipped' else 'grey'
-        render_text(surf, ['text'], [f"Equipped ({len(self.equipped_skills)})"], [title_color_eq], (12, 49))
+        if self.class_menu:
+            self.class_menu.draw(surf)
 
-        if self.equipped_menu:
-            self.equipped_menu.draw(surf)
+        # 3. Rodapé de Atalhos Contextuais
+        self._draw_footer_commands(surf)
 
-        right_surf = base_surf.create_base_surf(112, 112, 'menu_bg_base')
-        right_surf = image_mods.make_translucent(right_surf, 0.1)
-        surf.blit(right_surf, (124, 46))
-
-        title_color_av = 'yellow' if self.current_pane == 'available' else 'grey'
-        render_text(surf, ['text'], [f"Reserve ({len(self.available_skills)})"], [title_color_av], (132, 49))
-
-        if self.available_menu:
-            self.available_menu.draw(surf)
-
+        # 4. Balão Flutuante de Ajuda (INFO)
         if self.help_dialog:
             self.help_dialog.draw(surf, self.help_pos)
 
         return surf
-
-
+    
 class BaseSkillsSelectState(prep.PrepManageState):
     name = 'base_skills_select'
 
     def start(self):
         super().start()
+        for u in game.get_units_in_party():
+            aura_funcs.remove_all_auras(u)
         self.quick_disp = self.create_quick_disp()
         return 'repeat'
 
@@ -580,7 +790,7 @@ class BaseSkillsSelectState(prep.PrepManageState):
         # Nome da unidade
         render_text(card_surf, ['text'], [unit.name], ['white'], (6, 4))
 
-        # "Slots: X/Y"
+        # Contador de Slots Pessoais (Slots: X/Max)
         eq_skills = unit.get_equipped_skills()
         slots_color = 'yellow' if len(eq_skills) < unit.max_skills else 'green'
         slots_label = "Slots:"
@@ -594,7 +804,10 @@ class BaseSkillsSelectState(prep.PrepManageState):
         render_text(card_surf, ['text'], [slots_label], ['white'], (start_x, 4))
         render_text(card_surf, ['text'], [slots_num], [slots_color], (start_x + label_w + 3, 4))
 
-        if len(eq_skills) <= 3:
+        # Lista exclusiva de Personal Skills Equipadas (até 3 linhas + indicador)
+        if not eq_skills:
+            render_text(card_surf, ['text'], ["---"], ['grey'], (6, 18))
+        elif len(eq_skills) <= 3:
             for idx, skill in enumerate(eq_skills):
                 y_offset = 18 + idx * 16
                 render_text(card_surf, ['text'], [skill.name], ['white'], (6, y_offset))

@@ -281,3 +281,50 @@ class Pennant():
         if self.text_counter >= self.text_width + 24:
             self.text_counter = 0
         self.last_update = engine.get_time()
+class CustomSkillBanner(GiveSkill):
+    """
+    Banner customizado para notificações de habilidades:
+    - Suporta quebras manuais de linha (\n) sem separar o ícone do nome da skill.
+    - Dimensões modulares na grade de 8px e centralização automática na tela.
+    - Oculta o ícone avulso nativo (draw_icon=False), preservando os glifos do texto.
+    """
+    def __init__(self, unit: UnitObject, skill: SkillObject, text: str):
+        super().__init__(unit, skill, draw_icon=False)
+        self.sound = 'Item'
+
+        # Divide estritamente por quebras explícitas de linha (\n)
+        self.lines = [line.strip() for line in text.split('\n') if line.strip()]
+
+        # text_width mede a largura real computando o glifo do ícone embutido
+        max_text_width = max(text_width('text', line) for line in self.lines) if self.lines else 64
+
+        # Largura adaptativa na grade de 8px (com 24px de respiro lateral)
+        width = max(96, min(WINWIDTH - 16, ((max_text_width + 24 + 7) // 8) * 8))
+
+        # Altura: 18px por linha + 16px de margem vertical simétrica
+        raw_height = len(self.lines) * 18 + 16
+        height = max(32, ((raw_height + 7) // 8) * 8)
+        self.size = (width, height)
+
+        self.bg_surf = image_mods.make_translucent(
+            base_surf.create_base_surf(width, height, 'menu_bg_base'), 0.1
+        )
+
+    def draw(self, surf):
+        bg_surf = self.bg_surf.copy()
+
+        # Centralização vertical do bloco de texto
+        total_text_h = len(self.lines) * 18
+        start_y = (self.size[1] - total_text_h) // 2
+
+        for idx, line in enumerate(self.lines):
+            line_w = text_width('text', line)
+            line_x = (self.size[0] - line_w) // 2
+            line_y = start_y + idx * 18
+            render_text(bg_surf, ['text'], [line], ['white'], topleft=(line_x, line_y))
+
+        # Centralização do banner inteiro na tela (240x160)
+        x = (WINWIDTH - self.size[0]) // 2
+        y = (WINHEIGHT - self.size[1]) // 2
+        surf.blit(bg_surf, (x, y))
+        return surf

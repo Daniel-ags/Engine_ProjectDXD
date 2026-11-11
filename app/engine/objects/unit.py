@@ -109,7 +109,6 @@ class UnitObject(Prefab):
 
     learned_skills: List[NID] = field(default_factory=list)  #: Todas as skills que a unidade já aprendeu
     class_skills: List[NID] = field(default_factory=list)    #: Skills que pertencem à classe atual
-    max_skills: int = 12                                     #: Max de class_skill ativas
 
     # What skills returns, or None until it is next asked for. Changing the skills
     # sets it back to None rather than emptying it, as a caller may still hold the list
@@ -287,14 +286,15 @@ class UnitObject(Prefab):
                 self._skills.append(s)
             self._visible_skills_cache = None
 
-            # Identifica as skills que possuem o componente 'class_skill'
-            self.class_skills = [s.nid for s in class_skills if 'class_skill' in s.components]
+            # Grimório Pessoal: inicializado estritamente com as habilidades inatas da unidade
+            self.learned_skills = [s.nid for s in personal_skills]
+            if self.generic:
+                for s in generic_skills:
+                    if s.nid not in self.learned_skills:
+                        self.learned_skills.append(s.nid)
 
-            # Inicializa as skills aprendidas com qualquer skill inicial que tenha 'class_skill'
-            for s in all_skills:
-                skill_obj = s.get()
-                if 'class_skill' in skill_obj.components and skill_obj.nid not in self.learned_skills:
-                    self.learned_skills.append(skill_obj.nid)
+            # Rastreamento das habilidades ativas da classe atual (sem entrar no grimório pessoal)
+            self.class_skills = [s.nid for s in class_skills]
 
         klass = DB.classes.get(self.klass)
         if klass.tier == 0:
@@ -450,90 +450,132 @@ class UnitObject(Prefab):
     def set_exp(self, val: int) -> int:
         self.exp = int(utils.clamp(val, 0, 100))
 
+    # =========================================================================
+    # ACESSORES DOS 3 GRIMÓRIOS
+    # =========================================================================
+
+    @property
+    def personal_skills(self) -> List[SkillObject]:
+        """Grimório Pessoal Ativo: habilidades equipadas que ocupam slots do jogador."""
+        return [s.get() for s in self._skills if s.source_type == SourceType.PERSONAL]
+
+    @property
+    def current_class_skills(self) -> List[SkillObject]:
+        """Grimório de Classe: habilidades inatas da classe atual (ativas com 0 slots gastos)."""
+        return [s.get() for s in self._skills if s.source_type == SourceType.KLASS]
+
+    @property
+    def status_effects(self) -> List[SkillObject]:
+        """Grimório Dinâmico: buffs, debuffs de status e auras recebidas no mapa."""
+        return [s.get() for s in self._skills if s.source_type in (SourceType.AURA, SourceType.STATUS)]
+
+    # =========================================================================
+    # GERENCIAMENTO DE SLOTS PESSOAIS
+    # =========================================================================
+
     def get_equipped_skills(self) -> List[SkillObject]:
-            """
-            Retorna apenas as skills ativas que possuem o componente 'class_skill'
-            (habilidades equipadas que ocupam slot, ignorando status e buffs).
-            """
-            return [s.get() for s in self._skills if 'class_skill' in s.get().components]
+        """
+        Retorna as habilidades equipadas nos slots pessoais configuráveis.
+        Habilidades de classe e status/auras não são contabilizadas aqui.
+        """
+        return self.personal_skills
 
     def can_equip_skill(self, skill_nid: NID) -> bool:
-        """
-        Verifica se a skill pode ser equipada pela unidade.
-        """
+        """Verifica se uma habilidade do grimório pessoal pode ser equipada."""
         target_nid = skill_nid if isinstance(skill_nid, str) else getattr(skill_nid, 'nid', skill_nid)
 
-        # 1. Deve ter sido aprendida previamente
+        # 1. Precisa ter sido masterizada / aprendida no grimório pessoal
         if target_nid not in self.learned_skills:
             return False
 
-        # 2. Não pode já estar equipada
+        # 2. Impede duplicatas (se já estiver ativa, seja por Personal ou pela Classe atual)
         if any(s.get().nid == target_nid for s in self._skills):
             return False
 
-        # 3. Limite de slots
+        # 3. Limite de slots pessoais
         if len(self.get_equipped_skills()) >= self.max_skills:
             return False
 
         return True
 
     def equip_skill(self, skill_nid: NID) -> bool:
-        """
-        Equipa uma habilidade aprendida na unidade respeitando o ciclo do skill_system.
-        """
+        """Equipa uma habilidade do grimório pessoal nos slots da unidade."""
         target_nid = skill_nid if isinstance(skill_nid, str) else getattr(skill_nid, 'nid', skill_nid)
 
         if not self.can_equip_skill(target_nid):
             return False
 
-        # Cria a instância da skill vinculada à unidade
         new_skill = item_funcs.create_skill(self, target_nid)
         if not new_skill:
             return False
 
         unit_skill = UnitSkill(new_skill, self.nid, SourceType.PERSONAL)
 
-        # Ciclo de ativação de efeitos da engine
         skill_system.before_add(self, new_skill)
         self._skills.append(unit_skill)
         skill_system.after_add(self, new_skill)
 
-        # Invalida o cache corretamente atribuindo None (jamais usar .clear())
         self._visible_skills_cache = None
         return True
 
     def can_unequip_skill(self, skill_nid: NID) -> bool:
-        """
-        Verifica se a skill está equipada e se pode ser removida pelo jogador
-        (ou seja, se possui o componente 'class_skill').
-        """
+        """Verifica se a habilidade pode ser desequipada (estritamente Personal Skills)."""
         target_nid = skill_nid if isinstance(skill_nid, str) else getattr(skill_nid, 'nid', skill_nid)
         target = next((s for s in self._skills if s.get().nid == target_nid), None)
         if not target:
             return False
-        skill_obj = target.get()
-        return hasattr(skill_obj, 'components') and 'class_skill' in skill_obj.components
+        # Impede o jogador de desequipar habilidades de classe ou status/auras
+        return target.source_type == SourceType.PERSONAL
 
     def unequip_skill(self, skill_nid: NID) -> bool:
-        """
-        Desequipa uma habilidade ativa da unidade respeitando o ciclo do skill_system.
-        """
+        """Remove uma habilidade dos slots pessoais, mantendo-a salva em learned_skills."""
         target_nid = skill_nid if isinstance(skill_nid, str) else getattr(skill_nid, 'nid', skill_nid)
 
         if not self.can_unequip_skill(target_nid):
             return False
 
-        target = next((s for s in self._skills if s.get().nid == target_nid), None)
+        target = next((s for s in self._skills if s.get().nid == target_nid and s.source_type == SourceType.PERSONAL), None)
+        if not target:
+            return False
+
         skill_obj = target.get()
 
-        # Ciclo de remoção de efeitos da engine
         skill_system.before_remove(self, skill_obj)
         self._skills.remove(target)
         skill_system.after_remove(self, skill_obj)
 
-        # Invalida o cache corretamente atribuindo None (jamais usar .clear())
         self._visible_skills_cache = None
         return True
+
+    def learn_skill(self, skill_nid: NID) -> bool:
+        """Adiciona uma habilidade ao grimório pessoal permanente (maestria)."""
+        target_nid = skill_nid if isinstance(skill_nid, str) else getattr(skill_nid, 'nid', skill_nid)
+        if not hasattr(self, 'learned_skills') or self.learned_skills is None:
+            self.learned_skills = []
+        if target_nid not in self.learned_skills:
+            self.learned_skills.append(target_nid)
+            return True
+        return False
+
+    def remove_class_skills(self):
+        """
+        Remove todas as habilidades ativas vinculadas à classe atual.
+        Utilizado ao trocar de classe para limpar as habilidades inatas da classe anterior.
+        As habilidades dominadas permanecem salvas em self.learned_skills.
+        """
+        to_remove = [s for s in self._skills if s.source_type == SourceType.KLASS]
+        for s in to_remove:
+            skill_system.before_remove(self, s.get())
+            self._skills.remove(s)
+            skill_system.after_remove(self, s.get())
+        if hasattr(self, 'class_skills') and self.class_skills:
+            self.class_skills.clear()
+        self._visible_skills_cache = None
+
+    def has_skill(self, skill_nid: NID) -> bool:
+        """Verifica se a unidade possui a habilidade ativa no momento."""
+        target_nid = skill_nid if isinstance(skill_nid, str) else getattr(skill_nid, 'nid', skill_nid)
+        return any(s.nid == target_nid for s in self.skills)
 
     def add_skill(self, skill, source=None, source_type=SourceType.DEFAULT, test=False):
         """
@@ -554,14 +596,6 @@ class UnitObject(Prefab):
             if len(displaceable_skills) > 0:
                 popped_skill = displaceable_skills[0]
         if not test:
-            # Registra na reserva se tiver a tag 'class_skill' OU se veio de Classe/Pessoal
-            is_class_skill = hasattr(skill, 'components') and 'class_skill' in skill.components
-            if is_class_skill or source_type in (SourceType.KLASS, SourceType.PERSONAL):
-                if skill.nid not in self.learned_skills:
-                    self.learned_skills.append(skill.nid)
-                if source_type == SourceType.KLASS and skill.nid not in self.class_skills:
-                    self.class_skills.append(skill.nid)
-
             self._skills.append(UnitSkill(skill, source, source_type))
             self._visible_skills_cache = None
         return popped_skill
@@ -585,8 +619,17 @@ class UnitObject(Prefab):
             self._visible_skills_cache = None
         return removed_skill_info
 
+    def get_slot_bonus(self) -> int:
+        """Bônus adicional de slots concedido por itens ou habilidades futuras."""
+        return 0
     
-
+    @property
+    def max_skills(self) -> int:
+        """Retorna o limite de slots configurado no Editor somado a eventuais bônus."""
+        base = DB.constants.value('max_skills')
+        base_val = base if base is not None else 12
+        return base_val + self.get_slot_bonus()
+    
     @property
     def all_skills(self) -> List[SkillObject]:
         return [s.get() for s in self._skills]
@@ -1126,8 +1169,8 @@ class UnitObject(Prefab):
         if 'learned_skills' in s_dict:
             self.learned_skills = s_dict.get('learned_skills', [])
         else:
-            # Fallback para saves antigos: coleta as skills equipadas com 'class_skill'
-            self.learned_skills = [s.get().nid for s in self._skills if 'class_skill' in s.get().components]
+            # Fallback para saves antigos: coleta as Personal Skills ativas
+            self.learned_skills = [s.get().nid for s in self._skills if s.source_type == SourceType.PERSONAL]
 
         self.current_hp = s_dict['current_hp']
         self.current_mana = s_dict['current_mana']
