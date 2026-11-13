@@ -19,7 +19,6 @@ from app.data.resources.resources import RESOURCES
 
 from app.editor.settings import MainSettingsController
 
-from app.editor import timer
 
 from app.editor.combat_animation_editor.frame_selector import FrameSelector
 from app.editor.combat_animation_editor.new_combat_animation_properties import NewCombatAnimProperties
@@ -482,8 +481,6 @@ class NewCombatEffectProperties(NewCombatAnimProperties):
     
             left_palette_name, left_palette, right_palette_name, right_palette = self.get_test_palettes(combat_anim)
 
-            timer.get_timer().stop()
             GAME_ACTIONS.test_combat(
                 combat_anim, weapon_anim, left_palette_name, left_palette, self.current.nid,
                 combat_anim, weapon_anim, right_palette_name, right_palette, self.current.nid, current_pose_nid)
-            timer.get_timer().start()

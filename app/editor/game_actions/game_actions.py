@@ -1,13 +1,15 @@
+import contextlib
 import glob
 import logging
 import traceback
 
 from app.data.database.database import DB
+from app.editor import timer
 from app.editor.settings import MainSettingsController
 from app.editor.settings.preference_definitions import Preference
 from app.engine import driver, engine, game_state
 from app.engine.utils import garbage
-from PyQt5.QtWidgets import QMessageBox
+from PyQt5.QtWidgets import QApplication, QMessageBox
 from PyQt5.QtGui import QFont
 
 from app.events.python_eventing.errors import EventError
@@ -32,6 +34,28 @@ def handle_exception(e: Exception):
     # Required to close window (reason: Unknown)
     engine.terminate(True)
 
+@contextlib.contextmanager
+def editor_paused():
+    """
+    Holds the editor still while the engine runs. On Windows, each
+    pygame.event.get pumps every window of the thread, so Qt still handles
+    clicks on the editor's windows in the middle of the engine's loop; a second
+    test launched from there runs inside the first, and once it quits pygame
+    the first one's next pygame.event.get raises
+    """
+    windows = [window for window in QApplication.topLevelWidgets()
+               if window.isVisible() and window.isEnabled()]
+    for window in windows:
+        window.setEnabled(False)
+    timer.get_timer().stop()
+    try:
+        yield
+    finally:
+        timer.get_timer().start()
+        for window in windows:
+            window.setEnabled(True)
+
+@editor_paused()
 def test_play():
     title = DB.constants.value('title')
     try:
@@ -43,6 +67,7 @@ def test_play():
     finally:
         garbage.release()
 
+@editor_paused()
 def test_play_current(level_nid):
     title = DB.constants.value('title')
     try:
@@ -61,6 +86,7 @@ def get_preloaded_games():
     GAME_NID = str(DB.constants.value('game_nid'))
     return glob.glob('saves/' + GAME_NID + '-preload-*-*.p')
 
+@editor_paused()
 def test_play_load(level_nid, save_loc=None):
     title = DB.constants.value('title')
     try:
@@ -77,6 +103,7 @@ def test_play_load(level_nid, save_loc=None):
     finally:
         garbage.release()
 
+@editor_paused()
 def test_combat(left_combat_anim, left_weapon_anim, left_palette_name, left_palette, left_item_nid: str,
                 right_combat_anim, right_weapon_anim, right_palette_name, right_palette, right_item_nid: str,
                 pose_nid: str):
@@ -85,6 +112,9 @@ def test_combat(left_combat_anim, left_weapon_anim, left_palette_name, left_pale
         from app.engine import battle_animation
         from app.engine.combat.mock_combat import MockCombat
         right = battle_animation.BattleAnimation.get_anim(right_combat_anim, right_weapon_anim, right_palette_name, right_palette, None, right_item_nid)
+        # Both sides usually show the same combat and weapon animation, often in the
+        # same palette, so the left one is registered under a different key; under
+        # the same key both sides would get the one animation object
         left = battle_animation.BattleAnimation.get_anim(right_weapon_anim, left_weapon_anim, left_palette_name, left_palette, None, left_item_nid)
         at_range = 1 if 'Ranged' in right_weapon_anim.nid else 0
         mock_combat = MockCombat(left, right, at_range, pose_nid)
@@ -96,6 +126,7 @@ def test_combat(left_combat_anim, left_weapon_anim, left_palette_name, left_pale
     finally:
         garbage.release()
 
+@editor_paused()
 def test_event(event_prefab, starting_command_idx=0, strategy=None):
     try:
         driver.start("Event Test", from_editor=True)

@@ -1024,8 +1024,6 @@ class NewCombatAnimProperties(QWidget):
                 if item.magic and item.nid in RESOURCES.combat_effects:
                     item_nid = item.nid
 
-            timer.get_timer().stop()
             GAME_ACTIONS.test_combat(
                 self.current, weapon_anim, left_palette_name, left_palette, item_nid,
                 self.current, weapon_anim, right_palette_name, right_palette, item_nid, current_pose_nid)
-            timer.get_timer().start()
