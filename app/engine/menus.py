@@ -2552,8 +2552,8 @@ class RadialMenu:
     - Analógico Esquerdo: apontamento direto em 360° com retorno elástico ao centro ao soltar.
     - Teclado / D-Pad: seleção persistente no anel, órbita passo a passo e recuo ao centro via B ou direção oposta.
     """
-    DEFAULT_CENTER = (120, 92)
-    DEFAULT_RADIUS = (66, 44)
+    DEFAULT_CENTER = (120, 80)
+    DEFAULT_RADIUS = (82, 58)
     ANALOG_DEADZONE = 0.35
     CENTER_SNAP_THRESHOLD = 0.85
 
@@ -2697,8 +2697,9 @@ class RadialMenu:
             get_sound_thread().play_sfx('Select 5')
             return True
 
-        tangent_cw_x = -to_center_y
-        tangent_cw_y = to_center_x
+        # Vetor tangente no sentido horário em coordenadas de tela (+x direita, +y baixo)
+        tangent_cw_x = to_center_y
+        tangent_cw_y = -to_center_x
         dot_tangent = dx * tangent_cw_x + dy * tangent_cw_y
 
         if abs(dot_tangent) > 0.25:

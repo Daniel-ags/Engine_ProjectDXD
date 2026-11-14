@@ -59,7 +59,7 @@ class PrepMainState(State):
             center_option="Fight",
             ring_options=self.ring_options,
             center_pos=(WINWIDTH // 2, WINHEIGHT // 2),
-            radius=46,
+            radius=(82,58),
             disabled_options=disabled
         )
 
@@ -219,11 +219,7 @@ class PrepMainState(State):
         # 3. Navegação Normal na Roda Radial
         self.menu.handle_input(directions, first_push)
 
-        if event == 'BACK':
-            if not self.menu.return_to_center():
-                get_sound_thread().play_sfx('Select 4')
-
-        elif event == 'SELECT':
+        if event == 'SELECT':
             choice = self.menu.get_current()
 
             if choice == "Fight":
