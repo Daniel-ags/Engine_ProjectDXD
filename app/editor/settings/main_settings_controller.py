@@ -49,6 +49,9 @@ class MainSettingsController():
         self.project_history_controller.append_or_bump_project(
             project_name, project_path)
 
+    def remove_project(self, project_path: str):
+        self.project_history_controller.remove_project(project_path)
+
     def get_last_ten_projects(self) -> List[ProjectHistoryEntry]:
         return self.project_history_controller.get_last_ten_projects()
 
