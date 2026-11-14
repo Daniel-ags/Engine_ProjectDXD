@@ -655,8 +655,8 @@ class ListItemComponent(BoolItemComponent):
             self._data.value = []
         self.editor = AppendSingleListWidget(
             self._data.value, self._data.name, self.delegate, self)
-        self.editor.view.setColumnWidth(0, 100)
-        self.editor.view.setMaximumHeight(75)
+        self.editor.view.setColumnWidth(0, 160)
+        self.editor.view.setMaximumHeight(85)
         self.editor.model.nid_column = 0
         self.editor.model.default_value = get_first_valid_nid(self.delegate)
 

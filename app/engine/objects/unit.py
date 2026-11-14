@@ -547,15 +547,112 @@ class UnitObject(Prefab):
         self._visible_skills_cache = None
         return True
 
-    def learn_skill(self, skill_nid: NID) -> bool:
-        """Adiciona uma habilidade ao grimório pessoal permanente (maestria)."""
+    @staticmethod
+    def get_skill_prerequisites(skill_nid: NID) -> List[NID]:
+        """Retorna a lista de NIDs exigidos pelo componente PrerequisiteSkills."""
+        target_nid = skill_nid if isinstance(skill_nid, str) else getattr(skill_nid, 'nid', skill_nid)
+        prefab = DB.skills.get(target_nid)
+        if not prefab or not hasattr(prefab, 'components'):
+            return []
+        if 'prerequisite_skills' not in prefab.components:
+            return []
+
+        raw_val = prefab.components.get('prerequisite_skills').value or []
+        prereqs = []
+        for entry in raw_val:
+            req_nid = entry[0] if isinstance(entry, (list, tuple)) and entry else entry
+            if isinstance(req_nid, str) and req_nid:
+                prereqs.append(req_nid)
+        return prereqs
+
+    def has_prerequisites(self, skill_nid: NID) -> bool:
+        """Verifica se todos os pré-requisitos diretos já estão no grimório pessoal."""
+        prereqs = self.get_skill_prerequisites(skill_nid)
+        if not prereqs:
+            return True
+        learned = set(getattr(self, 'learned_skills', None) or [])
+        return all(req in learned for req in prereqs)
+
+    def get_missing_prerequisites(self, skill_nid: NID, recursive: bool = False) -> List[NID]:
+        """
+        Retorna os pré-requisitos que ainda faltam para aprender a skill.
+        Se recursive=True, percorre toda a árvore (ex: New Moon -> Luna -> Aether).
+        """
+        learned = set(getattr(self, 'learned_skills', None) or [])
+        missing: List[NID] = []
+        visited = set()
+
+        def _collect(curr_nid: NID):
+            if curr_nid in visited:
+                return
+            visited.add(curr_nid)
+            for req in self.get_skill_prerequisites(curr_nid):
+                if recursive:
+                    _collect(req)
+                if req not in learned and req not in missing:
+                    missing.append(req)
+
+        _collect(skill_nid)
+        return missing
+
+    def sync_retroactive_masteries(self) -> List[NID]:
+        """
+        Verifica se alguma skill da classe atual (ou inata da unidade) cujo nível
+        já foi atingido teve seus pré-requisitos concluídos agora, liberando a maestria.
+        """
+        if not hasattr(self, 'learned_skills') or self.learned_skills is None:
+            self.learned_skills = []
+
+        unlocked: List[NID] = []
+        changed = True
+
+        # Repete enquanto uma nova maestria puder desbloquear a próxima na cadeia
+        while changed:
+            changed = False
+
+            # 1. Habilidades da classe atual com nível já alcançado
+            unit_klass = DB.classes.get(self.klass)
+            if unit_klass:
+                for level_needed, klass_skill_nid in unit_klass.learned_skills:
+                    if klass_skill_nid == 'Feat':
+                        continue
+                    if self.level >= level_needed and klass_skill_nid not in self.learned_skills:
+                        if self.has_prerequisites(klass_skill_nid):
+                            self.learned_skills.append(klass_skill_nid)
+                            unlocked.append(klass_skill_nid)
+                            changed = True
+
+            # 2. Habilidades pessoais do prefab da unidade com nível já alcançado
+            unit_prefab = DB.units.get(self.nid)
+            if unit_prefab:
+                for level_needed, pers_skill_nid in unit_prefab.learned_skills:
+                    if pers_skill_nid == 'Feat':
+                        continue
+                    if (self.level >= level_needed or self.get_internal_level() >= level_needed):
+                        if pers_skill_nid not in self.learned_skills:
+                            if self.has_prerequisites(pers_skill_nid):
+                                self.learned_skills.append(pers_skill_nid)
+                                unlocked.append(pers_skill_nid)
+                                changed = True
+
+        return unlocked
+
+    def learn_skill(self, skill_nid: NID) -> List[NID]:
+        """
+        Registra uma habilidade no grimório pessoal permanente (maestria) e verifica
+        desbloqueios retroativos em cadeia. Retorna a lista de NIDs recém-masterizados.
+        """
         target_nid = skill_nid if isinstance(skill_nid, str) else getattr(skill_nid, 'nid', skill_nid)
         if not hasattr(self, 'learned_skills') or self.learned_skills is None:
             self.learned_skills = []
+
+        newly_mastered: List[NID] = []
         if target_nid not in self.learned_skills:
             self.learned_skills.append(target_nid)
-            return True
-        return False
+            newly_mastered.append(target_nid)
+
+        newly_mastered.extend(self.sync_retroactive_masteries())
+        return newly_mastered
 
     def remove_class_skills(self):
         """

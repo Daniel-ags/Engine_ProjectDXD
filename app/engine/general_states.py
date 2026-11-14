@@ -2770,7 +2770,6 @@ class AlertState(State):
     def begin(self):
         if game.cursor:
             game.cursor.hide()
-        # Se a fila estiver vazia logo ao abrir, fecha imediatamente
         if not game.alerts:
             game.state.back()
 
@@ -2784,7 +2783,6 @@ class AlertState(State):
         if not game.alerts:
             game.state.back()
             return
-
         alert = game.alerts[-1]
         if event and alert and alert.time_to_start and \
                 engine.get_time() - alert.time_to_start > alert.time_to_pause:
@@ -2794,7 +2792,6 @@ class AlertState(State):
         if not game.alerts:
             game.state.back()
             return
-
         alert = game.alerts[-1]
         alert.update()
         if alert.remove_flag:

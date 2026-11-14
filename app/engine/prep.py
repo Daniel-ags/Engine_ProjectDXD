@@ -7,7 +7,7 @@ from app.engine import action, background, banner, base_surf
 from app.engine import config as cf
 from app.engine import (convoy_funcs, engine, gui, image_mods,
                         item_funcs, item_system, menus, text_funcs,
-                        trade, skill_system)
+                        trade, skill_system, icons)
 from app.engine.background import SpriteBackground
 from app.engine.combat import interaction
 from app.engine.fluid_scroll import FluidScroll
@@ -19,6 +19,7 @@ from app.engine.sprites import SPRITES
 from app.engine.state import MapState, State
 from app.events import triggers
 
+
 def setup_units():
     # Force place any required units
     for unit in game.get_units_in_party():
@@ -29,169 +30,315 @@ def setup_units():
     # Force reset all units
     action.do(action.ResetAll([unit for unit in game.units if not unit.dead]))
 
-class PrepMainState(MapState):
+
+class PrepMainState(State):
     name = 'prep_main'
-    bg = None
-    menu = None
-
-    def populate_options(self) -> Tuple[List[str], List[str], List[str]]:
-        """return (options, ignore, events), which should all be the same size
-        """
-        # basic options
-        options = ['Manage', 'Skills','Formation', 'Options', 'Save', 'Fight']
-        if game.level_vars.get('_prep_pick'):
-            options.insert(0, 'Pick Units')
-        if cf.SETTINGS['debug']:
-            options.insert(0, 'Debug')
-        ignore = [False for option in options]
-        # Don't manage units if there's nobody in the party!
-        if not game.get_units_in_party():
-            ignore[0] = True
-        if 'Skills' in options:
-            ignore[options.index('Skills')] = False
-
-        # initialize custom options and events
-        events = [None for option in options]
-        additional_options = game.game_vars.get('_prep_additional_options', [])
-        additional_ignore = [not enabled for enabled in game.game_vars.get('_prep_options_enabled', [])]
-        additional_events = game.game_vars.get('_prep_options_events', [])
-
-        option_idx = options.index('Options')
-
-        options = options[:option_idx] + additional_options + options[option_idx:]
-        ignore = ignore[:option_idx] + additional_ignore + ignore[option_idx:]
-        events = events[:option_idx] + additional_events + events[option_idx:]
-        return options, ignore, events
-
-    def _prep_start(self):
-        prep_music = game.game_vars.get('_prep_music')
-        if prep_music:
-            get_sound_thread().fade_in(prep_music)
-        game.cursor.hide()
-        game.cursor.autocursor()
-        game.boundary.hide()
-
-        self.create_background()
-
-        options, ignore, events_on_options = self.populate_options()
-        self.events_on_option_select = events_on_options
-
-        max_num_options = 8
-        self.menu = menus.Choice(None, options, topleft='center')
-        self.menu.set_limit(max_num_options)
-        self.menu.set_ignore(ignore)
-
-        self.fade_out = False
-        self.last_update = 0
+    transparent = True  # Mantém o mapa de batalha visível ao fundo
 
     def start(self):
-        setup_units()
-        self._prep_start()
-        game.events.trigger(triggers.OnPrepStart())
+        self.fluid = FluidScroll()
+
+        # Sequência oficial FE3H com rótulos curtos: 12:00 no topo, sentido horário a cada 45°
+        self.ring_options = [
+            "Units",
+            "Inventory",
+            "Save",
+            "System",
+            "Quit",
+            "Market",
+            "Support",
+            "Map"
+        ]
+
+        disabled = []
+        if not self._get_market_items():
+            disabled.append("Market")
+
+        # Centralizado exatamente no meio da tela (120, 80) com raio circular de 46px
+        self.menu = menus.RadialMenu(
+            center_option="Fight",
+            ring_options=self.ring_options,
+            center_pos=(WINWIDTH // 2, WINHEIGHT // 2),
+            radius=46,
+            disabled_options=disabled
+        )
+
+        # Estados de submenus modais
+        self.active_modal = None
+        self.sub_menu = None
+
+        game.state.change('transition_in')
+        return 'repeat'
 
     def begin(self):
         self.fluid.reset_on_change_state()
-        prep_music = game.game_vars.get('_prep_music')
-        if prep_music:
-            get_sound_thread().fade_in(prep_music)
-
-    def create_background(self):
-        img = SPRITES.get('focus_fade').convert_alpha()
-        self.bg = SpriteBackground(img)
-
-    def leave(self):
-        self.bg.fade_out()
-        self.menu = None
-        self.fade_out = True
-        self.last_update = engine.get_time()
-
-    def take_input(self, event):
-        if self.fade_out:
+        if game.memory.pop('save_and_quit_pending', False):
+            game.state.clear()
+            game.state.change('title_start')
             return
+
+        if self.menu:
+            if self._get_market_items():
+                self.menu.disabled_options.discard("Market")
+            else:
+                self.menu.disabled_options.add("Market")
+
+    def _get_active_player_units(self):
+        return [u for u in game.get_units_in_party() if u.team == 'player']
+
+    def _can_start_battle(self) -> bool:
+        return any(u.team == 'player' and u.position for u in game.units)
+
+    # -------------------------------------------------------------------------
+    # Abertura dos Submenus Modais
+    # -------------------------------------------------------------------------
+    def _open_inventory_submenu(self):
+        """Abre o submenu modal com Items, Skills e Reclass."""
+        self.active_modal = 'INVENTORY'
+        sub_options = ["Items", "Skills", "Reclass"]
+        box_w = 80
+        box_x = (WINWIDTH - box_w) // 2
+        box_y = (WINHEIGHT - (len(sub_options) * 16 + 16)) // 2
+        self.sub_menu = menus.Choice(None, sub_options, topleft=(box_x, box_y), background='menu_bg_base')
+        get_sound_thread().play_sfx('Select 1')
+
+    def _open_quit_modal(self):
+        """Abre o modal de saída com a opção de salvar antes de sair."""
+        self.active_modal = 'QUIT'
+        quit_options = ["Save & Quit", "Quit", "Cancel"]
+        box_w = 110
+        box_x = (WINWIDTH - box_w) // 2
+        box_y = (WINHEIGHT - (len(quit_options) * 16 + 16)) // 2
+        self.sub_menu = menus.Choice(None, quit_options, topleft=(box_x, box_y), background='menu_bg_base')
+        # Inicia sobre 'Cancel' por segurança
+        self.sub_menu.move_to(2)
+        get_sound_thread().play_sfx('Select 5')
+
+    def _get_market_items(self) -> list:
+        """Lê o estoque nativo alimentado pelos comandos add_market_item do Editor."""
+        raw_items = getattr(game, 'market_items', None)
+        if not raw_items:
+            return []
+        nids = raw_items.keys() if isinstance(raw_items, dict) else raw_items
+        return [nid for nid in nids if DB.items.get(nid)]
+
+    # -------------------------------------------------------------------------
+    # Tratamento de Entrada
+    # -------------------------------------------------------------------------
+    def take_input(self, event):
         first_push = self.fluid.update()
         directions = self.fluid.get_directions()
+        units = self._get_active_player_units()
 
-        self.menu.handle_mouse()
-        if 'DOWN' in directions:
-            if self.menu.move_down(first_push):
-                get_sound_thread().play_sfx('Select 6')
-        elif 'UP' in directions:
-            if self.menu.move_up(first_push):
-                get_sound_thread().play_sfx('Select 6')
+        # 1. Entrada no Submenu de INVENTORY
+        if self.active_modal == 'INVENTORY':
+            self.sub_menu.handle_mouse()
+            if 'DOWN' in directions:
+                if self.sub_menu.move_down(first_push):
+                    get_sound_thread().play_sfx('Select 5')
+            elif 'UP' in directions:
+                if self.sub_menu.move_up(first_push):
+                    get_sound_thread().play_sfx('Select 5')
+
+            if event == 'BACK':
+                get_sound_thread().play_sfx('Select 4')
+                self.active_modal = None
+                self.sub_menu = None
+
+            elif event == 'SELECT':
+                choice = self.sub_menu.get_current()
+                if not units:
+                    get_sound_thread().play_sfx('Error')
+                    return
+
+                self.active_modal = None
+                self.sub_menu = None
+
+                if choice == "Items":
+                    get_sound_thread().play_sfx('Select 1')
+                    if not game.memory.get('prep_bg'):
+                        game.memory['prep_bg'] = background.create_background('rune_background')
+                    game.memory['current_unit'] = None
+                    game.state.change('prep_manage')
+                elif choice == "Skills":
+                    get_sound_thread().play_sfx('Select 1')
+                    game.memory['current_unit'] = units[0]
+                    if 'base_skills_select' in game.state.all_states:
+                        game.state.change('base_skills_select')
+                    else:
+                        game.state.change('prep_manage')
+                elif choice == "Reclass":
+                    get_sound_thread().play_sfx('Select 1')
+                    game.memory['current_unit'] = units[0]
+                    if 'class_change_choice' in game.state.all_states:
+                        game.state.change('class_change_choice')
+                    elif 'promotion_choice' in game.state.all_states:
+                        game.state.change('promotion_choice')
+                    else:
+                        game.state.change('prep_manage')
+            return
+
+        # 2. Entrada no Modal de QUIT
+        if self.active_modal == 'QUIT':
+            self.sub_menu.handle_mouse()
+            if 'DOWN' in directions:
+                if self.sub_menu.move_down(first_push):
+                    get_sound_thread().play_sfx('Select 5')
+            elif 'UP' in directions:
+                if self.sub_menu.move_up(first_push):
+                    get_sound_thread().play_sfx('Select 5')
+
+            if event == 'BACK':
+                get_sound_thread().play_sfx('Select 4')
+                self.active_modal = None
+                self.sub_menu = None
+
+            elif event == 'SELECT':
+                choice = self.sub_menu.get_current()
+                if choice == "Save & Quit":
+                    get_sound_thread().play_sfx('Select 1')
+                    self.active_modal = None
+                    self.sub_menu = None
+                    game.memory['save_kind'] = 'prep'
+                    game.memory['save_and_quit_pending'] = True
+                    game.state.change('in_chapter_save')
+
+                elif choice == "Quit":
+                    get_sound_thread().play_sfx('Select 1')
+                    self.active_modal = None
+                    self.sub_menu = None
+                    game.state.clear()
+                    game.state.change('title_start')
+
+                elif choice == "Cancel":
+                    get_sound_thread().play_sfx('Select 4')
+                    self.active_modal = None
+                    self.sub_menu = None
+            return
+
+        # 3. Navegação Normal na Roda Radial
+        self.menu.handle_input(directions, first_push)
+
+        if event == 'BACK':
+            if not self.menu.return_to_center():
+                get_sound_thread().play_sfx('Select 4')
 
         elif event == 'SELECT':
-            get_sound_thread().play_sfx('Select 1')
-            selection = self.menu.get_current()
-            if selection == 'Debug':
-                game.state.change('debug')
-            elif selection == 'Pick Units':
-                game.memory['next_state'] = 'prep_pick_units'
-                game.state.change('transition_to')
-            elif selection == 'Manage':
-                game.memory['next_state'] = 'prep_manage'
-                game.state.change('transition_to')
-            elif selection == 'Skills':
-                game.memory['next_state'] = 'base_skills_select'
-                game.state.change('transition_to')
-            elif selection == 'Formation':
-                self.bg.fade_out()
-                game.memory['_prep_outline'] = self.bg
-                game.state.change('prep_formation')
-            elif selection == 'Options':
-                game.memory['next_state'] = 'settings_menu'
-                game.state.change('transition_to')
-            elif selection == 'Save':
-                game.memory['save_kind'] = 'prep'
-                game.memory['next_state'] = 'in_chapter_save'
-                game.state.change('transition_to')
-            elif selection == 'Fight':
-                if game.level_vars.get('_minimum_deployment', 0) > 0:
-                    if sum(bool(unit.position) for unit in game.get_units_in_party()) \
-                            >= min(game.level_vars['_minimum_deployment'], len(game.get_units_in_party())):
-                        self.leave()
-                    else:
-                        get_sound_thread().play_sfx('Select 4')
-                        if game.level_vars['_minimum_deployment'] == 1:
-                            alert = banner.Custom("Must select at least 1 unit!")
-                        else:
-                            alert = banner.Custom("Must select at least %d units!" % game.level_vars['_minimum_deployment'])
-                        game.alerts.append(alert)
-                        game.state.change('alert')
-                elif any(unit.position for unit in game.get_units_in_party()):
-                    self.leave()
+            choice = self.menu.get_current()
+
+            if choice == "Fight":
+                if self._can_start_battle():
+                    get_sound_thread().play_sfx('Select 1')
+                    game.state.change('transition_pop')
                 else:
-                    get_sound_thread().play_sfx('Select 4')
-                    alert = banner.Custom("Must select at least one unit!")
-                    game.alerts.append(alert)
-                    game.state.change('alert')
-            else:
-                option_index = self.menu.get_current_index()
-                if self.events_on_option_select[option_index]:
-                    event_to_trigger = self.events_on_option_select[option_index]
-                    valid_events = DB.events.get_by_nid_or_name(event_to_trigger, game.level.nid)
-                    for event_prefab in valid_events:
-                        game.events.trigger_specific_event(event_prefab.nid)
+                    get_sound_thread().play_sfx('Error')
+
+            elif choice == "Units":
+                get_sound_thread().play_sfx('Select 1')
+                game.state.change('prep_pick_units')
+
+            elif choice == "Inventory":
+                self._open_inventory_submenu()
+
+            elif choice == "Save":
+                get_sound_thread().play_sfx('Select 1')
+                game.memory['save_kind'] = 'prep'
+                game.state.change('in_chapter_save')
+
+            elif choice == "System":
+                get_sound_thread().play_sfx('Select 1')
+                game.state.change('settings_menu')
+
+            elif choice == "Quit":
+                self._open_quit_modal()
+
+            elif choice == "Market":
+                market_items = self._get_market_items()
+                if not units or not market_items:
+                    get_sound_thread().play_sfx('Error')
+                    return
+
+                get_sound_thread().play_sfx('Select 1')
+                if not game.memory.get('prep_bg'):
+                    game.memory['prep_bg'] = background.create_background('rune_background')
+                game.memory['current_unit'] = units[0]
+                game.state.change('prep_market')
+
+            elif choice == "Support":
+                get_sound_thread().play_sfx('Select 1')
+                if not game.memory.get('base_bg'):
+                    game.memory['base_bg'] = background.create_background('settings_background')
+                if 'base_supports' in game.state.all_states:
+                    game.state.change('base_supports')
+                elif 'prep_support' in game.state.all_states:
+                    game.state.change('prep_support')
+                else:
+                    get_sound_thread().play_sfx('Error')
+
+            elif choice == "Map":
+                get_sound_thread().play_sfx('Select 1')
+                if 'prep_formation' in game.state.all_states:
+                    game.state.change('prep_formation')
+                else:
+                    game.state.change('prep_map')
 
     def update(self):
         super().update()
-        if self.fade_out:
-            if engine.get_time() - self.last_update > 300:
-                game.state.back()
-        elif self.menu:
-            self.menu.update()
+        if self.sub_menu:
+            self.sub_menu.update()
+        if self.menu and "Market" in self.menu.disabled_options and self._get_market_items():
+            self.menu.disabled_options.discard("Market")
+
+    def _draw_active_title_card(self, surf):
+        cur = self.menu.get_current()
+        title_text = "To Battle" if cur == "Fight" else cur
+
+        text_w = FONT['text'].width(title_text)
+        card_w = max(72, ((text_w + 16 + 7) // 8) * 8)
+        card_h = 24
+        card_x = (WINWIDTH - card_w) // 2
+        card_y = 6
+
+        card_surf = base_surf.create_base_surf(card_w, card_h, 'menu_bg_base')
+        card_surf = image_mods.make_translucent(card_surf, 0.1)
+
+        t_x = (card_w - text_w) // 2
+        t_y = (card_h - FONT['text'].height) // 2
+        FONT['text-yellow'].blit(title_text, card_surf, (t_x, t_y))
+        surf.blit(card_surf, (card_x, card_y))
+
+    def _draw_active_title_card(self, surf):
+        cur = self.menu.get_current()
+        title_text = "To Battle" if cur == "Fight" else self.full_names.get(cur, cur)
+
+        text_w = FONT['text'].width(title_text)
+        card_w = max(72, ((text_w + 16 + 7) // 8) * 8)
+        card_h = 24
+        card_x = (WINWIDTH - card_w) // 2
+        card_y = 6
+
+        card_surf = base_surf.create_base_surf(card_w, card_h, 'menu_bg_base')
+        card_surf = image_mods.make_translucent(card_surf, 0.1)
+
+        t_x = (card_w - text_w) // 2
+        t_y = (card_h - FONT['text'].height) // 2
+        FONT['text-yellow'].blit(title_text, card_surf, (t_x, t_y))
+        surf.blit(card_surf, (card_x, card_y))
 
     def draw(self, surf):
         surf = super().draw(surf)
-        if not self.bg:
-            self.create_background()
-        if self.bg:
-            self.bg.draw(surf)
+
         if self.menu:
             self.menu.draw(surf)
+
+        if self.active_modal and self.sub_menu:
+            self.sub_menu.draw(surf)
+
         return surf
 
 class PrepPickUnitsState(State):
     name = 'prep_pick_units'
+    transparent = True
 
     def start(self):
         self.fluid = FluidScroll()
@@ -354,6 +501,7 @@ class PrepPickUnitsState(State):
         self.menu.draw(surf)
         return surf
 
+
 def _handle_info():
     if game.cursor.get_hover():
         get_sound_thread().play_sfx('Select 1')
@@ -369,12 +517,14 @@ def _handle_info():
         get_sound_thread().play_sfx('Select 3')
         game.boundary.toggle_all_enemy_attacks()
 
+
 def _move_on_map(unit, pos):
     """The unit flies from the tile it stands on to pos, an empty one"""
     old_pos = unit.position
     action.do(action.LeaveMap(unit))
     action.do(action.ArriveOnMap(unit, pos))
     unit.sprite.begin_swap_arc(old_pos)
+
 
 def _swap_on_map(unit1, unit2):
     """Two units on the map trade places, each flying to the other's tile"""
@@ -386,8 +536,10 @@ def _swap_on_map(unit1, unit2):
     unit1.sprite.begin_swap_arc(pos1)
     unit2.sprite.begin_swap_arc(pos2)
 
+
 def _units_in_flight():
     return [unit for unit in game.get_player_units() if unit.sprite.transition_state == 'swap_arc']
+
 
 class PrepFormationState(MapState):
     name = 'prep_formation'
@@ -475,6 +627,7 @@ class PrepFormationState(MapState):
         game.cursor.hide()
         game.highlight.hide_formation()
         game.highlight.remove_highlights()
+
 
 class PrepFormationSelectState(MapState):
     name = 'prep_formation_select'
@@ -597,6 +750,7 @@ class PrepFormationSelectState(MapState):
 
         return surf
 
+
 class PrepFormationMenuState(MapState):
     name = 'prep_formation_menu'
 
@@ -707,6 +861,7 @@ class PrepFormationMenuState(MapState):
         surf = self.menu.draw(surf)
         return surf
 
+
 def draw_funds(surf):
     # Draw R: Info display
     helper = get_input_manager().get_button_name('INFO').upper()
@@ -716,6 +871,7 @@ def draw_funds(surf):
     surf.blit(SPRITES.get('funds_display'), (168, 137))
     money = str(game.get_money())
     FONT['text-blue'].blit_right(money, surf, (219, 141))
+
 
 class PrepManageState(State):
     name = 'prep_manage'
@@ -737,7 +893,7 @@ class PrepManageState(State):
         self.quick_disp = self.create_quick_disp()
 
         if self.name.startswith('base') and game.memory.get('base_bg'):
-            self.bg = game.memory['base_bg']
+            self.bg = game.memory.get('base_bg') or background.create_background('settings_background')
         else:
             self.bg = background.create_background('rune_background')
         game.memory['prep_bg'] = self.bg
@@ -826,6 +982,7 @@ class PrepManageState(State):
         draw_funds(surf)
         return surf
 
+
 class OptimizeAllChoiceState(State):
     name = 'optimize_all_choice'
     transparent = True
@@ -871,6 +1028,7 @@ class OptimizeAllChoiceState(State):
             surf.blit(self.bg_surf, (WINWIDTH//2 - self.bg_surf.get_width()//2, WINHEIGHT//2 - 28))
         surf = self.menu.draw(surf)
         return surf
+
 
 class PrepManageSelectState(State):
     name = 'prep_manage_select'
@@ -992,6 +1150,7 @@ class PrepManageSelectState(State):
         draw_funds(surf)
         return surf
 
+
 class PrepTradeSelectState(State):
     name = 'prep_trade_select'
 
@@ -1065,6 +1224,7 @@ class PrepTradeSelectState(State):
 
     def finish(self):
         self.menu.set_fake_cursor(None)
+
 
 class PrepItemsState(State):
     name = 'prep_items'
@@ -1326,6 +1486,7 @@ class PrepItemsState(State):
             self.menu.draw_info(surf)
         return surf
 
+
 class PrepRestockState(State):
     name = 'prep_restock'
 
@@ -1491,25 +1652,35 @@ class PrepMarketState(State):
     def start(self):
         self.fluid = FluidScroll()
 
-        self.bg = game.memory['prep_bg']
-        self.unit = game.memory['current_unit']
+        self.bg = game.memory.get('prep_bg') or background.create_background('rune_background')
+        units = game.get_units_in_party()
+        self.unit = game.memory.get('current_unit') or (units[0] if units else None)
 
+        # menus.Market exige um UnitObject válido como owner para desenhar a aba e paginar o Comboio
         self.sell_menu = menus.Market(self.unit, None, (WINWIDTH - 164, 40), disp_value='sell')
-        market_items = game.market_items.keys()
-        market_items = item_funcs.create_items(self.unit, market_items)
+        market_items = item_funcs.create_items(self.unit, game.market_items.keys())
         show_stock = any(stock >= 0 for stock in game.market_items.values())
         self.buy_menu = menus.Market(self.unit, market_items, (WINWIDTH - 164, 40), disp_value='buy', show_stock=show_stock)
         self.display_menu = self.buy_menu
         self.sell_menu.set_takes_input(False)
         self.buy_menu.set_takes_input(False)
 
-        self.state = 'free'
         options = ["Buy", "Sell"]
-        self.choice_menu = menus.Choice(self.unit, options, (20, 24), 'menu_bg_brown')
+        # None no Choice evita duplicar a plaqueta de nome acima de Buy / Sell
+        self.choice_menu = menus.Choice(None, options, (20, 24), 'menu_bg_brown')
         self.choice_menu.gem = False
         self.menu = self.choice_menu
 
+        self.state = 'free'  # 'free', 'buy', 'sell'
         self.money_counter_disp = gui.PopUpDisplay((66, WINHEIGHT - 40))
+
+        # Estado da janela de confirmação
+        self.confirming = False
+        self.confirm_mode = None   # 'buy' ou 'sell'
+        self.confirm_item = None
+        self.confirm_price = 0
+        self.confirm_idx = 0       # 0 = Yes | 1 = No
+        self.confirm_cursor = menus.Cursor()
 
         game.state.change('transition_in')
         return 'repeat'
@@ -1521,11 +1692,86 @@ class PrepMarketState(State):
         self.buy_menu.update_options()
         self.sell_menu.update_options()
 
+    def _open_confirm(self, mode: str, item, price: int):
+        self.confirming = True
+        self.confirm_mode = mode
+        self.confirm_item = item
+        self.confirm_price = price
+        self.confirm_idx = 0
+
+    def _close_confirm(self):
+        self.confirming = False
+        self.confirm_mode = None
+        self.confirm_item = None
+        self.confirm_price = 0
+        self.confirm_idx = 0
+
+    def _execute_buy(self, item, value: int):
+        get_sound_thread().play_sfx('GoldExchange')
+        game.set_money(game.get_money() - value)
+        action.do(action.UpdateRecords('money', (game.current_party, -value)))
+        self.money_counter_disp.start(-value)
+        self.menu.decrement_stock()
+        if isinstance(game.market_items, dict) and item.nid in game.market_items:
+            game.market_items[item.nid] -= 1
+
+        # Envia a compra diretamente para o Comboio
+        new_item = item_funcs.create_item(None, item.nid)
+        game.register_item(new_item)
+        action.PutItemInConvoy(new_item).do()
+        self.update_options()
+
+    def _execute_sell(self, item, value: int):
+        get_sound_thread().play_sfx('GoldExchange')
+        game.set_money(game.get_money() + value)
+        action.do(action.UpdateRecords('money', (game.current_party, value)))
+        self.money_counter_disp.start(value)
+        if item.owner_nid:
+            owner = game.get_unit(item.owner_nid)
+            action.RemoveItem(owner, item).do()
+        else:
+            action.RemoveItemFromConvoy(item).do()
+        self.update_options()
+
     def take_input(self, event):
         first_push = self.fluid.update()
         directions = self.fluid.get_directions()
 
-        # As on the GBA, nothing can be done while a page slides in
+        # ---------------------------------------------------------------------
+        # 1. Input da Tela de Confirmação (Yes / No)
+        # ---------------------------------------------------------------------
+        if self.confirming:
+            if ('LEFT' in directions or 'UP' in directions) and first_push:
+                if self.confirm_idx != 0:
+                    self.confirm_idx = 0
+                    get_sound_thread().play_sfx('Select 5')
+            elif ('RIGHT' in directions or 'DOWN' in directions) and first_push:
+                if self.confirm_idx != 1:
+                    self.confirm_idx = 1
+                    get_sound_thread().play_sfx('Select 5')
+
+            if event == 'BACK':
+                get_sound_thread().play_sfx('Select 4')
+                self._close_confirm()
+
+            elif event == 'SELECT':
+                if self.confirm_idx == 0:
+                    mode = self.confirm_mode
+                    item = self.confirm_item
+                    price = self.confirm_price
+                    self._close_confirm()
+                    if mode == 'buy':
+                        self._execute_buy(item, price)
+                    elif mode == 'sell':
+                        self._execute_sell(item, price)
+                else:
+                    get_sound_thread().play_sfx('Select 4')
+                    self._close_confirm()
+            return
+
+        # ---------------------------------------------------------------------
+        # 2. Input Normal da Loja
+        # ---------------------------------------------------------------------
         if self.display_menu.is_sliding():
             return
 
@@ -1535,19 +1781,13 @@ class PrepMarketState(State):
                 get_sound_thread().play_sfx('Select 6')
             if self.state == 'free':
                 current = self.menu.get_current()
-                if current == 'Buy':
-                    self.display_menu = self.buy_menu
-                else:
-                    self.display_menu = self.sell_menu
+                self.display_menu = self.buy_menu if current == 'Buy' else self.sell_menu
         elif 'UP' in directions:
             if self.menu.move_up(first_push):
                 get_sound_thread().play_sfx('Select 6')
             if self.state == 'free':
                 current = self.menu.get_current()
-                if current == 'Buy':
-                    self.display_menu = self.buy_menu
-                else:
-                    self.display_menu = self.sell_menu
+                self.display_menu = self.buy_menu if current == 'Buy' else self.sell_menu
         elif 'LEFT' in directions:
             get_sound_thread().play_sfx('TradeRight')
             self.display_menu.move_left(first_push)
@@ -1561,27 +1801,11 @@ class PrepMarketState(State):
                 if item:
                     value = item_funcs.buy_price(self.unit, item)
                     if game.get_money() - value >= 0 and self.menu.get_stock() != 0:
-                        get_sound_thread().play_sfx('GoldExchange')
-                        game.set_money(game.get_money() - value)
-                        action.do(action.UpdateRecords('money', (game.current_party, -value)))
-                        self.money_counter_disp.start(-value)
-                        self.menu.decrement_stock()
-                        game.market_items[item.nid] -= 1
-                        new_item = item_funcs.create_item(self.unit, item.nid)
-                        game.register_item(new_item)
-                        if not item_funcs.inventory_full(self.unit, new_item):
-                            action.GiveItem(self.unit, new_item).do()
-                        else:
-                            action.PutItemInConvoy(new_item).do()
-                        self.update_options()
-                    elif self.menu.get_stock() == 0:
-                        # Market is out of stock
-                        get_sound_thread().play_sfx('Select 4')
+                        get_sound_thread().play_sfx('Select 1')
+                        self._open_confirm('buy', item, value)
                     else:
-                        # You don't have enough money
                         get_sound_thread().play_sfx('Select 4')
                 else:
-                    # You didn't choose anything to buy
                     get_sound_thread().play_sfx('Select 4')
 
             elif self.state == 'sell':
@@ -1589,21 +1813,11 @@ class PrepMarketState(State):
                 if item:
                     value = item_funcs.sell_price(self.unit, item)
                     if value:
-                        get_sound_thread().play_sfx('GoldExchange')
-                        game.set_money(game.get_money() + value)
-                        action.do(action.UpdateRecords('money', (game.current_party, value)))
-                        self.money_counter_disp.start(value)
-                        if item.owner_nid:
-                            owner = game.get_unit(item.owner_nid)
-                            action.RemoveItem(owner, item).do()
-                        else:
-                            action.RemoveItemFromConvoy(item).do()
-                        self.update_options()
+                        get_sound_thread().play_sfx('Select 1')
+                        self._open_confirm('sell', item, value)
                     else:
-                        # No value, can't be sold
                         get_sound_thread().play_sfx('Select 4')
                 else:
-                    # You didn't choose anything to sell
                     get_sound_thread().play_sfx('Select 4')
 
             elif self.state == 'free':
@@ -1645,13 +1859,50 @@ class PrepMarketState(State):
                     get_sound_thread().play_sfx('Info Out')
 
     def update(self):
-        self.menu.update()
+        if self.confirming:
+            self.confirm_cursor.update()
+        else:
+            self.menu.update()
+
+    def _draw_confirm_modal(self, surf):
+        from app.engine import icons
+
+        box_w, box_h = 144, 64
+        box_x = (WINWIDTH - box_w) // 2
+        box_y = (WINHEIGHT - box_h) // 2
+        box = base_surf.create_base_surf(box_w, box_h, 'menu_bg_base')
+
+        # 1. Título da transação ("Buy for 460G?" / "Sell for 230G?")
+        action_word = 'Buy' if self.confirm_mode == 'buy' else 'Sell'
+        prompt = f"{action_word} for {self.confirm_price}G?"
+        FONT['text-yellow'].blit_center(prompt, box, (box_w // 2, 6))
+
+        # 2. Ícone e nome do item centralizados
+        item_name = self.confirm_item.name
+        name_w = FONT['text'].width(item_name)
+        item_x = max(8, (box_w - (18 + name_w)) // 2)
+        icons.draw_item(box, self.confirm_item, (item_x, 20), cooldown=False)
+        FONT['text'].blit(item_name, box, (item_x + 18, 22))
+
+        # 3. Opções Yes / No lado a lado
+        yes_font = FONT['text-yellow'] if self.confirm_idx == 0 else FONT['text']
+        no_font = FONT['text-yellow'] if self.confirm_idx == 1 else FONT['text']
+        yes_font.blit('Yes', box, (40, 42))
+        no_font.blit('No', box, (94, 42))
+
+        surf.blit(box, (box_x, box_y))
+
+        # 4. Cursor nativo apontando para a opção ativa
+        cursor_x = (box_x + 24) if self.confirm_idx == 0 else (box_x + 78)
+        cursor_y = box_y + 42
+        self.confirm_cursor.draw(surf, cursor_x, cursor_y)
 
     def draw(self, surf):
         if self.bg:
             self.bg.draw(surf)
         self.choice_menu.draw(surf)
         self.display_menu.draw(surf)
+
         # Money
         surf.blit(SPRITES.get('funds_display'), (10, WINHEIGHT - 24))
         money = str(game.get_money())
@@ -1660,5 +1911,8 @@ class PrepMarketState(State):
 
         if self.display_menu.info_flag:
             self.display_menu.draw_info(surf)
+
+        if self.confirming and self.confirm_item:
+            self._draw_confirm_modal(surf)
 
         return surf

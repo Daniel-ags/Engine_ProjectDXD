@@ -321,22 +321,33 @@ class ExpState(State):
                     else:
                         ExpState.give_new_class_skills(self.unit)
 
-                # Despacho inicial limpo
                 if game.memory.get('skill_swap_queue'):
                     self.state.change('wait_for_swap')
                     game.state.change('skill_swap_levelup')
-                elif game.alerts:
-                    self.state.change('drain_alerts')
+                else:
+                    if hasattr(game.state, 'temp_state'):
+                        game.state.temp_state = [
+                            entry for entry in game.state.temp_state
+                            if 'alert' not in str(entry)
+                        ]
+                    self.state.clear()
+                    game.state.back()
+                    for _ in game.alerts:
+                        game.state.change('alert')
+
+        elif self.state.get_state() == 'wait_for_swap':
+            if game.state.state and game.state.state[-1] == self:
+                if game.memory.get('skill_swap_queue'):
+                    game.state.change('skill_swap_levelup')
                 else:
                     self.state.clear()
                     game.state.back()
 
         elif self.state.get_state() == 'wait_for_swap':
-            # Responsabilidade 1: Aguardar exclusivamente o término da tela modal de troca
-            if not game.memory.get('skill_swap_queue') and game.state.state and game.state.state[-1] == self:
-                if game.alerts:
-                    self.state.change('drain_alerts')
-                    game.state.change('alert')
+            # Usado exclusivamente quando uma skill masterizada/pessoal abre o SkillSwapLevelUpState
+            if game.state.state and game.state.state[-1] == self:
+                if game.memory.get('skill_swap_queue'):
+                    game.state.change('skill_swap_levelup')
                 else:
                     self.state.clear()
                     game.state.back()
@@ -429,7 +440,7 @@ class ExpState(State):
 
     @staticmethod
     def _give_skills(unit: UnitObject, avail_skills: List[Tuple[int, NID]],
-                        comparison_func: Callable[[UnitObject, int], bool], source_type):
+                     comparison_func: Callable[[UnitObject, int], bool], source_type):
         for level_needed, skill_nid in avail_skills:
             if comparison_func(unit, level_needed):
                 if skill_nid == 'Feat':
@@ -445,45 +456,39 @@ class ExpState(State):
                         if skill_nid not in unit.class_skills:
                             unit.class_skills.append(skill_nid)
 
-                        # Verifica se é a primeira vez dominando a habilidade
-                        newly_mastered = (not hasattr(unit, 'learned_skills') or 
-                                            unit.learned_skills is None or 
-                                            skill_nid not in unit.learned_skills)
+                        # Concede a skill ativa na classe atual (custo 0 de slots)
+                        act = None
+                        if not any(s.get().nid == skill_nid for s in unit._skills):
+                            act = action.AddSkill(unit, skill_nid, source=unit.klass, source_type=SourceType.KLASS)
+                            action.do(act)
 
-                        # Registra no Grimório Pessoal Permanente via método do unit.py
-                        unit.learn_skill(skill_nid)
-
-                        # Se já estiver ativa nos slots da unidade, pula a reinjeção
-                        if any(s.get().nid == skill_nid for s in unit._skills):
-                            continue
-
-                        # Concede a habilidade ativa com custo 0 de slots pessoais
-                        act = action.AddSkill(unit, skill_nid, source=unit.klass, source_type=SourceType.KLASS)
-                        action.do(act)
-
-                        # O banner de maestria dispara apenas se a habilidade acabou de ser dominada
-                        if newly_mastered and act.skill_obj and not skill_system.hidden(act.skill_obj, unit):
-                            msg = f"{unit.name} mastered {act.skill_obj.name}!"
-                            alert = banner.CustomSkillBanner(unit, act.skill_obj, msg)
-                            game.alerts.append(alert)
+                        # Só masteriza permanentemente se os pré-requisitos estiverem cumpridos
+                        if unit.has_prerequisites(skill_nid):
+                            newly_mastered = unit.learn_skill(skill_nid)
+                            for mastered_nid in newly_mastered:
+                                skill_obj = (
+                                    act.skill_obj if (act and act.skill_obj and act.skill_obj.nid == mastered_nid)
+                                    else item_funcs.create_skill(unit, mastered_nid)
+                                )
+                                if skill_obj and not skill_system.hidden(skill_obj, unit):
+                                    msg = f"{unit.name} mastered {skill_obj.name}!"
+                                    alert = banner.CustomSkillBanner(unit, skill_obj, msg)
+                                    game.alerts.append(alert)
 
                     # =========================================================
                     # 2. HABILIDADES PESSOAIS (SourceType.PERSONAL)
                     # =========================================================
                     else:
-                        # Se já foi aprendida anteriormente (mesmo que esteja guardada na reserva), não reaprende
                         if hasattr(unit, 'learned_skills') and unit.learned_skills and skill_nid in unit.learned_skills:
                             continue
-
-                        # Se já estiver ativa por qualquer motivo, pula
                         if any(s.get().nid == skill_nid for s in unit._skills):
                             continue
+                        if not unit.has_prerequisites(skill_nid):
+                            continue
 
-                        # Registra no Grimório Pessoal Permanente
-                        unit.learn_skill(skill_nid)
-
+                        newly_mastered = unit.learn_skill(skill_nid)
                         source = unit.nid
-                        # Se houver espaço nos slots pessoais configurados no Editor, equipa direto
+
                         if len(unit.get_equipped_skills()) < unit.max_skills:
                             act = action.AddSkill(unit, skill_nid, source=source, source_type=SourceType.PERSONAL)
                             action.do(act)
@@ -493,11 +498,20 @@ class ExpState(State):
                                 alert = banner.CustomSkillBanner(unit, act.skill_obj, msg)
                                 game.alerts.append(alert)
                         else:
-                            # Slots cheios: direciona para a fila do modal de substituição
                             if unit.team == 'player':
                                 if 'skill_swap_queue' not in game.memory or not game.memory['skill_swap_queue']:
                                     game.memory['skill_swap_queue'] = []
                                 game.memory['skill_swap_queue'].append((unit, skill_nid, source, source_type))
+
+                        # Dispara banner de maestria caso o aprendizado tenha desbloqueado alguma skill retroativa
+                        for retro_nid in newly_mastered:
+                            if retro_nid == skill_nid:
+                                continue
+                            retro_obj = item_funcs.create_skill(unit, retro_nid)
+                            if retro_obj and not skill_system.hidden(retro_obj, unit):
+                                msg = f"{unit.name} mastered {retro_obj.name}!"
+                                alert = banner.CustomSkillBanner(unit, retro_obj, msg)
+                                game.alerts.append(alert)
 
     @staticmethod
     def give_new_class_skills(unit: UnitObject):
@@ -935,6 +949,9 @@ class SkillSwapLevelUpState(State):
             msg = custom_text or f"{unit.name} learned {skill_obj.name}!"
             alert = banner.CustomSkillBanner(unit, skill_obj, msg)
             game.alerts.append(alert)
+            self.finish(has_alert=True)
+        else:
+            self.finish(has_alert=False)
 
     def _execute_swap(self):
         unit = self._get_live_unit()
@@ -1076,14 +1093,18 @@ class SkillSwapLevelUpState(State):
         if self.help_dialog and hasattr(self.help_dialog, 'update'):
             self.help_dialog.update()
 
-    def finish(self):
+    def finish(self, has_alert: bool = False):
         queue = game.memory.get('skill_swap_queue', [])
         if queue:
             self.start()
+            if has_alert:
+                game.state.change('alert')
         else:
             if 'skill_swap_queue' in game.memory:
                 del game.memory['skill_swap_queue']
             game.state.back()
+            if has_alert:
+                game.state.change('alert')
 
     def draw(self, surf):
         if not getattr(self, 'window_bg', None):

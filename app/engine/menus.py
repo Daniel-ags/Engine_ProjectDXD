@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import List, Optional
 
 import math, string
+from typing import List, Optional, Tuple, Union
 
 from app.constants import TILEX, WINWIDTH, WINHEIGHT
 from app.data.database import lore
@@ -10,6 +11,7 @@ from app.data.database.units import UnitPrefab
 
 from app.engine.sprites import SPRITES
 from app.engine.fonts import FONT
+from app.engine.sound import get_sound_thread
 from app.engine.input_manager import get_input_manager
 from app.engine import engine, image_mods, icons, help_menu, item_system, gui, item_funcs, text_funcs, dialog
 from app.engine.gui import ScrollBar
@@ -2536,3 +2538,267 @@ class VisualChoice(Choice):
                         deco.update()
                     except TypeError:
                         pass
+
+import math
+from typing import List, Optional, Tuple, Union
+import pygame
+from app.engine.fonts import FONT
+from app.engine.sound import get_sound_thread
+
+
+class RadialMenu:
+    """
+    Menu radial híbrido estilo Fire Emblem: Three Houses:
+    - Analógico Esquerdo: apontamento direto em 360° com retorno elástico ao centro ao soltar.
+    - Teclado / D-Pad: seleção persistente no anel, órbita passo a passo e recuo ao centro via B ou direção oposta.
+    """
+    DEFAULT_CENTER = (120, 92)
+    DEFAULT_RADIUS = (66, 44)
+    ANALOG_DEADZONE = 0.35
+    CENTER_SNAP_THRESHOLD = 0.85
+
+    def __init__(
+        self,
+        center_option: str,
+        ring_options: List[str],
+        center_pos: Tuple[int, int] = DEFAULT_CENTER,
+        radius: Union[int, Tuple[int, int]] = DEFAULT_RADIUS,
+        disabled_options: Optional[List[str]] = None
+    ):
+        self.center_option = center_option
+        self.ring_options = list(ring_options)
+        self.center_pos = center_pos
+        self.radius = radius
+        self.disabled_options = set(disabled_options) if disabled_options else set()
+
+        self.selection: Union[str, int] = 'CENTER'
+        self.node_positions: List[Tuple[int, int]] = []
+        self.node_angles: List[float] = []
+        self._analog_active: bool = False
+
+        self._calculate_geometry()
+
+    def set_options(self, ring_options: List[str], center_option: Optional[str] = None):
+        """Atualiza dinamicamente as opções e recalcula a geometria do anel."""
+        self.ring_options = list(ring_options)
+        if center_option is not None:
+            self.center_option = center_option
+        if isinstance(self.selection, int) and self.selection >= len(self.ring_options):
+            self.selection = 'CENTER'
+        self._calculate_geometry()
+
+    def _get_radii(self) -> Tuple[int, int]:
+        if isinstance(self.radius, (tuple, list)):
+            return int(self.radius[0]), int(self.radius[1])
+        return int(self.radius), int(self.radius)
+
+    def _calculate_geometry(self):
+        """Distribui N opções uniformemente a partir das 12:00 (-pi/2) no sentido horário."""
+        self.node_positions.clear()
+        self.node_angles.clear()
+        total = len(self.ring_options)
+        if total == 0:
+            return
+
+        cx, cy = self.center_pos
+        rx, ry = self._get_radii()
+        step = (2 * math.pi) / total
+
+        for i in range(total):
+            angle = -math.pi / 2 + i * step
+            angle = math.atan2(math.sin(angle), math.cos(angle))
+            x = int(cx + rx * math.cos(angle))
+            y = int(cy + ry * math.sin(angle))
+            self.node_angles.append(angle)
+            self.node_positions.append((x, y))
+
+    @staticmethod
+    def _angle_diff(a: float, b: float) -> float:
+        return math.atan2(math.sin(a - b), math.cos(a - b))
+
+    def _closest_node(self, target_angle: float) -> int:
+        best_idx = 0
+        best_diff = float('inf')
+        for i, angle in enumerate(self.node_angles):
+            diff = abs(self._angle_diff(target_angle, angle))
+            if diff < best_diff:
+                best_diff = diff
+                best_idx = i
+        return best_idx
+
+    def _get_analog_vector(self) -> Optional[Tuple[float, float]]:
+        if not pygame.joystick.get_init():
+            return None
+        for i in range(pygame.joystick.get_count()):
+            joy = pygame.joystick.Joystick(i)
+            if not joy.get_init():
+                joy.init()
+            if joy.get_numaxes() >= 2:
+                ax = joy.get_axis(0)
+                ay = joy.get_axis(1)
+                mag = math.hypot(ax, ay)
+                if mag > self.ANALOG_DEADZONE:
+                    return (ax / mag, ay / mag)
+        return None
+
+    def _get_direction_vector(self, directions: List[str]) -> Optional[Tuple[float, float]]:
+        dx, dy = 0, 0
+        if 'LEFT' in directions:
+            dx -= 1
+        if 'RIGHT' in directions:
+            dx += 1
+        if 'UP' in directions:
+            dy -= 1
+        if 'DOWN' in directions:
+            dy += 1
+
+        if dx == 0 and dy == 0:
+            return None
+        length = math.hypot(dx, dy)
+        return (dx / length, dy / length)
+
+    def _handle_analog_input(self, ax: float, ay: float) -> bool:
+        self._analog_active = True
+        input_angle = math.atan2(ay, ax)
+        best_idx = self._closest_node(input_angle)
+
+        if self.selection != best_idx:
+            self.selection = best_idx
+            get_sound_thread().play_sfx('Select 5')
+            return True
+        return False
+
+    def _handle_digital_input(self, directions: List[str], first_push: bool) -> bool:
+        if not first_push:
+            return False
+
+        vec = self._get_direction_vector(directions)
+        if not vec:
+            return False
+
+        dx, dy = vec
+        total = len(self.ring_options)
+
+        if self.selection == 'CENTER':
+            input_angle = math.atan2(dy, dx)
+            self.selection = self._closest_node(input_angle)
+            get_sound_thread().play_sfx('Select 5')
+            return True
+
+        curr_idx = self.selection
+        curr_angle = self.node_angles[curr_idx]
+
+        to_center_x = -math.cos(curr_angle)
+        to_center_y = -math.sin(curr_angle)
+        dot_center = dx * to_center_x + dy * to_center_y
+
+        if dot_center > self.CENTER_SNAP_THRESHOLD:
+            self.selection = 'CENTER'
+            get_sound_thread().play_sfx('Select 5')
+            return True
+
+        tangent_cw_x = -to_center_y
+        tangent_cw_y = to_center_x
+        dot_tangent = dx * tangent_cw_x + dy * tangent_cw_y
+
+        if abs(dot_tangent) > 0.25:
+            step = 1 if dot_tangent > 0 else -1
+            self.selection = (curr_idx + step) % total
+            get_sound_thread().play_sfx('Select 5')
+            return True
+
+        return False
+
+    def handle_input(self, directions: List[str], first_push: bool) -> bool:
+        if not self.ring_options:
+            return False
+
+        analog_vec = self._get_analog_vector()
+
+        if analog_vec is not None:
+            return self._handle_analog_input(analog_vec[0], analog_vec[1])
+
+        if self._analog_active:
+            self._analog_active = False
+            if self.selection != 'CENTER':
+                self.selection = 'CENTER'
+                return True
+            return False
+
+        return self._handle_digital_input(directions, first_push)
+
+    def return_to_center(self) -> bool:
+        self._analog_active = False
+        if self.selection != 'CENTER':
+            self.selection = 'CENTER'
+            get_sound_thread().play_sfx('Select 4')
+            return True
+        return False
+
+    def get_current(self) -> str:
+        if self.selection == 'CENTER':
+            return self.center_option
+        return self.ring_options[self.selection]
+
+    @staticmethod
+    def _fit_text(text: str, font, max_text_w: int) -> str:
+        """Garante que o texto nunca ultrapasse a largura interna útil do card."""
+        if font.width(text) <= max_text_w:
+            return text
+        ellipsis = '..'
+        while len(text) > 1 and font.width(text + ellipsis) > max_text_w:
+            text = text[:-1]
+        return text + ellipsis
+
+    def draw(self, surf):
+        try:
+            from app.engine.base_surf import create_base_surf
+        except ImportError:
+            pass
+
+        surf_w, surf_h = surf.get_width(), surf.get_height()
+        cx, cy = self.center_pos
+        font = FONT['text']
+        max_text_w = 92  # Limite máximo seguro para textos longos em 240x160
+
+        # 1. Opção Central ("Fight")
+        is_center_active = (self.selection == 'CENTER')
+        c_text = self._fit_text(self.center_option, font, max_text_w)
+        cw, ch = font.width(c_text), font.height
+
+        box_w = max(40, ((cw + 12 + 7) // 8) * 8)
+        box_h = ((ch + 6 + 7) // 8) * 8
+        c_surf = create_base_surf(box_w, box_h, 'menu_bg_base')
+        c_color = 'text-yellow' if is_center_active else 'text-white'
+        if c_color in FONT:
+            FONT[c_color].blit(c_text, c_surf, ((box_w - cw) // 2, (box_h - ch) // 2))
+        else:
+            font.blit(c_text, c_surf, ((box_w - cw) // 2, (box_h - ch) // 2))
+        surf.blit(c_surf, (cx - box_w // 2, cy - box_h // 2))
+
+        # 2. Nós do Anel com texto completo e proteção contra overflow
+        for idx, (name, (nx, ny)) in enumerate(zip(self.ring_options, self.node_positions)):
+            is_active = (self.selection == idx)
+            is_disabled = (name in self.disabled_options)
+
+            display_text = self._fit_text(name, font, max_text_w)
+            nw, nh = font.width(display_text), font.height
+            node_w = max(32, ((nw + 12 + 7) // 8) * 8)
+            node_h = ((nh + 6 + 7) // 8) * 8
+
+            node_surf = create_base_surf(node_w, node_h, 'menu_bg_base')
+            if is_disabled:
+                color_key = 'text-grey' if 'text-grey' in FONT else 'text-gray'
+            else:
+                color_key = 'text-yellow' if is_active else 'text-white'
+
+            if color_key in FONT:
+                FONT[color_key].blit(display_text, node_surf, ((node_w - nw) // 2, (node_h - nh) // 2))
+            else:
+                font.blit(display_text, node_surf, ((node_w - nw) // 2, (node_h - nh) // 2))
+
+            draw_x = max(2, min(surf_w - 2 - node_w, nx - node_w // 2))
+            draw_y = max(2, min(surf_h - 2 - node_h, ny - node_h // 2))
+            surf.blit(node_surf, (draw_x, draw_y))
+
+        return surf
