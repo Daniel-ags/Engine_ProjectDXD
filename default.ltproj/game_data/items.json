@@ -1471,10 +1471,6 @@
             [
                 "status_on_equip",
                 "AnimaOverride"
-            ],
-            [
-                "magic",
-                null
             ]
         ]
     },
@@ -5282,7 +5278,7 @@
     {
         "nid": "Heal",
         "name": "Heal",
-        "desc": "Restores (User's MAG + 10) HP.",
+        "desc": "Restores (User's MAG + 10) HP.\n(Map Cast Pose is added to show the user staying in place while using the staff rather than \"attacking\" the target.)",
         "icon_nid": "Staff",
         "icon_index": [
             0,
@@ -5351,6 +5347,18 @@
             [
                 "magic",
                 null
+            ],
+            [
+                "map_cast_pose",
+                null
+            ],
+            [
+                "map_hit_sfx",
+                "MapHeal"
+            ],
+            [
+                "map_cast_anim",
+                "MapSmallHealTrans"
             ],
             [
                 "targeting_pennant",
@@ -5432,6 +5440,18 @@
                 null
             ],
             [
+                "map_cast_pose",
+                null
+            ],
+            [
+                "map_hit_sfx",
+                "MapHeal"
+            ],
+            [
+                "map_cast_anim",
+                "MapMediumHealTrans"
+            ],
+            [
                 "targeting_pennant",
                 "Select a character to restore HP to."
             ]
@@ -5509,6 +5529,18 @@
                     144,
                     232
                 ]
+            ],
+            [
+                "map_cast_pose",
+                null
+            ],
+            [
+                "map_hit_sfx",
+                "MapHeal"
+            ],
+            [
+                "map_cast_anim",
+                "MapBigHealTrans"
             ],
             [
                 "targeting_pennant",
@@ -5590,6 +5622,18 @@
                 "HEAL"
             ],
             [
+                "map_cast_pose",
+                null
+            ],
+            [
+                "map_hit_sfx",
+                "MapHeal"
+            ],
+            [
+                "map_cast_anim",
+                "MapSmallHealTrans"
+            ],
+            [
                 "targeting_pennant",
                 "Select a character to restore HP to."
             ]
@@ -5655,6 +5699,18 @@
             [
                 "equation_heal",
                 "HEAL"
+            ],
+            [
+                "map_cast_pose",
+                null
+            ],
+            [
+                "map_hit_sfx",
+                "MapHeal"
+            ],
+            [
+                "map_target_cast_anim",
+                "MapSmallHealTrans"
             ]
         ]
     },
@@ -5730,6 +5786,10 @@
             [
                 "menu_after_combat",
                 null
+            ],
+            [
+                "map_cast_pose",
+                null
             ]
         ]
     },
@@ -5788,6 +5848,10 @@
             ],
             [
                 "unlock_staff",
+                null
+            ],
+            [
+                "map_cast_pose",
                 null
             ],
             [
@@ -5859,6 +5923,10 @@
             ],
             [
                 "restore",
+                null
+            ],
+            [
+                "map_cast_pose",
                 null
             ],
             [
@@ -5953,6 +6021,10 @@
                 "Distance_Debuff"
             ],
             [
+                "map_cast_pose",
+                null
+            ],
+            [
                 "targeting_pennant",
                 "Select a unit to use the staff on."
             ]
@@ -6042,6 +6114,10 @@
             [
                 "status_on_hold",
                 "Distance_Debuff"
+            ],
+            [
+                "map_cast_pose",
+                null
             ],
             [
                 "targeting_pennant",
@@ -6135,6 +6211,10 @@
                 "Distance_Debuff"
             ],
             [
+                "map_cast_pose",
+                null
+            ],
+            [
                 "targeting_pennant",
                 "Select a unit to use the staff on."
             ]
@@ -6214,6 +6294,10 @@
                 null
             ],
             [
+                "map_cast_pose",
+                null
+            ],
+            [
                 "targeting_pennant",
                 "Select the character whose weapon needs repair."
             ]
@@ -6282,6 +6366,10 @@
             ],
             [
                 "target_enemy",
+                null
+            ],
+            [
+                "map_cast_pose",
                 null
             ]
         ]
@@ -6356,6 +6444,10 @@
                 "not game.get_region_under_pos(target_pos, 'vision')"
             ],
             [
+                "map_cast_pose",
+                null
+            ],
+            [
                 "targeting_pennant",
                 "Select an area to light up."
             ]
@@ -6425,6 +6517,10 @@
             [
                 "max_range",
                 1
+            ],
+            [
+                "map_cast_pose",
+                null
             ],
             [
                 "targeting_pennant",
@@ -6502,6 +6598,10 @@
             ],
             [
                 "target_tile",
+                null
+            ],
+            [
+                "map_cast_pose",
                 null
             ]
         ]
@@ -6653,6 +6753,10 @@
             [
                 "max_range",
                 1
+            ],
+            [
+                "map_cast_pose",
+                null
             ]
         ]
     },
@@ -6791,6 +6895,10 @@
             ],
             [
                 "all_allies_except_self_aoe",
+                null
+            ],
+            [
+                "map_cast_pose",
                 null
             ]
         ]
@@ -11728,34 +11836,6 @@
         ]
     },
     {
-        "nid": "Curved_Shot_Override",
-        "name": "Curved Shot Override",
-        "desc": "(Used in the Curved Shot Combat Art in the Skills editor.)",
-        "icon_nid": "Skills",
-        "icon_index": [
-            4,
-            9
-        ],
-        "components": [
-            [
-                "max_range",
-                3
-            ],
-            [
-                "hp_cost",
-                1
-            ],
-            [
-                "hp_uses_options",
-                {
-                    "cost_hp_on_miss": true,
-                    "one_hp_cost_per_combat": false,
-                    "unequip_on_unusable": true
-                }
-            ]
-        ]
-    },
-    {
         "nid": "Armorcrush_Override",
         "name": "Armorcrush Override",
         "desc": "(Used in the Armorcrush Combat Art in the Skills editor.)",
@@ -11786,6 +11866,34 @@
                 {
                     "cost_mana_on_miss": true,
                     "one_mana_cost_per_combat": false,
+                    "unequip_on_unusable": true
+                }
+            ]
+        ]
+    },
+    {
+        "nid": "Curved_Shot_Override",
+        "name": "Curved Shot Override",
+        "desc": "(Used in the Curved Shot Combat Art in the Skills editor.)",
+        "icon_nid": "Skills",
+        "icon_index": [
+            4,
+            9
+        ],
+        "components": [
+            [
+                "max_range",
+                3
+            ],
+            [
+                "hp_cost",
+                1
+            ],
+            [
+                "hp_uses_options",
+                {
+                    "cost_hp_on_miss": true,
+                    "one_hp_cost_per_combat": false,
                     "unequip_on_unusable": true
                 }
             ]
