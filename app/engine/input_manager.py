@@ -200,8 +200,10 @@ class InputManager():
                     return 'NEW'
 
         # Check mouse
+        # Forgotten every frame, so a position from before the mouse was
+        # turned off does not keep steering the cursor
+        self.current_mouse_position = None
         if not self.change_keymap_mode and not self.capture_action and cf.SETTINGS['mouse']:
-            self.current_mouse_position = None
             for event in events:
                 if event.type == engine.MOUSEBUTTONDOWN:
                     lmb = event.button == 1

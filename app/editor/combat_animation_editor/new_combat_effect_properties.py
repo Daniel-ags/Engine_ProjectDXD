@@ -8,6 +8,7 @@ import json
 from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout, \
     QWidget, QGroupBox, QFormLayout, QFileDialog, \
     QPushButton, QLineEdit, QInputDialog, QMessageBox
+from PyQt5.QtCore import QSignalBlocker
 from PyQt5.QtGui import QImage, QPixmap, QPainter
 
 from typing import Set
@@ -19,7 +20,6 @@ from app.data.resources.resources import RESOURCES
 
 from app.editor.settings import MainSettingsController
 
-from app.editor import timer
 
 from app.editor.combat_animation_editor.frame_selector import FrameSelector
 from app.editor.combat_animation_editor.new_combat_animation_properties import NewCombatAnimProperties
@@ -299,7 +299,10 @@ class NewCombatEffectProperties(NewCombatAnimProperties):
             populate_effect_pixmaps(self.current)
             self.nid_box.setText(self.current.nid)
 
-            poses = self.reset_pose_box()
+            # A change of pose would build the timeline of its own, which is the
+            # slow part of showing an effect, so it is built once, below
+            with QSignalBlocker(self.pose_box):
+                poses = self.reset_pose_box()
             self.timeline_menu.set_current_frames(self.current.frames)
             self.palette_menu.set_current(self.current)
             current_pose_nid = self.pose_box.currentText()
@@ -482,8 +485,6 @@ class NewCombatEffectProperties(NewCombatAnimProperties):
     
             left_palette_name, left_palette, right_palette_name, right_palette = self.get_test_palettes(combat_anim)
 
-            timer.get_timer().stop()
             GAME_ACTIONS.test_combat(
                 combat_anim, weapon_anim, left_palette_name, left_palette, self.current.nid,
                 combat_anim, weapon_anim, right_palette_name, right_palette, self.current.nid, current_pose_nid)
-            timer.get_timer().start()

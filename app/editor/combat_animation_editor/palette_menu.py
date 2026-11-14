@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import QWidget, QButtonGroup, QMenu, \
     QListWidgetItem, QRadioButton, QHBoxLayout, QListWidget, QAction, \
-    QLineEdit
+    QLineEdit, QComboBox
 from PyQt5.QtCore import Qt, pyqtSignal
 
 from app.utilities import str_utils
@@ -36,6 +36,10 @@ class PaletteWidget(QWidget):
         model = PaletteModel(RESOURCES.combat_palettes, self)
         self.palette_box.setModel(model)
         self.palette_box.view().setUniformItemSizes(True)
+        # Sized by characters, since sizing it to its widest palette would paint the
+        # swatch of every palette in the project each time an animation is shown
+        self.palette_box.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.palette_box.setMinimumContentsLength(30)
         self.palette_box.setValue(palette_nid)
         self.palette_box.activated.connect(self.change_palette_nid)
 

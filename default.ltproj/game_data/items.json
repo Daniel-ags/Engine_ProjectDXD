@@ -1471,6 +1471,10 @@
             [
                 "status_on_equip",
                 "AnimaOverride"
+            ],
+            [
+                "magic",
+                null
             ]
         ]
     },

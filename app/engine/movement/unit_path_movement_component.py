@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from app.constants import TILEWIDTH, TILEHEIGHT
 from app.engine.game_state import game
@@ -19,20 +19,33 @@ class UnitPathMovementComponent(MovementComponent):
     grid_move = True
 
     def __init__(self, unit, path: List[Tuple[int, int]], event=False,
-                 follow=True, muted=False, speed: int = 0):
+                 follow=True, muted=False, speed: int = 0, center=False):
         super().__init__(unit, follow, muted)
         self.path = path
         self.goal = self.path[0] if self.path else None
         self.event: bool = event
         # How fast we move to each new position in the path
         self.speed = int(speed)
+        # Whether the camera keeps the unit in the middle of the screen, rather than
+        # only as far in from the edges as the cursor is kept
+        self.center: bool = center
         self.start()
 
     def get_camera_position(self):
         return self.unit.position
 
+    def get_paced_camera_position(self) -> Optional[Tuple[float, float]]:
+        """
+        # As on the GBA, the camera follows a unit moving in an event pixel for pixel,
+        # where the unit's sprite is
+        """
+        if not (self.follow and self.event and self.unit.position):
+            return None
+        return (self.unit.position[0] + self.unit.sprite.offset[0] / TILEWIDTH,
+                self.unit.position[1] + self.unit.sprite.offset[1] / TILEHEIGHT)
+
     def should_camera_center(self) -> bool:
-        return self.follow and self.event
+        return self.center
 
     def get_end_goal(self):
         return self.goal

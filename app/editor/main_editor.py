@@ -23,7 +23,7 @@ from app.editor.settings import MainSettingsController
 from app.constants import VERSION
 from app.data.database.database import DB
 
-from app.editor import log_viewer, timer, error_viewer, reference_dialogs
+from app.editor import log_viewer, error_viewer, reference_dialogs
 from app.editor.custom_widgets import ObjBox
 from app.editor.data_editor import EditHistoryDialog, UndoFeedback, handles_own_undo, held_in_text_field, \
     report_undo_failure
@@ -582,34 +582,18 @@ class MainEditor(QMainWindow):
     def test_play_current(self):
         # The game plays the database as it is in memory
         self.finish_editing()
-        self.test_current_act.setEnabled(False)
-        self.test_load_act.setEnabled(False)
-        self.test_full_act.setEnabled(False)
         # Make a save before playing if not on default
         if os.path.basename(self.settings.get_current_project()) != DEFAULT_PROJECT:
             self.save()
-        timer.get_timer().stop()  # Don't need these while running game
         GAME_ACTIONS.test_play_current(
             self.app_state_manager.state.selected_level)
-        timer.get_timer().start()
-        self.test_current_act.setEnabled(True)
-        self.test_load_act.setEnabled(True)
-        self.test_full_act.setEnabled(True)
 
     def test_play(self):
         self.finish_editing()
-        self.test_current_act.setEnabled(False)
-        self.test_load_act.setEnabled(False)
-        self.test_full_act.setEnabled(False)
         # Make a save before playing if not on default
         if os.path.basename(self.settings.get_current_project()) != DEFAULT_PROJECT:
             self.save()
-        timer.get_timer().stop()  # Don't need these while running game
         GAME_ACTIONS.test_play()
-        timer.get_timer().start()
-        self.test_current_act.setEnabled(True)
-        self.test_load_act.setEnabled(True)
-        self.test_full_act.setEnabled(True)
 
     def test_play_load(self):
         self.finish_editing()
@@ -620,19 +604,11 @@ class MainEditor(QMainWindow):
                 return
         else:
             save_loc = None
-        self.test_current_act.setEnabled(False)
-        self.test_load_act.setEnabled(False)
-        self.test_full_act.setEnabled(False)
         # Make a save before playing if not on default
         if os.path.basename(self.settings.get_current_project()) != DEFAULT_PROJECT:
             self.save()
-        timer.get_timer().stop()  # Don't need these while running game
         GAME_ACTIONS.test_play_load(
             self.app_state_manager.state.selected_level, save_loc)
-        timer.get_timer().start()
-        self.test_current_act.setEnabled(True)
-        self.test_load_act.setEnabled(True)
-        self.test_full_act.setEnabled(True)
 
     def new(self):
         self.finish_editing()

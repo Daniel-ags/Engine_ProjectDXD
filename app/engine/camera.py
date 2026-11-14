@@ -159,6 +159,21 @@ class Camera():
         y = self._center_y(y)
         self.current_y = self.target_y = y
 
+    def keep_pace(self, x: float, y: float, center: bool, caught_up: bool):
+        """
+        Keeps a position that moves by the pixel on screen: in the middle of it if center,
+        else as far in from the edges as set_xy keeps it. Once caught_up, the camera moves
+        with the position pixel for pixel, as on the GBA when it follows a unit moving in
+        an event. Until then it eases over to it
+        """
+        if center:
+            self.set_center(x, y)
+        else:
+            self.set_xy(x, y)
+        if caught_up:
+            self.current_x = self.target_x
+            self.current_y = self.target_y
+
     def set_center2(self, pos1, pos2):
         x1, y1 = pos1
         x2, y2 = pos2
