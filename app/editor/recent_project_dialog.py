@@ -4,9 +4,12 @@ import os
 from typing import List, Optional
 
 from PyQt5.QtCore import QAbstractTableModel, QDir, QModelIndex, Qt
+from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import (QFileDialog, QHBoxLayout, QHeaderView,
-                             QMessageBox, QPushButton, QTableView, QVBoxLayout)
+                             QMessageBox, QPushButton, QTableView, QToolButton,
+                             QVBoxLayout)
 
+from app import dark_theme
 from app.editor.file_manager.project_initializer import ProjectInitializer
 from app.editor.settings.main_settings_controller import MainSettingsController
 from app.editor.settings.preference_definitions import Preference
@@ -17,8 +20,9 @@ class RecentProjectsModel(QAbstractTableModel):
     def __init__(self, data: List[ProjectHistoryEntry]):
         super(RecentProjectsModel, self).__init__()
         self._data = data
+        # The last column holds the selected row's remove button
         self.header_labels = ["Project Title",
-                              "Project Full Path", "Last Opened on..."]
+                              "Project Full Path", "Last Opened on...", ""]
 
     def data(self, index, role):
         if role == Qt.DisplayRole:
@@ -29,7 +33,12 @@ class RecentProjectsModel(QAbstractTableModel):
         return len(self._data)
 
     def columnCount(self, index: QModelIndex):
-        return 3
+        return 4
+
+    def remove_row(self, row: int):
+        self.beginRemoveRows(QModelIndex(), row, row)
+        self._data.pop(row)
+        self.endRemoveRows()
 
     def getColumnProperty(self, index: QModelIndex, entry: ProjectHistoryEntry) -> str:
         if index.column() == 0:
@@ -38,6 +47,7 @@ class RecentProjectsModel(QAbstractTableModel):
             return entry.path
         elif index.column() == 2:
             return entry.get_last_open_time().strftime('%Y-%m-%d %a %H:%M:%S') if entry.get_last_open_time() else "Unknown"
+        return None
 
     def headerData(self, section, orientation, role=Qt.DisplayRole):
         if role == Qt.DisplayRole and orientation == Qt.Horizontal:
@@ -45,36 +55,39 @@ class RecentProjectsModel(QAbstractTableModel):
         return QAbstractTableModel.headerData(self, section, orientation, role)
 
 
+DEFAULT_PROJECT = "default.ltproj"
+REMOVE_COLUMN = 3
+
+
 class RecentProjectDialog(SimpleDialog):
-    def __init__(self, recent_projects: List[ProjectHistoryEntry], load_only):
+    def __init__(self, recent_projects: List[ProjectHistoryEntry], load_only: bool):
         super().__init__()
         self.setWindowTitle("Recent Projects")
-        # recent_projects guaranteed to not be empty
-        self.projects = recent_projects
+        self.settings = MainSettingsController()
+        # With no history, default.ltproj stands in, and has nothing to remove
+        self.in_history = bool(recent_projects)
+        self.projects = recent_projects if self.in_history else [ProjectHistoryEntry(DEFAULT_PROJECT, DEFAULT_PROJECT)]
         self._selected_path: Optional[str] = None
 
         layout = QVBoxLayout()
         self.setLayout(layout)
 
         self.project_table = QTableView()
-        self.project_table.horizontalHeader().setStretchLastSection(True)
         self.project_table.verticalHeader().hide()
         self.project_table.setShowGrid(False)
         self.model = RecentProjectsModel(self.projects)
         self.project_table.setModel(self.model)
-        self.project_table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeToContents)
-        self.project_table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeToContents)
+        header = self.project_table.horizontalHeader()
+        for column in range(REMOVE_COLUMN):
+            header.setSectionResizeMode(column, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(REMOVE_COLUMN, QHeaderView.Fixed)
+        header.resizeSection(REMOVE_COLUMN, 24)
         self.project_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.project_table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.project_table.resizeColumnsToContents()
         self.project_table.setSelectionBehavior(QTableView.SelectRows)
-        self.project_table.clicked.connect(self.on_select_project)
+        self.project_table.setSelectionMode(QTableView.SingleSelection)
+        self.project_table.selectionModel().currentRowChanged.connect(self.on_current_row_changed)
         self.project_table.doubleClicked.connect(self.on_double_click_project)
-        self.project_table.selectRow(0)
-        # select initial project
-        self._selected_path = self.projects[0].path
 
         button_layout = QHBoxLayout()
         self.confirm_button = QPushButton("Open selected project", self)
@@ -91,19 +104,52 @@ class RecentProjectDialog(SimpleDialog):
         layout.addWidget(self.project_table)
         layout.addLayout(button_layout)
 
+        self.select_row(0)
+        self.fit_size()
+
+    def fit_size(self):
+        self.project_table.resizeColumnsToContents()
+        self.project_table.horizontalHeader().resizeSection(REMOVE_COLUMN, 24)
         dialogWidth = self.project_table.horizontalHeader().length() + 24
         dialogHeight = self.project_table.verticalHeader().length() + 104
         self.setFixedSize(dialogWidth, dialogHeight)
 
-    def on_select_project(self, index: QModelIndex):
-        row = index.row()
-        project = self.projects[row]
+    def select_row(self, row: int):
+        self.project_table.setCurrentIndex(self.model.index(row, 0))
+        self.project_table.selectRow(row)
+        # setCurrentIndex does not announce a row that was already current
+        self.on_current_row_changed(self.model.index(row, 0), QModelIndex())
+
+    def on_current_row_changed(self, current: QModelIndex, previous: QModelIndex):
+        if previous.isValid():
+            self.project_table.setIndexWidget(self.model.index(previous.row(), REMOVE_COLUMN), None)
+        if not current.isValid():
+            return
+        project = self.projects[current.row()]
         self._selected_path = project.path
+        if self.in_history:
+            remove_button = QToolButton(self)
+            remove_button.setIcon(QIcon(f"{dark_theme.get_theme().icon_dir()}/x.png"))
+            remove_button.setToolTip("Remove from recent projects")
+            remove_button.setStyleSheet(
+                "QToolButton { border: 0px solid #575757; background-color: transparent; }")
+            remove_button.clicked.connect(lambda: self.remove_project(project))
+            self.project_table.setIndexWidget(self.model.index(current.row(), REMOVE_COLUMN), remove_button)
+
+    def remove_project(self, project: ProjectHistoryEntry):
+        self.settings.remove_project(project.path)
+        row = self.projects.index(project)
+        self.model.remove_row(row)
+        if not self.projects:
+            self.in_history = False
+            self.model.beginInsertRows(QModelIndex(), 0, 0)
+            self.projects.append(ProjectHistoryEntry(DEFAULT_PROJECT, DEFAULT_PROJECT))
+            self.model.endInsertRows()
+        self.select_row(min(row, len(self.projects) - 1))
+        self.fit_size()
 
     def on_double_click_project(self, index: QModelIndex):
-        row = index.row()
-        project = self.projects[row]
-        self._selected_path = project.path
+        self._selected_path = self.projects[index.row()].path
         self.accept()
 
     def on_click_confirm(self):
@@ -146,13 +192,9 @@ def choose_recent_project(load_only: bool = False, allow_auto_open: bool = False
     None means don't do anything (When you press X or close on the dialog)
     """
     settings = MainSettingsController()
-    recent_projects = settings.get_last_ten_projects()
-    if not recent_projects:
-        # default.ltproj is always an available choice
-        recent_projects = [ProjectHistoryEntry("default.ltproj", "default.ltproj")]
     if allow_auto_open and settings.get_preference(Preference.AUTO_OPEN_LAST):
-        return settings.get_current_project(fallback="default.ltproj")
-    dialog = RecentProjectDialog(recent_projects, load_only)
+        return settings.get_current_project(fallback=DEFAULT_PROJECT)
+    dialog = RecentProjectDialog(settings.get_last_ten_projects(), load_only)
     dialog.exec_()
     selected_path: Optional[str] = \
         dialog.get_selected()
