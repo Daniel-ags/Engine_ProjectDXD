@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import QSplitter, QFrame, QVBoxLayout, \
     QWidget, QGroupBox, QFormLayout, QSpinBox, QFileDialog, \
     QMessageBox, QStyle, QHBoxLayout, QPushButton, QLineEdit, \
     QLabel, QToolButton, QInputDialog, QCheckBox
-from PyQt5.QtCore import Qt, QByteArray
+from PyQt5.QtCore import Qt, QByteArray, QSignalBlocker
 from PyQt5.QtGui import QImage, QPixmap, QIcon, QPainter
 
 from app.constants import WINWIDTH, WINHEIGHT
@@ -674,19 +674,23 @@ class NewCombatAnimProperties(QWidget):
             populate_anim_pixmaps(self.current)
             self.nid_box.setText(self.current.nid)
 
-            self.weapon_box.clear()
-            weapon_anims = self.current.weapon_anims
-            self.weapon_box.addItems([d.nid for d in weapon_anims])
-            if weapon_anims:
-                self.has_weapon(True)
-                self.weapon_box.setValue(weapon_anims[0].nid)
-                weapon_anim = self.get_current_weapon_anim()
-                poses = self.reset_pose_box(weapon_anim)
-                self.timeline_menu.set_current_frames(weapon_anim.frames)
-            else:
-                self.has_weapon(False)
-                self.pose_box.clear()
-                weapon_anim, poses = None, None
+            # Each change of weapon or pose would build the timeline of its own,
+            # which is the slow part of showing an animation, so it is built
+            # once, below
+            with QSignalBlocker(self.weapon_box), QSignalBlocker(self.pose_box):
+                self.weapon_box.clear()
+                weapon_anims = self.current.weapon_anims
+                self.weapon_box.addItems([d.nid for d in weapon_anims])
+                if weapon_anims:
+                    self.has_weapon(True)
+                    self.weapon_box.setValue(weapon_anims[0].nid)
+                    weapon_anim = self.get_current_weapon_anim()
+                    poses = self.reset_pose_box(weapon_anim)
+                    self.timeline_menu.set_current_frames(weapon_anim.frames)
+                else:
+                    self.has_weapon(False)
+                    self.pose_box.clear()
+                    weapon_anim, poses = None, None
 
             self.palette_menu.set_current(self.current)
 
@@ -1024,8 +1028,6 @@ class NewCombatAnimProperties(QWidget):
                 if item.magic and item.nid in RESOURCES.combat_effects:
                     item_nid = item.nid
 
-            timer.get_timer().stop()
             GAME_ACTIONS.test_combat(
                 self.current, weapon_anim, left_palette_name, left_palette, item_nid,
                 self.current, weapon_anim, right_palette_name, right_palette, item_nid, current_pose_nid)
-            timer.get_timer().start()

@@ -11,6 +11,7 @@ from app.utilities import file_utils, utils
 
 from app.constants import WINWIDTH, WINHEIGHT, VERSION, FPS
 from app.engine import engine
+from app.engine.input_manager import get_input_manager
 from app.engine.utils import garbage
 
 import app.engine.config as cf
@@ -32,6 +33,9 @@ def start(title, from_editor=False):
     if from_editor:
         engine.constants['standalone'] = False
     engine.init()
+    # The input manager lasts the whole process, and an earlier test play from
+    # the editor closed the pads it held when it quit pygame
+    get_input_manager().refresh_gamepads()
     icon = engine.image_load('favicon.ico')
     engine.set_icon(icon)
 
@@ -160,7 +164,6 @@ class MainLoop():
         time is up, holding the engine to FPS. Otherwise the caller paces it"""
         from app.engine.sound import get_sound_thread
         from app.engine.game_counters import ANIMATION_COUNTERS
-        from app.engine.input_manager import get_input_manager
 
         self.game = game
         self.wait_out_frame = wait_out_frame
@@ -349,7 +352,6 @@ def run_in_isolation(obj):
     3) draw function that returns the surface to be drawn
     """
     from app.engine.sound import get_sound_thread
-    from app.engine.input_manager import get_input_manager
 
     get_sound_thread().reset()
     get_sound_thread().set_music_volume(cf.SETTINGS['music_volume'])

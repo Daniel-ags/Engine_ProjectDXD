@@ -538,16 +538,12 @@ class EventProperties(QWidget):
         if self.current:
             # If not debug_point_line_number default to 0 (the start)
             command_pointer = (self.text_box.debug_point_line_number or 1) - 1
-            timer.get_timer().stop()
             GAME_ACTIONS.test_event(self.current, command_pointer, strategy)
-            timer.get_timer().start()
 
     def test_python_event(self):
         if self.current:
             command_pointer = 0
-            timer.get_timer().stop()
             GAME_ACTIONS.test_event(self.current, command_pointer)
-            timer.get_timer().start()
 
     def name_done_editing(self):
         self.rename(self.name_box.edit.text(), self.current.level_nid)

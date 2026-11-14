@@ -1411,12 +1411,15 @@ The optional keywords define how the movement occurs.
 *Speed* defines the speed of the moving unit. 120 is the default. Lower numbers are faster and higher slower.
 
 The *no_block* optional flag causes the event script to continue to execute while the unit is moving.
+As on the GBA, the camera follows the unit as it moves, only scrolling to keep the unit at least
+3 tiles from the left and right edges of the screen and 2 tiles from the top and bottom.
+The *center* flag keeps the unit in the middle of the screen instead.
 The *no_follow* flag prevents the camera from tracking the unit as it moves.
         """
 
     keywords = ["Unit"]
     optional_keywords = ["Position", "MovementType", "Placement", "Speed"]
-    _flags = ['no_block', 'no_follow', 'silent']
+    _flags = ['no_block', 'no_follow', 'center', 'silent']
 
 class RemoveUnit(EventCommand):
     nid = 'remove_unit'
