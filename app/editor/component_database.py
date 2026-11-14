@@ -8,6 +8,7 @@ from PyQt5.QtWidgets import (QApplication, QDoubleSpinBox, QHBoxLayout,
                              QLabel, QLineEdit, QListWidgetItem,
                              QSpinBox, QToolButton, QVBoxLayout, QWidget)
 
+from app import dark_theme
 from app.data.database.components import ComponentType
 from app.data.database.database import DB
 from app.data.resources.resources import RESOURCES
@@ -116,7 +117,7 @@ class BoolItemComponent(QWidget):
         self.create_editor(hbox)
 
         x_button = QToolButton(self)
-        x_button.setIcon(QIcon("icons/icons/x.png"))
+        x_button.setIcon(QIcon(f"{dark_theme.get_theme().icon_dir()}/x.png"))
         x_button.setStyleSheet(
             "QToolButton { border: 0px solid #575757; background-color: palette(base); }")
         x_button.clicked.connect(partial(self.window.remove_component, self))
