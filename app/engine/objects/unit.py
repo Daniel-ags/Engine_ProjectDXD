@@ -455,9 +455,17 @@ class UnitObject(Prefab):
     # =========================================================================
 
     @property
+    def unique_skills(self) -> List[SkillObject]:
+        """Retorna as habilidades exclusivas/inatas da unidade ('unique_skill')."""
+        return [s.get() for s in self._skills if self.is_unique_skill(s.get())]
+    
+    @property
     def personal_skills(self) -> List[SkillObject]:
-        """Grimório Pessoal Ativo: habilidades equipadas que ocupam slots do jogador."""
-        return [s.get() for s in self._skills if s.source_type == SourceType.PERSONAL]
+        """Retorna as Personal Skills equipadas (excluindo a Unique Skill inata)."""
+        return [
+            s.get() for s in self._skills
+            if s.source_type == SourceType.PERSONAL and not self.is_unique_skill(s.get())
+        ]
 
     @property
     def current_class_skills(self) -> List[SkillObject]:
@@ -519,12 +527,13 @@ class UnitObject(Prefab):
         return True
 
     def can_unequip_skill(self, skill_nid: NID) -> bool:
-        """Verifica se a habilidade pode ser desequipada (estritamente Personal Skills)."""
+        """Verifica se a habilidade pode ser desequipada (bloqueia Unique, Class e Status)."""
         target_nid = skill_nid if isinstance(skill_nid, str) else getattr(skill_nid, 'nid', skill_nid)
+        if self.is_unique_skill(target_nid):
+            return False
         target = next((s for s in self._skills if s.get().nid == target_nid), None)
         if not target:
             return False
-        # Impede o jogador de desequipar habilidades de classe ou status/auras
         return target.source_type == SourceType.PERSONAL
 
     def unequip_skill(self, skill_nid: NID) -> bool:
@@ -547,6 +556,21 @@ class UnitObject(Prefab):
         self._visible_skills_cache = None
         return True
 
+    @staticmethod
+    def is_unique_skill(skill_or_nid) -> bool:
+        """Retorna True se a skill possuir o componente 'unique_skill'."""
+        if not skill_or_nid:
+            return False
+        if not isinstance(skill_or_nid, str):
+            if hasattr(skill_or_nid, 'components') and 'unique_skill' in skill_or_nid.components:
+                return True
+            target_nid = getattr(skill_or_nid, 'nid', None)
+        else:
+            target_nid = skill_or_nid
+
+        prefab = DB.skills.get(target_nid) if target_nid else None
+        return bool(prefab and hasattr(prefab, 'components') and 'unique_skill' in prefab.components)
+    
     @staticmethod
     def get_skill_prerequisites(skill_nid: NID) -> List[NID]:
         """Retorna a lista de NIDs exigidos pelo componente PrerequisiteSkills."""

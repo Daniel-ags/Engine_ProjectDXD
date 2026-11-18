@@ -208,6 +208,7 @@ SCHEMA: Dict[type, Dict[str, FieldDeclarations]] = {
         'position': NOT_REF,
         'growth_colors': NOT_REF,
         'hidden_stat': NOT_REF,
+        'stat_color': NOT_REF,
     },
     Equation: {
         'nid': NOT_REF,

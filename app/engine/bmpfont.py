@@ -150,12 +150,51 @@ class BmpFont():
     def get_base_surf(self) -> engine.Surface:
         return self.surfaces[self.default_color]
 
+    # Regex para setas/barras elásticas de haste simples (-+) ou dupla (=+)
+    # Sequências maiores primeiro para evitar substituição parcial
+    LIGATURES = (
+        # Setas horizontais e duplas
+        ('<->', '↔'),
+        ('<=>', '⇔'),
+        ('<==', '⇐'),
+        ('->', '→'),
+        ('<-', '←'),
+        ('=>', '⇒'),
+        # Setas verticais e triângulos (novos atalhos)
+        ('[^v]', '↕'),
+        ('[^]', '↑'),
+        ('[v]', '↓'),
+        ('[A]', '▲'),
+        ('[V]', '▼'),
+        ('[>]', '►'),
+        ('[<]', '◄'),
+        # Comparadores e operadores
+        ('<=', '≤'),
+        ('>=', '≥'),
+        ('!=', '≠'),
+        ('==', '≡'),
+        ('~=', '≈'),
+        ('+-', '±'),
+        ('**', '×'),
+        # Pontuação e Ícones de UI
+        ('...', '…'),
+        ('<<', '«'),
+        ('>>', '»'),
+        ('--', '—'),
+        ('[*]', '★'),
+        ('<3', '♥'),
+        ('[m1]', '♪'),
+        ('[m2]', '♫'),
+    )
+
     def modify_string(self, string: str) -> str:
         if self.all_uppercase:
             string = string.upper()
         if self.all_lowercase:
             string = string.lower()
-        # string = string.replace('_', ' ')
+        for seq, glyph in self.LIGATURES:
+            if seq in string:
+                string = string.replace(seq, glyph)
         return string
 
     def _get_char_width(self, c: str) -> int:

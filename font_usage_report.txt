@@ -1,0 +1,560 @@
+=== RELATÓRIO DE USO DE FONTES NA ENGINE (478 ocorrências em 40 arquivos) ===
+
+📄 banner.py  [Role sugerido: 'ui_banner'] (9 ocorrências)
+   L0031 [TEXT_WIDTH]: self.length = text_width('text', self.text)
+   L0064 [RENDER_TEXT]: render_text(bg_surf, ['text'], [self.text], ['white'], topleft=(6, self.size[1]//2 - self.font_height//2 + 3))
+   L0199 [TEXT_WIDTH]: self.length = text_width('text', self.text)
+   L0226 [RENDER_TEXT]: render_text(bg_surf, ['text'], [self.text], ['white'], topleft=(22, self.size[1]//2 - self.font_height//2 + 3))
+   L0272 [RENDER_TEXT]: render_text(surf, [self.font], [self.text], ['white'], (counter, -self.sprite_offset))
+   L0277 [RENDER_TEXT]: render_text(surf, [self.font], [self.text], ['white'], (counter, WINHEIGHT - self.height + self.sprite_offset))
+   L0299 [TEXT_WIDTH]: max_text_width = max(text_width('text', line) for line in self.lines) if self.lines else 64
+   L0321 [TEXT_WIDTH]: line_w = text_width('text', line)
+   L0324 [RENDER_TEXT]: render_text(bg_surf, ['text'], [line], ['white'], topleft=(line_x, line_y))
+
+📄 base.py  [Role sugerido: 'text'] (27 ocorrências)
+   L0235 [FONT_DICT]: font = FONT['text']
+   L0394 [RENDER_TEXT]: render_text(surf, ['text'], [self.title], [title_color], title_pos)
+   L0677 [FONT_DICT]: btn.get_width() + self.BUTTON_ICON_TEXT_GAP + FONT['text'].width(label)
+   L0689 [RENDER_TEXT]: render_text(surf, ['text'], [label], [color], (text_x, text_y))
+   L0715 [RENDER_TEXT]: render_text(surf, ['text'], [self.unit.name], ['white'], (self.UNIT_TEXT_X, self.UNIT_NAME_Y))
+   L0718 [RENDER_TEXT]: render_text(surf, ['text'], [klass_name], ['white'], (self.UNIT_TEXT_X, self.UNIT_CLASS_Y))
+   L0722 [RENDER_TEXT]: render_text(surf, ['text'], ["Slots:"], ['white'], (self.SLOTS_LABEL_X, self.SLOTS_Y))
+   L0723 [RENDER_TEXT]: render_text(surf, ['text'], [slots_count], [slots_color], (self.SLOTS_COUNT_X, self.SLOTS_Y))
+   L0758 [FONT_DICT]: font = FONT['text']
+   L0791 [RENDER_TEXT]: render_text(card_surf, ['text'], [unit.name], ['white'], (6, 4))
+   L0799 [FONT_DICT]: label_w = FONT['text'].width(slots_label)
+   L0800 [FONT_DICT]: num_w = FONT['text'].width(slots_num)
+   L0804 [RENDER_TEXT]: render_text(card_surf, ['text'], [slots_label], ['white'], (start_x, 4))
+   L0805 [RENDER_TEXT]: render_text(card_surf, ['text'], [slots_num], [slots_color], (start_x + label_w + 3, 4))
+   L0809 [RENDER_TEXT]: render_text(card_surf, ['text'], ["---"], ['grey'], (6, 18))
+   L0813 [RENDER_TEXT]: render_text(card_surf, ['text'], [skill.name], ['white'], (6, y_offset))
+   L0817 [RENDER_TEXT]: render_text(card_surf, ['text'], [skill.name], ['white'], (6, y_offset))
+   L0818 [RENDER_TEXT]: render_text(card_surf, ['text'], [f"+{len(eq_skills) - 3} more..."], ['grey'], (6, 65))
+   L1138 [RENDER_TEXT]: render_text(bg_surf, ['text'], partner.name, None, (25, idx * 16 + 20))
+   L1144 [RENDER_TEXT]: render_text(bg_surf, ['text'], [rank], [font_color], (90 + ridx * 10, idx * 16 + 20))
+   L1549 [FONT_TYPE_ATTR]: dlg = dialog.Dialog(line, font_type="text", font_color="white", num_lines=8, draw_cursor=False, speed=0)
+   L1595 [RENDER_TEXT]: render_text(image, ['text'], [self.lore.title], ['white'], (self.width // 2, 4), HAlignment.CENTER)
+   L1599 [RENDER_TEXT]: render_text(image, ['text'], [text], ['yellow'], (self.width - 8, WINHEIGHT - 12 - 16), HAlignment.RIGHT)
+   L1962 [FONT_DICT]: font = FONT['text']
+   L2026 [FONT_DICT]: self.font = FONT['text']
+   L2229 [RENDER_TEXT]: render_text(surf, ['text'], [title], ['yellow'], (topleft[0] + 98, topleft[1] + 8), HAlignment.CENTER)
+   L2373 [RENDER_TEXT]: render_text(surf, ['convo'], [display_name], ['white'], (center[0], center[1] - 8), HAlignment.CENTER)
+
+📄 chapter_title.py  [Role sugerido: 'text'] (2 ocorrências)
+   L0129 [FONT_DICT]: name_width = FONT['chapter-yellow'].width(self.title)
+   L0131 [FONT_DICT]: FONT['chapter-yellow'].blit(self.title, new_ribbon, position)
+
+📄 combat\animation_combat.py  [Role sugerido: 'ui_combat'] (17 ocorrências)
+   L0637 [TEXT_WIDTH]: if text_width('text', self.left.name) > 52:
+   L0641 [RENDER_TEXT]: render_text(self.left_name, [font], [self.left.name], ['brown'], (30, 8), HAlignment.CENTER)
+   L0649 [TEXT_WIDTH]: if text_width('text', ln) > 52:
+   L0653 [RENDER_TEXT]: render_text(self.lp_name, [font], [ln], ['brown'], (30, 8), HAlignment.CENTER)
+   L0661 [TEXT_WIDTH]: if text_width('text', name) > 56:
+   L0665 [RENDER_TEXT]: render_text(self.left_bar, [font], [name], ['brown'], (WINWIDTH//4 + 31, 5 + (8 if crit_flag else 0)), HAlignment.CENTER)
+   L0671 [TEXT_WIDTH]: if text_width('text', self.right.name) > 52:
+   L0675 [RENDER_TEXT]: render_text(self.right_name, [font], [self.right.name], ['brown'], (36, 8), HAlignment.CENTER)
+   L0682 [TEXT_WIDTH]: if text_width('text', rn) > 52:
+   L0686 [RENDER_TEXT]: render_text(self.rp_name, [font], [rn], ['brown'], (36, 8), HAlignment.CENTER)
+   L0694 [TEXT_WIDTH]: if text_width('text', name) > 56:
+   L0698 [RENDER_TEXT]: render_text(self.right_bar, [font], [name], ['brown'], (WINWIDTH//4 - 13, 5 + (8 if crit_flag else 0)), HAlignment.CENTER)
+   L1246 [FONT_DICT]: font = FONT['number_small2']
+   L1250 [FONT_DICT]: font = FONT['number_small2']
+   L1300 [FONT_DICT]: FONT['number_small2'].blit_right(hit, surf, (right, top))
+   L1301 [FONT_DICT]: FONT['number_small2'].blit_right(damage, surf, (right, top + 8))
+   L1303 [FONT_DICT]: FONT['number_small2'].blit_right(crit, surf, (right, top + 16))
+
+📄 credit_state.py  [Role sugerido: 'text'] (3 ocorrências)
+   L0384 [RENDER_TEXT]: render_text(surf, ['text'], [header], ['blue'], utils.tuple_add((self.width // 2, 4), self.topleft), HAlignment.CENTER)
+   L0437 [RENDER_TEXT]: render_text(surf, ['text'], [text], ['yellow'], utils.tuple_add((self.width - 8, WINHEIGHT - 12 - 16), self.topleft), HAlignment.RIGHT)
+   L0524 [RENDER_TEXT]: render_text(surf, [main_font], s, [main_color], (x + 6, y))
+
+📄 debug_mode.py  [Role sugerido: 'text'] (6 ocorrências)
+   L0061 [TEXT_WIDTH]: self.overflow = text_width('text', self.current_command) >= WINWIDTH
+   L0070 [TEXT_WIDTH]: self.overflow = text_width('text', self.current_command) >= WINWIDTH
+   L0088 [FONT_DICT]: FONT['text'].blit(command, surf, (0, WINHEIGHT - idx * 16 - 32))
+   L0090 [FONT_DICT]: FONT['text'].blit_right(self.current_command, surf, (WINWIDTH, WINHEIGHT - 16))
+   L0092 [FONT_DICT]: FONT['text'].blit(self.current_command, surf, (0, WINHEIGHT - 16))
+   L0111 [RENDER_TEXT]: render_text(surf, ['text'], unit_position_info, colors, topleft=(WINWIDTH, 0), align=HAlignment.RIGHT)
+
+📄 dialog.py  [Role sugerido: 'convo'] (27 ocorrências)
+   L0105 [FONT_TYPE_ATTR]: font_type="convo",
+   L0802 [FONT_TYPE_ATTR]: font_type="convo",
+   L0860 [FONT_DICT]: self.font = FONT["text"]
+   L0938 [FONT_DICT]: self.title_font = FONT["credit_title"]
+   L0940 [FONT_DICT]: self.font = FONT["credit"]
+   L1029 [FONT_DICT]: self.font = FONT["text"]
+   L1044 [FONT_DICT]: self.dialog.font = FONT["text"]
+   L1045 [FONT_TYPE_ATTR]: self.dialog.font_type = "text"
+   L1065 [FONT_DICT]: FONT["text-yellow"].blit(text_funcs.translate("K"), self.bg, (136, 8))
+   L1066 [FONT_DICT]: FONT["text-yellow"].blit(text_funcs.translate("D"), self.bg, (168, 8))
+   L1067 [FONT_DICT]: FONT["text-yellow"].blit(text_funcs.translate("H"), self.bg, (200, 8))
+   L1068 [FONT_DICT]: FONT["text-blue"].blit(str(kills), self.bg, (144, 8))
+   L1075 [FONT_DICT]: FONT["text-blue"].blit(dam, self.bg, (176, 8))
+   L1076 [FONT_DICT]: FONT["text-blue"].blit(heal, self.bg, (208, 8))
+   L1160 [RENDER_TEXT]: render_text(self.bg, [self.font_name], [self.left_title], [None], (68, 24),
+   L1172 [FONT_DICT]: FONT["text-yellow"].blit(text_funcs.translate("K"), self.bg, (136, 8))
+   L1173 [FONT_DICT]: FONT["text-yellow"].blit(text_funcs.translate("D"), self.bg, (168, 8))
+   L1174 [FONT_DICT]: FONT["text-yellow"].blit(text_funcs.translate("H"), self.bg, (200, 8))
+   L1175 [FONT_DICT]: FONT["text-blue"].blit(str(kills), self.bg, (144, 8))
+   L1182 [FONT_DICT]: FONT["text-blue"].blit(dam, self.bg, (176, 8))
+   L1183 [FONT_DICT]: FONT["text-blue"].blit(heal, self.bg, (208, 8))
+   L1190 [FONT_DICT]: FONT["text-yellow"].blit(text_funcs.translate("K"), self.bg,
+   L1192 [FONT_DICT]: FONT["text-yellow"].blit(text_funcs.translate("D"), self.bg,
+   L1194 [FONT_DICT]: FONT["text-yellow"].blit(text_funcs.translate("H"), self.bg,
+   L1196 [FONT_DICT]: FONT["text-blue"].blit(str(kills), self.bg, (16, WINHEIGHT - 23))
+   L1203 [FONT_DICT]: FONT["text-blue"].blit(dam, self.bg, (48, WINHEIGHT - 23))
+   L1204 [FONT_DICT]: FONT["text-blue"].blit(heal, self.bg, (80, WINHEIGHT - 23))
+
+📄 driver.py  [Role sugerido: 'text'] (4 ocorrências)
+   L0109 [FONT_DICT]: FONT['small-white'].blit(str(fps), surf, (surf.get_width() - 20, 0))
+   L0110 [FONT_DICT]: FONT['small-white'].blit(str(min_fps), surf, (surf.get_width() - 20, 12))
+   L0114 [FONT_DICT]: FONT['chapter-yellow'].blit(str(remaining_time), surf, (surf.get_width()//2 - 4, surf.get_height()//2 - 4))
+   L0147 [FONT_DICT]: FONT['small-white'].blit('x%d' % game_speed, surf, (2, 0))
+
+📄 feat_choice.py  [Role sugerido: 'text'] (2 ocorrências)
+   L0149 [FONT_DICT]: label_width = FONT['text'].width(label) + 16
+   L0151 [FONT_DICT]: FONT['text'].blit_center(label, bg_surf, (bg_surf.get_width()//2, 4))
+
+📄 game_menus\animated_options.py  [Role sugerido: 'text'] (2 ocorrências)
+   L0090 [RENDER_TEXT]: render_text(surf, [font], [display_text], [color], blit_loc)
+   L0152 [RENDER_TEXT]: render_text(surf, [font], [display_text], [color], blit_loc)
+
+📄 game_menus\icon_options.py  [Role sugerido: 'text'] (9 ocorrências)
+   L0040 [RENDER_TEXT]: render_text(surf, [font], [display_text], [color], blit_loc, align)
+   L0058 [RENDER_TEXT]: render_text(surf, [font], [display_text], [color], blit_loc, align)
+   L0117 [RENDER_TEXT]: render_text(surf, [uses_font], ["/"], [], slash_loc, HAlignment.RIGHT)
+   L0149 [RENDER_TEXT]: render_text(surf, [uses_font], [curr_uses_string], [uses_color], curr_uses_string_loc, HAlignment.RIGHT)
+   L0155 [RENDER_TEXT]: render_text(surf, [uses_font], [custom_uses.delim], [], slash_loc, HAlignment.RIGHT)
+   L0156 [RENDER_TEXT]: render_text(surf, [uses_font], [max_uses_string], [uses_color], max_uses_string_loc, HAlignment.RIGHT)
+   L0259 [RENDER_TEXT]: render_text(surf, [self._font], [self._disp_value], [main_color], blit_loc, self._align)
+   L0350 [RENDER_TEXT]: render_text(surf, [font], [display_text], [color], blit_loc, self._align)
+   L0393 [RENDER_TEXT]: render_text(surf, [font], [display_text], [color], blit_loc, self._align)
+
+📄 game_menus\menu_components\generic_menu\grid_choice.py  [Role sugerido: 'text'] (2 ocorrências)
+   L0487 [TEXT_WIDTH]: title_width = text_width('text', self._title)
+   L0639 [RENDER_TEXT]: render_text(surf, ['text'], [self._title], [None], title_pos)
+
+📄 game_menus\menu_components\unit_menu\unit_menu.py  [Role sugerido: 'text'] (3 ocorrências)
+   L0043 [FONT_DICT]: self.page_title_component.props.font = FONT['chapter-grey']
+   L0057 [FONT_DICT]: self.sort_by_text.props.font = FONT['text']
+   L0077 [FONT_DICT]: self.page_number_text.props.font = FONT['text-blue']
+
+📄 game_menus\menu_options.py  [Role sugerido: 'text'] (27 ocorrências)
+   L0079 [RENDER_TEXT]: render_text(surf, [self.font], [self.display_text], [self.get_color()], (x + 5, y))
+   L0127 [RENDER_TEXT]: render_text(surf, [title_font], [front_half], [front_color], (x + x_offset, y))
+   L0132 [RENDER_TEXT]: render_text(surf, [title_font], ["Complete"], ['green'], (x + x_offset + offset, y))
+   L0134 [RENDER_TEXT]: render_text(surf, [title_font], ["Locked"], ['red'], (x + x_offset + offset, y))
+   L0141 [RENDER_TEXT]: render_text(surf, [desc_font], [desc], [self.get_color()], (x + x_offset, y + 13))
+   L0206 [RENDER_TEXT]: render_text(outline_surf, [self.font], [text], [self.color], (1, 0))
+   L0207 [RENDER_TEXT]: render_text(outline_surf, [self.font], [text], [self.color], (0, 1))
+   L0208 [RENDER_TEXT]: render_text(outline_surf, [self.font], [text], [self.color], (1, 2))
+   L0209 [RENDER_TEXT]: render_text(outline_surf, [self.font], [text], [self.color], (2, 1))
+   L0213 [RENDER_TEXT]: render_text(surf, [self.font], [text], [self.color], position)
+   L0283 [RENDER_TEXT]: render_text(surf, [self.font], [text], [color], position)
+   L0357 [RENDER_TEXT]: render_text(surf, [main_font], [self.item.name], [main_color], (x + 20, y))
+   L0375 [RENDER_TEXT]: render_text(surf, [uses_font], [uses_string], [uses_color], (left, y), HAlignment.RIGHT)
+   L0419 [RENDER_TEXT]: render_text(surf, [main_font], [self.item.name], [main_color], (x + 20, y))
+   L0445 [RENDER_TEXT]: render_text(surf, [uses_font], [uses_string_a], [uses_color], (x + 96, y), HAlignment.RIGHT)
+   L0446 [RENDER_TEXT]: render_text(surf, [uses_font], [uses_delimiter], [], (x + 98, y))
+   L0447 [RENDER_TEXT]: render_text(surf, [uses_font], [uses_string_b], [uses_color], (x + 120, y), HAlignment.RIGHT)
+   L0468 [RENDER_TEXT]: render_text(surf, [main_font], [self.item.name], [main_color], (x + 20, y))
+   L0484 [RENDER_TEXT]: render_text(surf, [uses_font], [uses_string], [uses_color], (x + 100, y), HAlignment.RIGHT)
+   L0504 [RENDER_TEXT]: render_text(surf, [uses_font], [value_string], [value_color], (x + self.width() - 6, y), HAlignment.RIGHT)
+   L0517 [RENDER_TEXT]: render_text(surf, [main_font], [self.item.name], [main_color], (x + 20, y))
+   L0522 [RENDER_TEXT]: render_text(surf, [uses_font], [uses_string], [uses_color], (x + 100, y), HAlignment.RIGHT)
+   L0532 [RENDER_TEXT]: render_text(surf, [uses_font], [value_string], [value_color], (x + self.width() - 10, y), HAlignment.RIGHT)
+   L0551 [RENDER_TEXT]: render_text(surf, [main_font], [stock_string], [main_color], (x + 128, y), HAlignment.RIGHT)
+   L0617 [RENDER_TEXT]: render_text(surf, [font], [self.unit.name], [color], (x + 20, y))
+   L0687 [RENDER_TEXT]: render_text(surf, [main_font], s, [main_color], (x + 6, y))
+   L0727 [RENDER_TEXT]: render_text(surf, [main_font], [self.skill.name], [self.color], (x + 20, y))
+
+📄 general_states.py  [Role sugerido: 'text'] (14 ocorrências)
+   L2222 [FONT_DICT]: FONT['text-blue'].blit_right(con, window, (window.get_width() - 5, 72))
+   L2223 [FONT_DICT]: FONT['text-blue'].blit_right(aid, window, (window.get_width() - 5, 24))
+   L2226 [FONT_DICT]: FONT['text'].blit(self.cur_unit.name, window, (32, 8))
+   L2227 [FONT_DICT]: FONT['text'].blit(rescuee.name, window, (32, 56))
+   L2244 [FONT_DICT]: FONT['text-blue'].blit_right(con, window, (window.get_width() - 5, 24))
+   L2245 [FONT_DICT]: FONT['text-blue'].blit_right(aid, window, (window.get_width() - 5, 72))
+   L2248 [FONT_DICT]: FONT['text'].blit(traveler.name, window, (32, 8))
+   L2249 [FONT_DICT]: FONT['text'].blit(give_to.name, window, (32, 56))
+   L3061 [FONT_DICT]: d.font = FONT['convo-white']
+   L3322 [FONT_DICT]: FONT['text-blue'].blit_right(str(game.get_money()), surf, (223, 48))
+   L3337 [FONT_DICT]: FONT['text'].blit_center(text_funcs.translate('Item'), surf, (80, 64), color='yellow')
+   L3338 [FONT_DICT]: FONT['text'].blit_center(text_funcs.translate('Uses'), surf, (128, 64), color='yellow')
+   L3339 [FONT_DICT]: FONT['text'].blit_center(text_funcs.translate('Stock'), surf, (156, 64), color='yellow')
+   L3340 [FONT_DICT]: FONT['text'].blit_center(text_funcs.translate('Price'), surf, (186, 64), color='yellow')
+
+📄 graphics\dialog\dialog_log_ui.py  [Role sugerido: 'text'] (2 ocorrências)
+   L0039 [RENDER_TEXT]: render_text(surf, [self.FONT], [self.name], ['yellow'], (x + self.CHIBI_SIZE, y))
+   L0043 [RENDER_TEXT]: render_text(surf, [self.FONT], [line], ['white'], (x + self.CHIBI_SIZE, y + self.FONT_HEIGHT + (idx * self.FONT_HEIGHT)))
+
+📄 graphics\ui_framework\premade_components\plain_text_component.py  [Role sugerido: 'text'] (2 ocorrências)
+   L0028 [FONT_DICT]: self.font: BmpFont = FONT['text']
+   L0084 [RENDER_TEXT]: render_text(text_surf, [self.props.font_name], [self.text], None, (0, 0))
+
+📄 gui.py  [Role sugerido: 'text'] (9 ocorrências)
+   L0098 [RENDER_TEXT]: render_text(self.surf, [self.font], [self.text], None, topleft=(10, 0))
+   L0101 [RENDER_TEXT]: render_text(self.surf, [self.font], [self.text], None, topleft=(20, 0))
+   L0104 [RENDER_TEXT]: render_text(self.surf, [self.font], [self.text], None, topleft=(0, 0))
+   L0109 [RENDER_TEXT]: render_text(self.surf, [self.font], [self.text], None, topleft=(10, 0))
+   L0111 [RENDER_TEXT]: render_text(self.surf, [self.font], [self.text], None, topleft=(20, 0))
+   L0113 [RENDER_TEXT]: render_text(self.surf, [self.font], [self.text], None, topleft=(0, 0))
+   L0330 [FONT_DICT]: font = FONT['text-green']
+   L0332 [FONT_DICT]: font = FONT['text-red']
+   L0337 [FONT_DICT]: font = FONT['text-blue']
+
+📄 health_bar.py  [Role sugerido: 'text'] (14 ocorrências)
+   L0254 [FONT_DICT]: font = FONT['number_small2']
+   L0256 [FONT_DICT]: font = FONT['number_big2']
+   L0329 [FONT_DICT]: font = FONT['number_small2']
+   L0331 [FONT_DICT]: font = FONT['number_big2']
+   L0458 [FONT_DICT]: position = surf.get_width() // 2 - FONT['number_small2'].size(hit)[0] - 1, -2
+   L0459 [FONT_DICT]: FONT['number_small2'].blit(hit, surf, position)
+   L0465 [FONT_DICT]: position = surf.get_width() - FONT['number_small2'].size(damage)[0] - 2, -2
+   L0466 [FONT_DICT]: FONT['number_small2'].blit(damage, surf, position)
+   L0475 [FONT_DICT]: position = surf.get_width() // 2 - FONT['number_small2'].size(crit)[0] - 1, 7
+   L0476 [FONT_DICT]: FONT['number_small2'].blit(crit, surf, position)
+   L0482 [FONT_DICT]: position = surf.get_width() - FONT['number_small2'].size(guard)[0] - 2, 7
+   L0483 [FONT_DICT]: FONT['number_small2'].blit(guard, surf, position)
+   L0595 [FONT_DICT]: name_width = FONT['text_numbers'].size(self.unit.name)[0]
+   L0597 [FONT_DICT]: FONT['text_numbers'].blit(self.unit.name, bg_surf, position)
+
+📄 help_menu.py  [Role sugerido: 'text'] (5 ocorrências)
+   L0178 [RENDER_TEXT]: render_text(help_surf, [self.font], [self.name], [game.speak_styles.get('__default_help').font_color], (8, 8))
+   L0366 [RENDER_TEXT]: render_text(help_surf, [self.text_font], [str(self.vals[0])], ['blue'], (50, 8 + self.v_offset), HAlignment.RIGHT)
+   L0369 [RENDER_TEXT]: render_text(help_surf, ['text'], [self.name_override], ['blue'], (8, 6))
+   L0379 [RENDER_TEXT]: render_text(help_surf, [self.text_font], [n], ['yellow'], (name_pos[0], name_pos[1] + self.v_offset))
+   L0381 [RENDER_TEXT]: render_text(help_surf, [self.text_font], [str(v)], ['blue'], (val_pos[0], val_pos[1] + self.v_offset), HAlignment.RIGHT)
+
+📄 icons.py  [Role sugerido: 'text'] (16 ocorrências)
+   L0106 [FONT_DICT]: FONT['text-new-white'].blit(text, surf, (topleft[0] + 16, topleft[1]))
+   L0236 [FONT_DICT]: FONT['text-yellow'].blit_right('--', surf, topright)
+   L0244 [FONT_DICT]: draw_glow(surf, FONT['text-green'], str(value + bonus), topright, HAlignment.RIGHT)
+   L0248 [FONT_DICT]: typeface = FONT['text-green']
+   L0250 [FONT_DICT]: typeface = FONT['text-red']
+   L0252 [FONT_DICT]: typeface = FONT['text-new-white']
+   L0259 [FONT_DICT]: draw_glow(surf, FONT['text-green'], str(value), topright, HAlignment.RIGHT)
+   L0261 [FONT_DICT]: FONT['text-new-white'].blit_right(str(value), surf, topright)
+   L0263 [FONT_DICT]: draw_glow(surf, FONT['small-green'], "+%d" % bonus, topright)
+   L0265 [FONT_DICT]: draw_glow(surf, FONT['small-red'], str(bonus), topright)
+   L0270 [FONT_DICT]: FONT['text-yellow'].blit_right('--', surf, topright)
+   L0278 [FONT_DICT]: FONT['text-new-white'].blit_right(str(value), surf, topright)
+   L0282 [FONT_DICT]: FONT['text-new-white'].blit('%', surf, topright)
+   L0283 [FONT_DICT]: bonus_pos = (topright[0] + FONT['text-new-white'].width('%'), topright[1])
+   L0285 [FONT_DICT]: FONT['small-green'].blit("+%d" % bonus, surf, bonus_pos)
+   L0287 [FONT_DICT]: FONT['small-red'].blit(str(bonus), surf, bonus_pos)
+
+📄 info_menu\info_menu_state.py  [Role sugerido: 'ui_info'] (42 ocorrências)
+   L0456 [RENDER_TEXT]: render_text(surf, ['text'], [self.unit.name], ['new-white'], (48, 80), HAlignment.CENTER)
+   L0460 [RENDER_TEXT]: render_text(surf, ['text'], [class_obj.name], ['new-white'], (8, 104))
+   L0463 [RENDER_TEXT]: render_text(surf, ['text'], [str(self.unit.level)], ['new-white'], (39, 120), HAlignment.RIGHT)
+   L0466 [RENDER_TEXT]: render_text(surf, ['text'], [str(self.unit.exp)], ['new-white'], (63, 120), HAlignment.RIGHT)
+   L0490 [TEXT_WIDTH]: if text_width('text', current_hp) > 14 or text_width('text', max_hp) > 14:
+   L0494 [RENDER_TEXT]: render_text(surf, [hp_font], [current_hp], ['new-white'], (31, 0), HAlignment.RIGHT)
+   L0495 [RENDER_TEXT]: render_text(surf, [hp_font], [max_hp], ['green'], (55, 0), HAlignment.RIGHT)
+   L0516 [RENDER_TEXT]: render_text(top_surf, [typeface], [page], [], (236, 13), HAlignment.RIGHT)
+   L0600 [RENDER_TEXT]: render_text(surf, ['text'], [name], [color], (8, 16 * idx + 24))
+   L0618 [RENDER_TEXT]: render_text(surf, ['text'], [name], [color], (72, 16 * idx + 24))
+   L0659 [RENDER_TEXT]: render_text(surf, ['text'], [trav.name], ['new-white'], (96, 16 * true_idx + 24))
+   L0661 [RENDER_TEXT]: render_text(surf, ['text'], ['--'], ['new-white'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
+   L0662 [RENDER_TEXT]: render_text(surf, ['text'], [text_funcs.translate('Trv')], ['new-white'], (72, 16 * true_idx + 24))
+   L0670 [RENDER_TEXT]: render_text(surf, ['text'], [text_funcs.translate('HP')], [color], (72, 16 * true_idx + 24))
+   L0675 [RENDER_TEXT]: render_text(surf, ['text'], [str(aid)], ['white'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
+   L0677 [RENDER_TEXT]: render_text(surf, ['text'], [str(aid)], ['blue'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
+   L0693 [RENDER_TEXT]: render_text(surf, ['text'], [text_funcs.translate('Aid')], ['yellow'], (72, 16 * true_idx + 24))
+   L0699 [RENDER_TEXT]: render_text(surf, ['text'], [rat], ['new-white'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
+   L0700 [RENDER_TEXT]: render_text(surf, ['text'], [text_funcs.translate('Rat')], ['new-white'], (72, 16 * true_idx + 24))
+   L0706 [RENDER_TEXT]: render_text(surf, ['text'], [mana], ['new-white'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
+   L0707 [RENDER_TEXT]: render_text(surf, ['text'], [text_funcs.translate('MANA')], ['new-white'], (72, 16 * true_idx + 24))
+   L0715 [RENDER_TEXT]: render_text(surf, ['text'], [text_funcs.translate('HP')], [color], (72, 16 * true_idx + 24))
+   L0720 [RENDER_TEXT]: render_text(surf, ['text'], [gge], ['white'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
+   L0721 [RENDER_TEXT]: render_text(surf, ['text'], [text_funcs.translate('GAUGE')], ['white'], (72, 16 * true_idx + 24))
+   L0725 [RENDER_TEXT]: render_text(surf, ['text'], [gge], ['blue'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
+   L0726 [RENDER_TEXT]: render_text(surf, ['text'], [text_funcs.translate('GAUGE')], ['yellow'], (72, 16 * true_idx + 24))
+   L0733 [RENDER_TEXT]: render_text(surf, ['text'], [game.get_unit(talkee).name], ['new-white'], (96, 16 * true_idx + 24))
+   L0735 [RENDER_TEXT]: render_text(surf, ['text'], ['--'], ['new-white'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
+   L0736 [RENDER_TEXT]: render_text(surf, ['text'], [text_funcs.translate('Talk')], ['new-white'], (72, 16 * true_idx + 24))
+   L0741 [RENDER_TEXT]: render_text(surf, ['text'], [text_funcs.translate('Lead')], ['new-white'], (72, 16 * true_idx + 24))
+   L0790 [FONT_DICT]: if FONT.get('rank'):
+   L0791 [RENDER_TEXT]: render_text(surf, ['rank'], [weapon_rank.nid], ['new-white'], pos, HAlignment.CENTER)
+   L0793 [RENDER_TEXT]: render_text(surf, ['text'], [weapon_rank.nid], ['new-white'], pos, HAlignment.CENTER)
+   L1024 [RENDER_TEXT]: render_text(surf, ['narrow'], [other_unit.name], [], (x * width + 22, y * 16 + top))
+   L1026 [RENDER_TEXT]: render_text(surf, ['text'], [highest_rank], ['new-white'], (x * width + surf.get_width()/2 - 2, y * 16 + top), HAlignment.RIGHT)
+   L1039 [TEXT_WIDTH]: x_pos -= text_width('text', text)//2
+   L1040 [RENDER_TEXT]: render_text(surf, ['text'], [text], ['new-white'], (x_pos, WINHEIGHT - 17))
+   L1042 [RENDER_TEXT]: render_text(surf, ['text'], [str(fatigue)], ['red'], (x_pos, WINHEIGHT - 17))
+   L1043 [RENDER_TEXT]: render_text(surf, ['text'], [text_funcs.translate('Ftg')], ['new-white'], (8, WINHEIGHT - 17))
+   L1062 [RENDER_TEXT]: render_text(menu_surf, ['text'], [category], ['new-white'], (10, total_height))
+   L1064 [TEXT_WIDTH]: category_length = text_width('text', category)
+   L1066 [RENDER_TEXT]: render_text(menu_surf, ['text'], [text_parser._evaluate_all(entry)], [], (left_pos, total_height))
+
+📄 info_menu\multi_desc.py  [Role sugerido: 'ui_info'] (1 ocorrências)
+   L0135 [RENDER_TEXT]: render_text(surf, ['small-yellow'], ['%d/%d' % (page + 1, num_pages)], [], (x, y), HAlignment.RIGHT)
+
+📄 level_up.py  [Role sugerido: 'text'] (24 ocorrências)
+   L0684 [FONT_DICT]: font = FONT['narrow'] if FONT['text'].width(klass) > 60 else FONT['text']
+   L0686 [FONT_DICT]: FONT['text-yellow'].blit('Lv', sprite_top, (self.width // 2 + 12, 3))
+   L0689 [FONT_DICT]: FONT['text-new-white'].blit(level, sprite_top, (self.width // 2 + 50 - FONT['text-new-white'].width(level), 3))
+   L0721 [RENDER_TEXT]: render_text(sprite_bottom, ['text'], [DB.stats.get(stat).name], ['yellow'], pos)
+   L0723 [FONT_DICT]: FONT['text-new-white'].blit(str(val), sprite_bottom, (pos[0] + 40 - FONT['text-new-white'].width(str(val)), pos[1]))
+   L0734 [RENDER_TEXT]: render_text(surf, [font_k], [text], [color], pos, align=HAlignment.RIGHT)
+   L0781 [FONT_DICT]: FONT['number_small3'].blit_right(str(int(self.num)), new_surf, (self.width - 8, 4))
+   L0871 [FONT_DICT]: self.new_skill_desc_lines = self._wrap_text(FONT['narrow'], desc_text, 98)
+   L0883 [FONT_DICT]: FONT['narrow'].blit('Confirm', bg_surf, (22, 5))
+   L0885 [FONT_DICT]: FONT['narrow'].blit('Cancel', bg_surf, (76, 5))
+   L0930 [TEXT_WIDTH]: standard_w = text_width('text', self.confirm_prompt)
+   L0933 [TEXT_WIDTH]: prompt_w = text_width('narrow', self.confirm_prompt)
+   L1118 [RENDER_TEXT]: render_text(surf, ['text'], ["Skills"], ['yellow'], (self.box_x + 8, 13))
+   L1119 [FONT_DICT]: start_x = (self.box_x + 104) - FONT['text'].width("Slots:") - FONT['text'].width(slots_count)
+   L1120 [RENDER_TEXT]: render_text(surf, ['text'], ["Slots:"], ['white'], (start_x, 13))
+   L1121 [FONT_DICT]: render_text(surf, ['text'], [slots_count], [slots_color], (start_x + FONT['text'].width("Slots:") + 3, 13))
+   L1131 [TEXT_WIDTH]: title_w = text_width('text', title_text)
+   L1133 [RENDER_TEXT]: render_text(surf, ['text'], [title_text], ['green'], (title_x, 13))
+   L1136 [TEXT_WIDTH]: name_font = 'narrow' if text_width('text', new_name) > 98 else 'text'
+   L1137 [RENDER_TEXT]: render_text(surf, [name_font], [new_name], ['white'], (self.right_box_x + 6, 28))
+   L1140 [RENDER_TEXT]: render_text(surf, ['narrow'], [line], ['white'], (self.right_box_x + 6, 44 + idx * 11))
+   L1154 [RENDER_TEXT]: render_text(surf, [self.confirm_font], [self.confirm_prompt], ['yellow'], (prompt_x, self.confirm_box_y + 7))
+   L1157 [RENDER_TEXT]: render_text(surf, ['text'], ["Yes"], ['yellow' if self.confirm_idx == 0 else 'white'], (center_x - 34, self.confirm_box_y + 28))
+   L1158 [RENDER_TEXT]: render_text(surf, ['text'], ["No"], ['yellow' if self.confirm_idx == 1 else 'white'], (center_x + 24, self.confirm_box_y + 28))
+
+📄 map_view.py  [Role sugerido: 'text'] (1 ocorrências)
+   L0189 [FONT_DICT]: font = FONT['text-yellow']
+
+📄 menus.py  [Role sugerido: 'ui_choice'] (28 ocorrências)
+   L0045 [FONT_DICT]: FONT['text'].blit_center(unit.name, surf, (x + 68, y - 35))
+   L0046 [FONT_DICT]: FONT['text-blue'].blit_right(str(unit.level), surf, (x + 72, y - 19))
+   L0047 [FONT_DICT]: FONT['text-blue'].blit_right(str(unit.exp), surf, (x + 97, y - 19))
+   L0111 [FONT_DICT]: FONT['text-blue'].blit('Current/New EXP', surf, (topleft[0] + 2, topleft[1] + 4))
+   L0112 [FONT_DICT]: FONT['text'].blit(str(unit.exp), surf, (topleft[0] + 2, topleft[1] + 20))
+   L0114 [FONT_DICT]: FONT['text'].blit(str(new_exp), surf, (topleft[0] + 35, topleft[1] + 20))
+   L0116 [FONT_DICT]: FONT['text-blue'].blit('Current/New BEXP', surf, (topleft[0] + 2, topleft[1] + 36))
+   L0117 [FONT_DICT]: FONT['text'].blit(str(current_bexp), surf, (topleft[0] + 2, topleft[1] + 52))
+   L0119 [FONT_DICT]: FONT['text'].blit(str(new_bexp), surf, (topleft[0] + 57, topleft[1] + 52))
+   L0727 [FONT_DICT]: FONT['text-grey'].blit("Nothing", surf, (self.topleft[0] + 16, self.topleft[1] + 4))
+   L0759 [FONT_DICT]: FONT['text-grey'].blit("Nothing", bg_surf, (self.topleft[0] + 8, self.topleft[1] + 4))
+   L1082 [FONT_DICT]: FONT['text'].blit(self.owner.name, surf, (24 - FONT['text'].width(self.owner.name)//2, 0))
+   L1083 [FONT_DICT]: FONT['text'].blit(self.partner.name, surf, (WINWIDTH - 24 - FONT['text'].width(self.partner.name)//2, 0))
+   L1423 [FONT_DICT]: FONT['text-yellow'].blit("Win Conditions", surf, (topleft[0] + 4, topleft[1] + 4))
+   L1425 [FONT_DICT]: FONT['text-yellow'].blit("Loss Conditions", surf, (topleft[0] + 4, topleft[1] + 36 + win_count * 16))
+   L1428 [FONT_DICT]: FONT['text-yellow'].blit("Win Conditions", surf, (topleft[0] + 4, topleft[1] + 4))
+   L1432 [FONT_DICT]: FONT['text-yellow'].blit("Loss Conditions", surf, (topleft[0] + 4, topleft[1] + 4 + (win_count - self.scroll + 2) * 16))
+   L1435 [FONT_DICT]: FONT['text-yellow'].blit("Loss Conditions", surf, (topleft[0] + 4, topleft[1] + 4 + (win_count - self.scroll + 2) * 16))
+   L1438 [FONT_DICT]: FONT['text-grey'].blit("Nothing", bg_surf, (topleft[0] + 16, topleft[1] + 4))
+   L1778 [FONT_DICT]: FONT['text'].blit(self.owner.name, surf, (24 - FONT['text'].width(self.owner.name)//2, 0))
+   L1818 [FONT_DICT]: FONT['text'].blit(unit_str, surf, (160, 4))
+   L2234 [FONT_DICT]: FONT['text-blue'].blit(self.header, surf, (3, 2))
+   L2263 [FONT_DICT]: FONT['text-grey'].blit("Nothing", surf, (self.topleft[0] + 16, self.topleft[1] + 4))
+   L2265 [FONT_DICT]: FONT['text'].blit(self.name, surf, (6, 20))
+   L2271 [FONT_DICT]: size = FONT['text'].size(self.name)
+   L2307 [FONT_TYPE_ATTR]: self.dlg = dialog.Dialog(desc, font_type='text', num_lines=5, draw_cursor=False, speed=0)
+   L2343 [FONT_DICT]: FONT['text-grey'].blit("Nothing", surf, (self.topleft[0] + 16, self.topleft[1] + 4))
+   L2463 [FONT_DICT]: text_y = y + (self.ROW_HEIGHT - FONT['text'].height) // 2
+
+📄 objective_menu.py  [Role sugerido: 'text'] (10 ocorrências)
+   L0038 [FONT_DICT]: big_font = FONT['chapter-green']
+   L0067 [FONT_DICT]: count_size = FONT['text-blue'].width(str(game_get)) + 1, FONT['text-blue'].height
+   L0069 [FONT_DICT]: FONT['text-blue'].blit(str(game_get), count_surf, (0, 0))
+   L0095 [FONT_DICT]: FONT['text_numbers'].blit_center(seed, seed_surf, (14, 0))
+   L0113 [FONT_DICT]: count_size = FONT['text-blue'].width(str(len(get_units))) + 6, FONT['text-blue'].height
+   L0116 [FONT_DICT]: FONT['text-blue'].blit(str(len(get_units)), countsurf, (5, 0))
+   L0118 [FONT_DICT]: FONT['text-blue'].blit("--", countsurf, (0, 0))
+   L0167 [FONT_DICT]: HitPoints_size = FONT['text-blue'].width(str(unit.get_hp())) + 20, FONT['text-blue'].height
+   L0169 [FONT_DICT]: FONT['text-blue'].blit(str(unit.get_hp()) + '/' + str(unit.get_max_hp()), HitPoints_surf, (0, 0))
+   L0243 [FONT_DICT]: FONT['text-blue'].blit_right(formatted_time, surf, (WINWIDTH - 8, 38))
+
+📄 party_transfer.py  [Role sugerido: 'text'] (8 ocorrências)
+   L0314 [FONT_DICT]: FONT['text-blue'].blit(self.top_party_name, surf, (6, -2))
+   L0315 [FONT_DICT]: FONT['text-blue'].blit(self.bottom_party_name, surf, (6, 77))
+   L0342 [FONT_DICT]: font = FONT['text']
+   L0400 [FONT_DICT]: self.menu.topleft = (self.topleft[0], self.topleft[1] + FONT['text'].height)
+   L0403 [FONT_DICT]: width_of_header = FONT['text'].width(self.header) + 16
+   L0406 [FONT_DICT]: menu_height = self.menu.get_menu_height() if self.orientation == 'vertical' else FONT['text'].height + 8
+   L0407 [FONT_DICT]: height = menu_height + FONT['text'].height
+   L0442 [FONT_DICT]: FONT['text'].blit(self.header, surf, (self.topleft[0] + 4, self.topleft[1] + 4))
+
+📄 prep.py  [Role sugerido: 'text'] (19 ocorrências)
+   L0292 [FONT_DICT]: text_w = FONT['text'].width(title_text)
+   L0302 [FONT_DICT]: t_y = (card_h - FONT['text'].height) // 2
+   L0303 [FONT_DICT]: FONT['text-yellow'].blit(title_text, card_surf, (t_x, t_y))
+   L0310 [FONT_DICT]: text_w = FONT['text'].width(title_text)
+   L0320 [FONT_DICT]: t_y = (card_h - FONT['text'].height) // 2
+   L0321 [FONT_DICT]: FONT['text-yellow'].blit(title_text, card_surf, (t_x, t_y))
+   L0484 [FONT_DICT]: FONT['text'].blit_center(text, bg_surf, (66, 4))
+   L0864 [FONT_DICT]: FONT['text-yellow'].blit(helper, surf, (123, 143))
+   L0865 [FONT_DICT]: FONT['text'].blit(': Info', surf, (123 + FONT['text-blue'].width(helper), 143))
+   L0869 [FONT_DICT]: FONT['text-blue'].blit_right(money, surf, (219, 141))
+   L0913 [FONT_DICT]: font = FONT['text']
+   L0993 [FONT_DICT]: owidth = FONT['text'].width('Optimize All?') + 8
+   L0995 [FONT_DICT]: FONT['text'].blit('Optimize All?', self.bg_surf, (self.bg_surf.get_width()//2 - owidth//2 + 4, 4))
+   L1874 [FONT_DICT]: FONT['text-yellow'].blit_center(prompt, box, (box_w // 2, 6))
+   L1878 [FONT_DICT]: name_w = FONT['text'].width(item_name)
+   L1881 [FONT_DICT]: FONT['text'].blit(item_name, box, (item_x + 18, 22))
+   L1884 [FONT_DICT]: yes_font = FONT['text-yellow'] if self.confirm_idx == 0 else FONT['text']
+   L1885 [FONT_DICT]: no_font = FONT['text-yellow'] if self.confirm_idx == 1 else FONT['text']
+   L1905 [FONT_DICT]: FONT['text-blue'].blit_right(money, surf, (61, WINHEIGHT - 20))
+
+📄 prep_gba.py  [Role sugerido: 'text'] (1 ocorrências)
+   L0060 [FONT_DICT]: font = FONT['text']
+
+📄 promotion.py  [Role sugerido: 'ui_promo'] (26 ocorrências)
+   L0095 [FONT_DICT]: text_w = FONT['text'].width(header_text)
+   L0101 [RENDER_TEXT]: render_text(self.header_surf, ['text'], [header_text], ['new-white'], (title_x, off_y + 3))
+   L0161 [FONT_TYPE_ATTR]: d.font_type = 'convo'
+   L0163 [FONT_DICT]: d.font = FONT['convo-white']
+   L0169 [FONT_DICT]: title_w = FONT['text'].width(klass_name)
+   L0176 [RENDER_TEXT]: render_text(card_surf, ['text'], [klass_name], ['text-yellow'], (title_x, off_y + 3))
+   L0182 [FONT_DICT]: title_w = FONT['text'].width(title_text)
+   L0186 [FONT_DICT]: total_content_w = total_icons * icon_pitch - 2 if total_icons > 0 else FONT['text'].width("---")
+   L0195 [RENDER_TEXT]: render_text(card_surf, ['text'], [title_text], ['new-white'], (title_x, off_y + 3))
+   L0206 [RENDER_TEXT]: render_text(card_surf, ['text'], ["---"], ['gray'], (curr_x, icons_y))
+   L0272 [FONT_DICT]: text_h = FONT['text'].height
+   L0286 [FONT_DICT]: txt_w = FONT['text'].width(target_mode)
+   L0304 [RENDER_TEXT]: render_text(hint_card, ['text'], [target_mode], ['white'], (txt_x, txt_y))
+   L0312 [RENDER_TEXT]: render_text(surf, ['text'], [empty_msg], ['white'], (box_x + 16, box_y + 16))
+   L0331 [FONT_DICT]: key_w = FONT['text'].width(s_nid)
+   L0333 [RENDER_TEXT]: render_text(surf, ['text'], [s_nid], ['white'], (key_x, box_y + 10))
+   L0337 [FONT_DICT]: val_w = FONT['text'].width(formatted_val)
+   L0339 [RENDER_TEXT]: render_text(surf, ['text'], [formatted_val], [val_color], (val_x, box_y + 26))
+   L0351 [FONT_DICT]: total_content_w = total_icons * icon_pitch - 2 if total_icons > 0 else FONT['text'].width("---")
+   L0381 [FONT_DICT]: self.confirm_prompt_w = FONT['text'].width(self.confirm_prompt)
+   L0575 [RENDER_TEXT]: render_text(surf, ['text'], [self.confirm_prompt], ['white'], (prompt_x, box_y + 8))
+   L0582 [FONT_DICT]: yes_w = FONT['text'].width("Yes")
+   L0587 [RENDER_TEXT]: render_text(surf, ['text'], ["Yes"], [yes_color], (yes_x, box_y + 26))
+   L0588 [RENDER_TEXT]: render_text(surf, ['text'], ["No"], [no_color], (no_x, box_y + 26))
+   L0659 [FONT_DICT]: width = FONT['text-brown'].width(self.unit.name)
+   L0660 [FONT_DICT]: FONT['text-brown'].blit(self.unit.name, self.name_tag, (36 - width // 2, 8))
+
+📄 record_book.py  [Role sugerido: 'text'] (22 ocorrências)
+   L0038 [FONT_DICT]: FONT['narrow'].blit(level_name, surf, (x + 4, y))
+   L0049 [FONT_DICT]: FONT['narrow'].blit_right(unit_name, surf, (x + 196, y))
+   L0071 [FONT_DICT]: FONT['text'].blit(level_name, surf, (x + 4, y))
+   L0072 [FONT_DICT]: FONT['text-blue'].blit_right(str(self.kills), surf, (x + 114, y))
+   L0073 [FONT_DICT]: FONT['text-blue'].blit_right(str(self.damage), surf, (x + 164, y))
+   L0074 [FONT_DICT]: FONT['text-blue'].blit_right(str(self.healing), surf, (x + 210, y))
+   L0094 [FONT_DICT]: FONT['text-yellow'].blit(str(self.idx + 1), surf, (x + 4, y))
+   L0095 [FONT_DICT]: FONT['text'].blit(unit_name, surf, (x + 34, y))
+   L0096 [FONT_DICT]: FONT['text-blue'].blit_right(str(self.kills), surf, (x + 114, y))
+   L0097 [FONT_DICT]: FONT['text-blue'].blit_right(str(self.damage), surf, (x + 164, y))
+   L0098 [FONT_DICT]: FONT['text-blue'].blit_right(str(self.healing), surf, (x + 210, y))
+   L0150 [FONT_DICT]: FONT['text-yellow'].blit(text_funcs.translate('Total Turns'), bg, (4, 4))
+   L0152 [FONT_DICT]: FONT['text-blue'].blit_right(total_turns, bg, (92, 4))
+   L0153 [FONT_DICT]: FONT['text-yellow'].blit(text_funcs.translate('Overall MVP'), bg, (100, 4))
+   L0156 [FONT_DICT]: FONT['text'].blit_right(unit.name, bg, (216, 4))
+   L0158 [FONT_DICT]: FONT['text'].blit_right('--', bg, (216, 4))
+   L0166 [FONT_DICT]: FONT['text-yellow'].blit(text_funcs.translate('record_header'), surf, (offset[0] + 12, offset[1] + 32))
+   L0197 [FONT_DICT]: FONT['chapter-grey'].blit_center(unit_name, bg, (bg.get_width()//2, 5))
+   L0205 [FONT_DICT]: FONT['text-yellow'].blit(text_funcs.translate('mvp_record_header'), surf, (offset[0] + 12, offset[1] + 32))
+   L0230 [FONT_DICT]: FONT['text-yellow'].blit(text_funcs.translate('unit_record_header'), surf, (offset[0] + 12, offset[1] + 32))
+   L0268 [FONT_DICT]: FONT['chapter-grey'].blit_center(level_name, bg, (bg.get_width()//2, 4))
+   L0276 [FONT_DICT]: FONT['text-yellow'].blit(text_funcs.translate('unit_record_header'), surf, (offset[0] + 12, offset[1] + 32))
+
+📄 settings.py  [Role sugerido: 'text'] (5 ocorrências)
+   L0110 [FONT_DICT]: header_width = FONT['text'].width(header) + 8
+   L0112 [FONT_DICT]: FONT['text'].blit(header, self.confirm_bg, (self.confirm_bg.get_width()//2 - header_width//2 + 4, 4))
+   L0334 [FONT_DICT]: font = FONT['text-yellow'] if tab == self.tab else FONT['text-grey']
+   L0344 [FONT_DICT]: font = FONT['text-yellow'] if focused else FONT['text']
+   L0375 [FONT_DICT]: FONT['text'].blit_center(text, surf, (WINWIDTH//2, WINHEIGHT - height))
+
+📄 settings_menu.py  [Role sugerido: 'text'] (12 ocorrências)
+   L0060 [FONT_DICT]: FONT['text-grey'].blit(self.display_name, surf, (x + 56, y))
+   L0061 [FONT_DICT]: FONT['text-grey'].blit(self.binding_name, surf, (x + 128, y))
+   L0173 [FONT_DICT]: name_font = FONT['text']
+   L0175 [FONT_DICT]: value_font = FONT['text-blue']
+   L0194 [FONT_DICT]: name_font = FONT['text']
+   L0201 [FONT_DICT]: font = FONT['text-blue']
+   L0203 [FONT_DICT]: font = FONT['text-grey']
+   L0255 [FONT_DICT]: name_font = FONT['text']
+   L0260 [FONT_DICT]: on_font = FONT['text-blue']
+   L0261 [FONT_DICT]: off_font = FONT['text-grey']
+   L0263 [FONT_DICT]: on_font = FONT['text-grey']
+   L0264 [FONT_DICT]: off_font = FONT['text-blue']
+
+📄 text_entry.py  [Role sugerido: 'text'] (7 ocorrências)
+   L0034 [FONT_DICT]: width_of_header = FONT['text'].width(self.header) + 16
+   L0038 [FONT_DICT]: height = menu_height + FONT['text'].height
+   L0138 [FONT_DICT]: self.menu.topleft = (self.topleft[0], self.topleft[1] + FONT['text'].height)
+   L0141 [FONT_DICT]: width_of_header = FONT['text'].width(self.header) + 16
+   L0144 [FONT_DICT]: menu_height = self.menu.get_menu_height() if self.orientation == 'vertical' else FONT['text'].height + 8
+   L0145 [FONT_DICT]: height = menu_height + FONT['text'].height
+   L0180 [FONT_DICT]: FONT['text'].blit(self.header, surf, (self.topleft[0] + 4, self.topleft[1] + 4))
+
+📄 text_funcs.py  [Role sugerido: 'text'] (1 ocorrências)
+   L0135 [FONT_DICT]: font = FONT['text-white']
+
+📄 title_screen.py  [Role sugerido: 'text'] (3 ocorrências)
+   L0126 [FONT_DICT]: FONT['text'].blit(text_funcs.translate('_attribution'), surf, (4, WINHEIGHT - 16))
+   L0366 [FONT_DICT]: self.dialog.font = FONT['text']
+   L0367 [FONT_TYPE_ATTR]: self.dialog.font_type = 'text'
+
+📄 turnwheel.py  [Role sugerido: 'text'] (6 ocorrências)
+   L0475 [RENDER_TEXT]: render_text(bg, ['text'], [line], [None], (4, 4 + 16 * idx))
+   L0487 [FONT_DICT]: FONT['text-blue'].blit_right(str(self.turn), turn_bg, (44, 3))
+   L0495 [FONT_DICT]: count_width = FONT['text-blue'].width(count_str)
+   L0496 [FONT_DICT]: FONT['text-blue'].blit(count_str, count_bg, (24 - count_width/2, 3))
+   L0503 [FONT_DICT]: x = 48 - FONT['text-blue'].width(uses_text) - 8
+   L0504 [FONT_DICT]: FONT['text-blue'].blit(uses_text, uses_bg, (x, 4))
+
+📄 ui_view.py  [Role sugerido: 'text'] (56 ocorrências)
+   L0322 [FONT_DICT]: font = FONT['info-grey']
+   L0379 [RENDER_TEXT]: render_text(bg_surf, ['small'], [cur], [None], (bg_surf.get_width() - 9, 24), HAlignment.RIGHT)
+   L0394 [RENDER_TEXT]: render_text(bg_surf, ['small'], [str(tile_def)], [None], (bg_surf.get_width() - 4, 17), HAlignment.RIGHT)
+   L0395 [RENDER_TEXT]: render_text(bg_surf, ['small'], [str(tile_avoid)], [None], (bg_surf.get_width() - 4, 25), HAlignment.RIGHT)
+   L0398 [TEXT_WIDTH]: width = text_width('text', name)
+   L0399 [FONT_DICT]: height = FONT['text'].height
+   L0401 [RENDER_TEXT]: render_text(bg_surf, ['text'], [name], [None], pos)
+   L0425 [TEXT_WIDTH]: pos = (surf.get_width()//2 - text_width('text', line)//2, 16 * idx + 6)
+   L0426 [RENDER_TEXT]: render_text(surf, ['text'], [line], [None], pos)
+   L0547 [FONT_DICT]: FONT['text-blue'].blit_right('--', surf, (x_pos - 1, y_pos))
+   L0552 [FONT_DICT]: FONT['text-blue'].blit_right(str(num), surf, (x_pos, y_pos))
+   L0612 [TEXT_WIDTH]: width = text_width('text', attacker.name)
+   L0613 [RENDER_TEXT]: render_text(surf, ['text'], [attacker.name], ['white'], (67 - width//2, 3))
+   L0627 [TEXT_WIDTH]: position = 50 - text_width('text', defender.name)//2, y_pos
+   L0628 [RENDER_TEXT]: render_text(surf, ['text'], [defender.name], ['white'], position)
+   L0631 [TEXT_WIDTH]: width = text_width('text', defender.get_weapon().name)
+   L0645 [RENDER_TEXT]: render_text(surf, ['text'], [defender.get_weapon().name], ['white'], position)
+   L0958 [FONT_DICT]: FONT['text'].blit(defender.name, bg_surf, (30, running_height))
+   L0962 [FONT_DICT]: FONT['text-yellow'].blit('HP', bg_surf, (9, running_height))
+   L0964 [FONT_DICT]: FONT['text-yellow'].blit('/', bg_surf, (width - 25, running_height))
+   L0967 [FONT_DICT]: maxhp_width = FONT['text-blue'].width(maxhp)
+   L0968 [FONT_DICT]: FONT['text-blue'].blit(maxhp, bg_surf, (width - 5 - maxhp_width, running_height))
+   L0971 [FONT_DICT]: currenthp_width = FONT['text-blue'].width(currenthp)
+   L0972 [FONT_DICT]: FONT['text-blue'].blit(currenthp, bg_surf, (width - 26 - currenthp_width, running_height))
+   L0976 [FONT_DICT]: FONT['text-yellow'].blit('Mt', bg_surf, (9, running_height))
+   L0977 [FONT_DICT]: mt_width = FONT['text-blue'].width(str(mt))
+   L0978 [FONT_DICT]: FONT['text-blue'].blit(str(mt), bg_surf, (width - 5 - mt_width, running_height))
+   L0982 [FONT_DICT]: FONT['text-yellow'].blit('Hit', bg_surf, (9, running_height))
+   L0986 [FONT_DICT]: hit_width = FONT['text-blue'].width(str(hit))
+   L0988 [FONT_DICT]: FONT['text-blue'].blit(str(hit), bg_surf, position)
+   L0992 [FONT_DICT]: FONT['text-yellow'].blit('Crit', bg_surf, (9, running_height))
+   L0996 [FONT_DICT]: crit_width = FONT['text-blue'].width(str(crit))
+   L0998 [FONT_DICT]: FONT['text-blue'].blit(str(crit), bg_surf, position)
+   L1002 [TEXT_WIDTH]: name_width = text_width('text', spell.name)
+   L1003 [RENDER_TEXT]: render_text(bg_surf, ['text'], [spell.name], ['white'], (52 - name_width//2, running_height))
+   L1025 [FONT_DICT]: FONT['text-yellow'].blit('Mt', bg_surf, (5, running_height))
+   L1026 [FONT_DICT]: mt_size = FONT['text-blue'].width(str(mt))
+   L1027 [FONT_DICT]: FONT['text-blue'].blit(str(mt), bg_surf, (width - 5 - mt_size, running_height))
+   L1032 [TEXT_WIDTH]: name_width = text_width('text', spell.name)
+   L1033 [RENDER_TEXT]: render_text(bg_surf, ['text'], [spell.name], ['white'], (52 - name_width//2, running_height))
+   L1104 [FONT_DICT]: FONT['text-grey'].blit('Nothing', bg_surf, (25, 27 - 2))
+   L1107 [FONT_DICT]: FONT['text'].blit(unit.name, bg_surf, (32, 8))
+   L1150 [FONT_DICT]: affin_width = FONT['text'].width('Affin')
+   L1151 [FONT_DICT]: FONT['text'].blit('Affin', bg_surf, (left + width//2 - 16//2 - affin_width//2, top + 4))
+   L1152 [FONT_DICT]: FONT['text'].blit('Atk', bg_surf, (5 + left, top + 20))
+   L1153 [FONT_DICT]: FONT['text'].blit('Hit', bg_surf, (5 + left, top + 36))
+   L1155 [FONT_DICT]: FONT['text'].blit('Crit', bg_surf, (width//2 + 5 + left, top + 20))
+   L1157 [FONT_DICT]: FONT['text'].blit('AS', bg_surf, (width//2 + 5 + left, top + 20))
+   L1158 [FONT_DICT]: FONT['text'].blit('Avo', bg_surf, (width//2 + 5 + left, top + 36))
+   L1168 [FONT_DICT]: FONT['text-blue'].blit_right(str(damage), bg_surf, (left + width//2 - 3, top + 20))
+   L1169 [FONT_DICT]: FONT['text-blue'].blit_right(str(accuracy), bg_surf, (left + width//2 - 3, top + 36))
+   L1171 [FONT_DICT]: FONT['text-blue'].blit_right(str(crit), bg_surf, (left + width - 10, top + 20))
+   L1173 [FONT_DICT]: FONT['text-blue'].blit_right(str(attack_speed), bg_surf, (left + width - 10, top + 20))
+   L1174 [FONT_DICT]: FONT['text-blue'].blit_right(str(avoid), bg_surf, (left + width - 10, top + 36))
+   L1180 [FONT_DICT]: FONT['text-blue'].blit('--', bg_surf, (left + width//2 - 16//2 + affin_width + 8, top + 4))
+   L1200 [RENDER_TEXT]: render_text(bg_surf, ['text'], [line], [None], (4 + 2, 8 + idx * 16))
+
+📄 victory_screen.py  [Role sugerido: 'text'] (4 ocorrências)
+   L0056 [FONT_DICT]: FONT['text-yellow'].blit(turns_str, bg, (4, 4))
+   L0057 [FONT_DICT]: FONT['text-yellow'].blit(mvp_str, bg, (4, 20))
+   L0058 [FONT_DICT]: FONT['text-blue'].blit_center(turns, bg, (menu_width - 40, 4))
+   L0059 [FONT_DICT]: FONT['text-blue'].blit_center(mvp, bg, (menu_width - 40, 20))
+

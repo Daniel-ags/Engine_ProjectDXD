@@ -2759,23 +2759,42 @@ class RadialMenu:
 
         surf_w, surf_h = surf.get_width(), surf.get_height()
         cx, cy = self.center_pos
-        font = FONT['text']
-        max_text_w = 92  # Limite máximo seguro para textos longos em 240x160
+        base_font_key = 'ui_choice' if 'ui_choice' in FONT else 'text'
+        font = FONT[base_font_key]
 
         # 1. Opção Central ("Fight")
         is_center_active = (self.selection == 'CENTER')
-        c_text = self._fit_text(self.center_option, font, max_text_w)
+        c_text = self.center_option
         cw, ch = font.width(c_text), font.height
 
-        box_w = max(40, ((cw + 12 + 7) // 8) * 8)
-        box_h = ((ch + 6 + 7) // 8) * 8
+        box_w, box_h = max(36, cw + 10), ch + 8
         c_surf = create_base_surf(box_w, box_h, 'menu_bg_base')
-        c_color = 'text-yellow' if is_center_active else 'text-white'
+        # Sem sufixo '-white', usa automaticamente a default_color da fonte (ex: new-white)
+        c_color = f'{base_font_key}-yellow' if is_center_active else base_font_key
         if c_color in FONT:
             FONT[c_color].blit(c_text, c_surf, ((box_w - cw) // 2, (box_h - ch) // 2))
         else:
             font.blit(c_text, c_surf, ((box_w - cw) // 2, (box_h - ch) // 2))
         surf.blit(c_surf, (cx - box_w // 2, cy - box_h // 2))
+
+        # 2. Nós do Anel
+        for idx, (name, (nx, ny)) in enumerate(zip(self.ring_options, self.node_positions)):
+            is_active = (self.selection == idx)
+            is_disabled = (name in self.disabled_options)
+            nw, nh = font.width(name), font.height
+            node_w, node_h = max(32, nw + 8), nh + 6
+
+            node_surf = create_base_surf(node_w, node_h, 'menu_bg_base')
+            if is_disabled:
+                color_key = f'{base_font_key}-grey' if f'{base_font_key}-grey' in FONT else f'{base_font_key}-gray'
+            else:
+                color_key = f'{base_font_key}-yellow' if is_active else base_font_key
+
+            if color_key in FONT:
+                FONT[color_key].blit(name, node_surf, ((node_w - nw) // 2, (node_h - nh) // 2))
+            else:
+                font.blit(name, node_surf, ((node_w - nw) // 2, (node_h - nh) // 2))
+            surf.blit(node_surf, (nx - node_w // 2, ny - node_h // 2))
 
         # 2. Nós do Anel com texto completo e proteção contra overflow
         for idx, (name, (nx, ny)) in enumerate(zip(self.ring_options, self.node_positions)):

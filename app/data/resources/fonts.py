@@ -1,5 +1,6 @@
 from dataclasses import asdict, dataclass, field
 import os
+import json
 from pathlib import Path
 from typing import Dict, List, Optional, override, Set
 
@@ -9,6 +10,21 @@ from app.data.serialization.dataclass_serialization import dataclass_from_dict
 from app.utilities.data import Prefab
 from app.utilities.typing import Color4, NestedPrimitiveDict
 
+# Mapeamento padrão das categorias de fonte do jogo
+DEFAULT_FONT_ASSIGNMENTS: Dict[str, str] = {
+    # Fontes Globais Nativas
+    'text': 'text',
+    'convo': 'convo',
+    'number': 'number',
+    'small': 'small',
+    'chapter': 'chapter',
+    # Telas Específicas (Aliases Semânticos)
+    'ui_promo': 'text',
+    'ui_info': 'text',
+    'ui_choice': 'text',
+    'ui_banner': 'text',
+    'ui_combat': 'text',
+}
 
 @dataclass
 class CharGlyph:
@@ -202,3 +218,43 @@ class FontCatalog(ManifestCatalog[Font]):
     manifest = 'fonts.json'
     title = 'fonts'
     filetype = ''
+
+    def __init__(self):
+        super().__init__()
+        self._loc: Optional[str] = None
+        self.ui_assignments: Dict[str, str] = DEFAULT_FONT_ASSIGNMENTS.copy()
+
+    def load(self, loc, *args, **kwargs):
+        self._loc = str(loc)
+        super().load(loc, *args, **kwargs)
+        assign_path = Path(loc, 'font_assignments.json')
+        self.ui_assignments = DEFAULT_FONT_ASSIGNMENTS.copy()
+        if assign_path.exists():
+            try:
+                with open(assign_path, 'r', encoding='utf-8') as fp:
+                    loaded = json.load(fp)
+                    if isinstance(loaded, dict):
+                        self.ui_assignments.update(loaded)
+            except Exception:
+                pass
+
+    def save_assignments(self, loc: Optional[str] = None):
+        target_loc = loc or self._loc
+        if not target_loc:
+            return
+        assign_path = Path(target_loc, 'font_assignments.json')
+        try:
+            os.makedirs(target_loc, exist_ok=True)
+            with open(assign_path, 'w', encoding='utf-8') as fp:
+                json.dump(self.ui_assignments, fp, indent=4)
+        except Exception:
+            pass
+
+    def save(self, *args, **kwargs):
+        self.save_assignments()
+        return super().save(*args, **kwargs)
+
+    def dump(self, loc, *args, **kwargs):
+        self._loc = str(loc)
+        self.save_assignments(loc)
+        return super().dump(loc, *args, **kwargs)

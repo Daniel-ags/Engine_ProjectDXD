@@ -18,6 +18,7 @@ class StatPrefab(Prefab):
     position: str = "left"
     
     growth_colors: bool = False
+    stat_color: str = "new-white"
     hidden_stat: bool = False
 
     def __repr__(self) -> str:
@@ -26,6 +27,8 @@ class StatPrefab(Prefab):
     def restore_attr(self, name: str, value: Any) -> Any:
         if name == 'position' and not value:
             return 'left'
+        if name == 'stat_color' and not value:
+            return 'new-white'
         return value
 
 class StatCatalog(Data[StatPrefab]):
@@ -53,4 +56,3 @@ class StatCatalog(Data[StatPrefab]):
 
     def get_visible_stats(self) -> dict[NID, StatPrefab]:
         return {nid: stat for nid, stat in self.as_dict().items() if not stat.hidden_stat}
-    

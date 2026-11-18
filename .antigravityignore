@@ -1,0 +1,74 @@
+# ==========================================
+# 1. Ambientes Virtuais e Cache Python
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+ENV/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+
+# ==========================================
+# 2. Saves, Logs e Arquivos Temporários da Engine
+# ==========================================
+saves/
+Saves/
+*.log
+*.bak
+*.tmp
+*.autosave
+debug/
+screenshots/
+
+# ==========================================
+# 3. Assets Pesados e Mídia (Economia massiva de tokens)
+# ==========================================
+# Sprites, retratos, tilesets e animações
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.ico
+*.webp
+*.aseprite
+*.psd
+
+# Áudio, músicas e efeitos sonoros
+*.ogg
+*.wav
+*.mp3
+*.mid
+*.midi
+
+# Fontes e binários
+*.ttf
+*.otf
+*.exe
+*.dll
+*.zip
+*.rar
+*.7z
+
+# ==========================================
+# 4. Projetos de Exemplo da Engine (Ignorados)
+# ==========================================
+default.ltproj/
+testing_proj.ltproj/
+lion_throne.ltproj/
+
+# ==========================================
+# 5. Arquivos de Sistema e IDE
+# ==========================================
+.git/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
