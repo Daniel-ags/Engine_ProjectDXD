@@ -251,9 +251,9 @@ class CombatHealthBar(HealthBar):
         return surf
 
     def draw(self, surf, left, top):
-        font = FONT['number_small2']
+        font = FONT.get('health_bar', FONT['number_small2'])
         if self.big_number():
-            font = FONT['number_big2']
+            font = FONT.get('number_big2', font)
         if self.displayed_val <= 240:
             font.blit_right(str(self.displayed_val), surf, (left, top - 4))
         else:
@@ -450,37 +450,39 @@ class MapCombatInfo():
         self.skill_icons.append(skill_icon)
 
     def _blit_hit_and_mt(self, surf):
+        num_font = FONT.get('combat_numbers', FONT['number_small2'])
         # Blit hit
         if self.hit is not None:
             hit = str(utils.clamp(self.hit, 0, 100))
         else:
             hit = '--'
-        position = surf.get_width() // 2 - FONT['number_small2'].size(hit)[0] - 1, -2
-        FONT['number_small2'].blit(hit, surf, position)
+        position = surf.get_width() // 2 - num_font.size(hit)[0] - 1, -2
+        num_font.blit(hit, surf, position)
         # Blit damage
         if self.mt is not None:
             damage = str(max(0, self.mt))
         else:
             damage = '--'
-        position = surf.get_width() - FONT['number_small2'].size(damage)[0] - 2, -2
-        FONT['number_small2'].blit(damage, surf, position)
+        position = surf.get_width() - num_font.size(damage)[0] - 2, -2
+        num_font.blit(damage, surf, position)
         return surf
 
     def _blit_crt_and_grd(self, surf):
+        num_font = FONT.get('combat_numbers', FONT['number_small2'])
         # Blit crit
         if self.crt is not None:
             crit = str(utils.clamp(self.crt, 0, 100))
         else:
             crit = '--'
-        position = surf.get_width() // 2 - FONT['number_small2'].size(crit)[0] - 1, 7
-        FONT['number_small2'].blit(crit, surf, position)
+        position = surf.get_width() // 2 - num_font.size(crit)[0] - 1, 7
+        num_font.blit(crit, surf, position)
         # Blit damage
         if self.grd is not None:
             guard = str(self.grd)
         else:
             guard = '--'
-        position = surf.get_width() - FONT['number_small2'].size(guard)[0] - 2, 7
-        FONT['number_small2'].blit(guard, surf, position)
+        position = surf.get_width() - num_font.size(guard)[0] - 2, 7
+        num_font.blit(guard, surf, position)
         return surf
 
     def build_hit_and_mt_surf(self):

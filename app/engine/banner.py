@@ -9,6 +9,8 @@ from app.data.database.database import DB
 
 from typing import TYPE_CHECKING
 
+BANNER_FONT = 'ui_banner'
+
 if TYPE_CHECKING:
     from app.engine.objects.item import ItemObject
     from app.engine.objects.skill import SkillObject
@@ -28,7 +30,7 @@ class Banner():
         self.sound = None
 
     def figure_out_size(self):
-        self.length = text_width('text', self.text)
+        self.length = text_width(BANNER_FONT, self.text)
         self.length += 16
         self.length -= self.length%8
         self.length += (16 if self.item else 0)
@@ -61,7 +63,7 @@ class Banner():
 
         bg_surf = self.surf.copy()
 
-        render_text(bg_surf, ['text'], [self.text], ['white'], topleft=(6, self.size[1]//2 - self.font_height//2 + 3))
+        render_text(bg_surf, [BANNER_FONT], [self.text], ['white'], topleft=(6, self.size[1]//2 - self.font_height//2 + 3))
 
         self.draw_icon(bg_surf)
 
@@ -196,7 +198,7 @@ class CustomIcon(Banner):
         self.sound = sound
 
     def figure_out_size(self):
-        self.length = text_width('text', self.text)
+        self.length = text_width(BANNER_FONT, self.text)
         self.length += 16
         self.length -= self.length%8
         self.length += (16 if self.item else 0)
@@ -223,7 +225,7 @@ class CustomIcon(Banner):
 
         bg_surf = self.surf.copy()
 
-        render_text(bg_surf, ['text'], [self.text], ['white'], topleft=(22, self.size[1]//2 - self.font_height//2 + 3))
+        render_text(bg_surf, [BANNER_FONT], [self.text], ['white'], topleft=(22, self.size[1]//2 - self.font_height//2 + 3))
 
         self.draw_icon(bg_surf)
 
@@ -296,7 +298,7 @@ class CustomSkillBanner(GiveSkill):
         self.lines = [line.strip() for line in text.split('\n') if line.strip()]
 
         # text_width mede a largura real computando o glifo do ícone embutido
-        max_text_width = max(text_width('text', line) for line in self.lines) if self.lines else 64
+        max_text_width = max(text_width(BANNER_FONT, line) for line in self.lines) if self.lines else 64
 
         # Largura adaptativa na grade de 8px (com 24px de respiro lateral)
         width = max(96, min(WINWIDTH - 16, ((max_text_width + 24 + 7) // 8) * 8))
@@ -318,10 +320,10 @@ class CustomSkillBanner(GiveSkill):
         start_y = (self.size[1] - total_text_h) // 2
 
         for idx, line in enumerate(self.lines):
-            line_w = text_width('text', line)
+            line_w = text_width(BANNER_FONT, line)
             line_x = (self.size[0] - line_w) // 2
             line_y = start_y + idx * 18
-            render_text(bg_surf, ['text'], [line], ['white'], topleft=(line_x, line_y))
+            render_text(bg_surf, [BANNER_FONT], [line], ['white'], topleft=(line_x, line_y))
 
         # Centralização do banner inteiro na tela (240x160)
         x = (WINWIDTH - self.size[0]) // 2

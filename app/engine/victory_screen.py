@@ -53,10 +53,11 @@ class VictoryState(MapState):
 
         turns_str = text_funcs.translate('Turns')
         mvp_str = text_funcs.translate('MVP')
-        FONT['text-yellow'].blit(turns_str, bg, (4, 4))
-        FONT['text-yellow'].blit(mvp_str, bg, (4, 20))
-        FONT['text-blue'].blit_center(turns, bg, (menu_width - 40, 4))
-        FONT['text-blue'].blit_center(mvp, bg, (menu_width - 40, 20))
+        vic_font = 'ui_victory' if 'ui_victory' in FONT else 'text'
+        FONT[f'{vic_font}-yellow'].blit(turns_str, bg, (4, 4))
+        FONT[f'{vic_font}-yellow'].blit(mvp_str, bg, (4, 20))
+        FONT[f'{vic_font}-blue'].blit_center(turns, bg, (menu_width - 40, 4))
+        FONT[f'{vic_font}-blue'].blit_center(mvp, bg, (menu_width - 40, 20))
 
         return bg
 

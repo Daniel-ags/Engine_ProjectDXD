@@ -165,7 +165,7 @@ class CreditDisplay():
         self.pages = []
         self.num_pages = 0
         self.page_num = 0
-        self.font = 'text'
+        self.font = 'ui_credits_body' if 'ui_credits_body' in FONT else 'text'
 
         self.topleft = (84, 4)
         self.width = WINWIDTH - 84

@@ -52,7 +52,7 @@ class BasicOption():
         self.text = text
         self.display_text = text_funcs.translate(text)
         self.help_box = None
-        self.font = 'text'
+        self.font = 'ui_choice'
         self.color = None
         self.ignore = False
 
@@ -287,7 +287,7 @@ class ItemOption(BasicOption):
         self.idx = idx
         self.item = item
         self.help_box = None
-        self.font = 'text'
+        self.font = 'ui_choice'
         self.color = item_system.text_color(None, item)
         self.ignore = False
         self.uses_config = UsesDisplayConfig.from_item(item)
@@ -555,7 +555,7 @@ class UnitOption(BasicOption):
         self.idx = idx
         self.unit = unit
         self.help_box = None
-        self.font = 'text'
+        self.font = 'ui_choice'
         self.color = None
         self.ignore = False
         self.mode = None
@@ -648,7 +648,7 @@ class LoreOption(BasicOption):
         self.text = lore.name
         self.display_text = text_funcs.translate(self.text)
         self.help_box = None
-        self.font = 'text'
+        self.font = 'ui_choice'
         self.color = None
         self.ignore = False
 
@@ -691,7 +691,7 @@ class SkillOption(BasicOption):
         self.idx = idx
         self.skill = skill
         self.help_box = None
-        self.font = 'text'
+        self.font = 'ui_choice'
         self.color = 'blue'
         self.ignore = False
 

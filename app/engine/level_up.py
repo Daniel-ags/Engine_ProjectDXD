@@ -656,7 +656,8 @@ class LevelUpScreen():
                 else:
                     color = 'white' if increase > 0 else 'purple'
                     text = f'+{increase}' if increase > 0 else str(increase)
-                    self.simple_nums.append(('stat', color, text, (offset_pos[0] + 57, offset_pos[1] - 2), current_time))
+                    stat_font = 'ui_level_up_bonus' if 'ui_level_up_bonus' in FONT else 'stat'
+                    self.simple_nums.append((stat_font, color, text, (offset_pos[0] + 57, offset_pos[1] - 2), current_time))
 
                 get_sound_thread().play_sfx('Stat Up')
                 self.underline_offset = 36

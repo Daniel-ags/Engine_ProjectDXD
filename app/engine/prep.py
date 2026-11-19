@@ -910,7 +910,7 @@ class PrepManageState(State):
     def create_quick_disp(self):
         sprite = SPRITES.get('buttons')
         buttons = [sprite.subsurface(0, 66, 14, 13), sprite.subsurface(0, 165, 33, 9)]
-        font = FONT['text']
+        font = FONT.get('ui_prep', FONT['text'])
         commands = ['Manage', 'Optimize All']
         commands = [text_funcs.translate(c) for c in commands]
         size = (49 + max(font.width(c) for c in commands), 40)

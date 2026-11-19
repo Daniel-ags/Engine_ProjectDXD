@@ -207,6 +207,7 @@ class FontModel(ResourceCollectionModel):
         version_dir = STAGING.stage_files([fn, idx_path])
         new_font.set_full_path(os.path.join(version_dir, os.path.basename(file_name_no_ext)))
         seed_default_palette(new_font)
+        RESOURCES.fonts.inherit_global_palettes(new_font)
         RESOURCES.fonts.append(new_font)
         settings.set_last_open_path(os.path.dirname(fn))
         return new_font

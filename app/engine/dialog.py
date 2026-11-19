@@ -935,10 +935,10 @@ class Credits:
     def __init__(self, title, text, wait_flag=False, center_flag=True):
         self.title = title
         self.text = text
-        self.title_font = FONT["credit_title"]
-        self.title_font_name = "credit_title"
-        self.font = FONT["credit"]
-        self.font_name = "credit"
+        self.title_font_name = "ui_credits_title" if "ui_credits_title" in FONT else "credit_title"
+        self.title_font = FONT[self.title_font_name]
+        self.font_name = "ui_credits_body" if "ui_credits_body" in FONT else "credit"
+        self.font = FONT[self.font_name]
 
         self.center_flag = center_flag
         self.wait_flag = wait_flag

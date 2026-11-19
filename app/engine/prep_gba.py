@@ -57,7 +57,7 @@ class PrepGBAMainState(State):
         b_size = [(37, 9), (18, 13)]
         buttons = [sprite.subsurface(0, 165, *b_size[0]), sprite.subsurface(0, 82, *b_size[1])]
 
-        font = FONT['text']
+        font = FONT.get('ui_prep', FONT['text'])
         commands = ['Fight!', 'Menu']
         commands = [text_funcs.translate(c) for c in commands]
 

@@ -8,12 +8,14 @@ from app.engine import menus, gui, base_surf, image_mods, text_funcs
 
 from app.engine.game_state import game
 
+RECORD_FONT = 'ui_record_book' if 'ui_record_book' in FONT else 'text'
+
 class RecordOption(menu_options.BasicOption):
     def __init__(self, idx, text):
         self.idx = idx
         self.level, self.turncount, self.mvp = text
         self.help_box = None
-        self.font = 'text'
+        self.font = RECORD_FONT
         self.color = None
         self.ignore = False
 
@@ -55,7 +57,7 @@ class UnitRecordOption(RecordOption):
         self.idx = idx
         self.level, self.kills, self.damage, self.healing = text
         self.help_box = None
-        self.font = 'text'
+        self.font = RECORD_FONT
         self.color = None
         self.ignore = False
 
@@ -78,7 +80,7 @@ class LevelRecordOption(RecordOption):
         self.idx = idx
         self.unit_nid, self.kills, self.damage, self.healing = text
         self.help_box = None
-        self.font = 'text'
+        self.font = RECORD_FONT
         self.color = None
         self.ignore = False
 
@@ -147,15 +149,15 @@ class RecordsDisplay(menus.Choice):
 
         bg = base_surf.create_base_surf(self.get_menu_width(), 24, 'menu_bg_white')
         bg = image_mods.make_translucent(bg, 0.25)
-        FONT['text-yellow'].blit(text_funcs.translate('Total Turns'), bg, (4, 4))
+        FONT[f'{RECORD_FONT}-yellow'].blit(text_funcs.translate('Total Turns'), bg, (4, 4))
 
-        FONT['text-blue'].blit_right(total_turns, bg, (92, 4))
-        FONT['text-yellow'].blit(text_funcs.translate('Overall MVP'), bg, (100, 4))
+        FONT[f'{RECORD_FONT}-blue'].blit_right(total_turns, bg, (92, 4))
+        FONT[f'{RECORD_FONT}-yellow'].blit(text_funcs.translate('Overall MVP'), bg, (100, 4))
         unit = DB.units.get(overall_mvp)
         if unit:
-            FONT['text'].blit_right(unit.name, bg, (216, 4))
+            FONT[RECORD_FONT].blit_right(unit.name, bg, (216, 4))
         else:
-            FONT['text'].blit_right('--', bg, (216, 4))
+            FONT[RECORD_FONT].blit_right('--', bg, (216, 4))
         return bg
 
     def draw(self, surf, offset=None):
@@ -163,7 +165,7 @@ class RecordsDisplay(menus.Choice):
             offset = (0, 0)
         surf.blit(self.top_banner, (offset[0] + WINWIDTH//2 - self.top_banner.get_width()//2, offset[1] + 4))
         super().vert_draw(surf, offset)
-        FONT['text-yellow'].blit(text_funcs.translate('record_header'), surf, (offset[0] + 12, offset[1] + 32))
+        FONT[f'{RECORD_FONT}-yellow'].blit(text_funcs.translate('record_header'), surf, (offset[0] + 12, offset[1] + 32))
         return surf
 
 class UnitStats(RecordsDisplay):

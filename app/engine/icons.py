@@ -231,9 +231,10 @@ def draw_chibi(surf: engine.Surface, nid: str,
     return surf
 
 def draw_stat(surf: engine.Surface, stat_nid: str, unit: unit.UnitObject,
-              topright: Tuple[int, int], compact:bool=False) -> None:
+              topright: Tuple[int, int], compact:bool=False, font_nid: str = 'ui_info') -> None:
+    base_font = font_nid if font_nid in FONT else 'text'
     if stat_nid not in DB.stats:
-        FONT['text-yellow'].blit_right('--', surf, topright)
+        FONT[f'{base_font}-yellow'].blit_right('--', surf, topright)
         return
     value = unit.stats.get(stat_nid, 0)
     bonus = unit.stat_bonus(stat_nid)
@@ -241,28 +242,29 @@ def draw_stat(surf: engine.Surface, stat_nid: str, unit: unit.UnitObject,
     max_stat = unit.get_stat_cap(stat_nid)
     if compact:
         if value >= max_stat:
-            draw_glow(surf, FONT['text-green'], str(value + bonus), topright, HAlignment.RIGHT)
+            draw_glow(surf, FONT[f'{base_font}-green'], str(value + bonus), topright, HAlignment.RIGHT)
             return
 
         if bonus > 0:
-            typeface = FONT['text-green']
+            typeface = FONT[f'{base_font}-green']
         elif bonus < 0:
-            typeface = FONT['text-red']
+            typeface = FONT[f'{base_font}-red']
         else:
-            typeface = FONT['text-new-white']
+            typeface = FONT[f'{base_font}-new-white']
         typeface.blit_right(str(value + bonus), surf, topright)
     else:
         # Recalc these values for full display
         value = value + subtle_bonus
         bonus = bonus - subtle_bonus
         if value >= max_stat:
-            draw_glow(surf, FONT['text-green'], str(value), topright, HAlignment.RIGHT)
+            draw_glow(surf, FONT[f'{base_font}-green'], str(value), topright, HAlignment.RIGHT)
         else:
-            FONT['text-new-white'].blit_right(str(value), surf, topright)
+            FONT[f'{base_font}-new-white'].blit_right(str(value), surf, topright)
+        bonus_font = 'ui_stat_bonus' if 'ui_stat_bonus-green' in FONT else 'small'
         if bonus > 0:
-            draw_glow(surf, FONT['small-green'], "+%d" % bonus, topright)
+            draw_glow(surf, FONT[f'{bonus_font}-green'], "+%d" % bonus, topright)
         elif bonus < 0:
-            draw_glow(surf, FONT['small-red'], str(bonus), topright)
+            draw_glow(surf, FONT[f'{bonus_font}-red'], str(bonus), topright)
 
 def draw_growth(surf: engine.Surface, stat_nid: str, unit: unit.UnitObject,
                 topright: Tuple[int, int], compact:bool=False, percent: bool = False) -> None:
@@ -281,10 +283,11 @@ def draw_growth(surf: engine.Surface, stat_nid: str, unit: unit.UnitObject,
         if percent:
             FONT['text-new-white'].blit('%', surf, topright)
             bonus_pos = (topright[0] + FONT['text-new-white'].width('%'), topright[1])
+        bonus_font = 'ui_stat_bonus' if 'ui_stat_bonus-green' in FONT else 'small'
         if bonus > 0:
-            FONT['small-green'].blit("+%d" % bonus, surf, bonus_pos)
+            FONT[f'{bonus_font}-green'].blit("+%d" % bonus, surf, bonus_pos)
         elif bonus < 0:
-            FONT['small-red'].blit(str(bonus), surf, bonus_pos)
+            FONT[f'{bonus_font}-red'].blit(str(bonus), surf, bonus_pos)
 
 def draw_glow(surf: engine.Surface, font_obj: BmpFont, text: str, topright: Tuple[int, int],
               align: HAlignment = HAlignment.LEFT, color: str = None) -> engine.Surface:

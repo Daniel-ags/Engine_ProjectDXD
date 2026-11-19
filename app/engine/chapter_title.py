@@ -126,9 +126,10 @@ class ChapterTitleState(State):
         # # Draw ribbon
         if self.state in ('ribbon_fade_in', 'wait', 'ribbon_close', 'sigil_out', 'end'):
             new_ribbon = engine.copy_surface(self.ribbon)
-            name_width = FONT['chapter-yellow'].width(self.title)
+            chp_font = FONT.get('chapter_title-yellow', FONT.get('chapter-yellow'))
+            name_width = chp_font.width(self.title)
             position = (new_ribbon.get_width()//2 - name_width//2, self.ribbon.get_height()//2 - 6)
-            FONT['chapter-yellow'].blit(self.title, new_ribbon, position)
+            chp_font.blit(self.title, new_ribbon, position)
             rect = (0, (self.ribbon.get_height() - self.banner_grow_y)//2, self.ribbon.get_width(), self.banner_grow_y)
             new_ribbon = engine.subsurface(new_ribbon, rect)
             engine.blit_center(surf, new_ribbon)

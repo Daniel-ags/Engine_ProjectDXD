@@ -106,8 +106,9 @@ def draw_fps(surf, fps_records):
     else:  # On the very first frame, can't figure out what the FPS is yet.
         fps, min_fps = "--", "--"
 
-    FONT['small-white'].blit(str(fps), surf, (surf.get_width() - 20, 0))
-    FONT['small-white'].blit(str(min_fps), surf, (surf.get_width() - 20, 12))
+    debug_font = FONT.get('system_debug-white', FONT['small-white'])
+    debug_font.blit(str(fps), surf, (surf.get_width() - 20, 0))
+    debug_font.blit(str(min_fps), surf, (surf.get_width() - 20, 12))
 
 def draw_soft_reset(surf, remaining_time: int):
     from app.engine.fonts import FONT
@@ -144,7 +145,8 @@ def plan_updates(behind: float, update_ms: float, game_speed: int) -> tuple[int,
 
 def draw_game_speed(surf, game_speed: int):
     from app.engine.fonts import FONT
-    FONT['small-white'].blit('x%d' % game_speed, surf, (2, 0))
+    debug_font = FONT.get('system_debug-white', FONT['small-white'])
+    debug_font.blit('x%d' % game_speed, surf, (2, 0))
 
 def check_soft_reset(game, inp) -> bool:
     return game.state.current() != 'title_start' and \

@@ -2777,7 +2777,7 @@ class RadialMenu:
             font.blit(c_text, c_surf, ((box_w - cw) // 2, (box_h - ch) // 2))
         surf.blit(c_surf, (cx - box_w // 2, cy - box_h // 2))
 
-        # 2. Nós do Anel
+        # 2. Nós do Anel com suporte a ui_choice e proteção contra overflow
         for idx, (name, (nx, ny)) in enumerate(zip(self.ring_options, self.node_positions)):
             is_active = (self.selection == idx)
             is_disabled = (name in self.disabled_options)
@@ -2794,28 +2794,6 @@ class RadialMenu:
                 FONT[color_key].blit(name, node_surf, ((node_w - nw) // 2, (node_h - nh) // 2))
             else:
                 font.blit(name, node_surf, ((node_w - nw) // 2, (node_h - nh) // 2))
-            surf.blit(node_surf, (nx - node_w // 2, ny - node_h // 2))
-
-        # 2. Nós do Anel com texto completo e proteção contra overflow
-        for idx, (name, (nx, ny)) in enumerate(zip(self.ring_options, self.node_positions)):
-            is_active = (self.selection == idx)
-            is_disabled = (name in self.disabled_options)
-
-            display_text = self._fit_text(name, font, max_text_w)
-            nw, nh = font.width(display_text), font.height
-            node_w = max(32, ((nw + 12 + 7) // 8) * 8)
-            node_h = ((nh + 6 + 7) // 8) * 8
-
-            node_surf = create_base_surf(node_w, node_h, 'menu_bg_base')
-            if is_disabled:
-                color_key = 'text-grey' if 'text-grey' in FONT else 'text-gray'
-            else:
-                color_key = 'text-yellow' if is_active else 'text-white'
-
-            if color_key in FONT:
-                FONT[color_key].blit(display_text, node_surf, ((node_w - nw) // 2, (node_h - nh) // 2))
-            else:
-                font.blit(display_text, node_surf, ((node_w - nw) // 2, (node_h - nh) // 2))
 
             draw_x = max(2, min(surf_w - 2 - node_w, nx - node_w // 2))
             draw_y = max(2, min(surf_h - 2 - node_h, ny - node_h // 2))

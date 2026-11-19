@@ -16,6 +16,8 @@ from app.engine.game_state import game
 from app.engine.fluid_scroll import FluidScroll
 from app.engine.graphics.text.text_renderer import render_text
 
+PROMO_FONT = 'ui_promo'
+
 
 class PromotionChoiceState(State):
     name = 'promotion_choice'
@@ -92,13 +94,13 @@ class PromotionChoiceState(State):
 
         # Cabeçalho Superior Centralizado da Tela 1 (Ornate com tamanho modular)
         header_text = "Choose your promotion!"
-        text_w = FONT['text'].width(header_text)
+        text_w = FONT[PROMO_FONT].width(header_text)
         header_w = ((text_w + 16 + 7) // 8) * 8
         header_h = 24
         self.header_surf = base_surf.create_ornate_base_surf(header_w, header_h, 'menu_bg_base', gems='all')
         off_x, off_y = 2, 4
         title_x = off_x + (header_w - text_w) // 2
-        render_text(self.header_surf, ['text'], [header_text], ['new-white'], (title_x, off_y + 3))
+        render_text(self.header_surf, [PROMO_FONT], [header_text], ['new-white'], (title_x, off_y + 3))
         self.header_pos = ((WINWIDTH - header_w) // 2 - 2, 8 - 4)
 
         # Inicializa o gerenciador encapsulado de combate da prévia
@@ -166,24 +168,24 @@ class PromotionChoiceState(State):
         return d
 
     def _create_name_card(self, klass_name):
-        title_w = FONT['text'].width(klass_name)
+        title_w = FONT[PROMO_FONT].width(klass_name)
         card_w = max(48, min(WINWIDTH - 16, ((title_w + 16 + 7) // 8) * 8))
         card_h = 24
         card_surf = base_surf.create_ornate_base_surf(card_w, card_h, 'menu_bg_base', gems='all')
         off_x, off_y = 2, 4
 
         title_x = off_x + (card_w - title_w) // 2
-        render_text(card_surf, ['text'], [klass_name], ['text-yellow'], (title_x, off_y + 3))
+        render_text(card_surf, [PROMO_FONT], [klass_name], ['text-yellow'], (title_x, off_y + 3))
         return card_surf, card_w, card_h
 
     def _create_skills_card(self, skills, weapons=None):
         weapons = weapons or []
         title_text = "Skills & Weapons"
-        title_w = FONT['text'].width(title_text)
+        title_w = FONT[PROMO_FONT].width(title_text)
 
         icon_pitch = 18
         total_icons = len(skills) + len(weapons)
-        total_content_w = total_icons * icon_pitch - 2 if total_icons > 0 else FONT['text'].width("---")
+        total_content_w = total_icons * icon_pitch - 2 if total_icons > 0 else FONT[PROMO_FONT].width("---")
         content_w = max(title_w, total_content_w)
         card_w = ((content_w + 12 + 7) // 8) * 8
         card_h = 40  # Altura original preservada
@@ -192,7 +194,7 @@ class PromotionChoiceState(State):
         off_x, off_y = 2, 4
 
         title_x = off_x + (card_w - title_w) // 2
-        render_text(card_surf, ['text'], [title_text], ['new-white'], (title_x, off_y + 3))
+        render_text(card_surf, [PROMO_FONT], [title_text], ['new-white'], (title_x, off_y + 3))
 
         start_x = off_x + (card_w - total_content_w) // 2
         icons_y = off_y + 18
@@ -203,7 +205,7 @@ class PromotionChoiceState(State):
                 icons.draw_skill(card_surf, skill, (curr_x, icons_y))
                 curr_x += icon_pitch
         elif not weapons:
-            render_text(card_surf, ['text'], ["---"], ['gray'], (curr_x, icons_y))
+            render_text(card_surf, [PROMO_FONT], ["---"], ['gray'], (curr_x, icons_y))
 
         if weapons:
             for weapon in weapons:
@@ -269,7 +271,7 @@ class PromotionChoiceState(State):
         # ---------------------------------------------------------------------
         # 2. Contêiner de Alternância [L] (card_h = text_h + 8)
         # ---------------------------------------------------------------------
-        text_h = FONT['text'].height
+        text_h = FONT[PROMO_FONT].height
         card_h = text_h + 8  # 16 + 8 = 24px (altura ideal)
         card_y = 93
 
@@ -283,7 +285,7 @@ class PromotionChoiceState(State):
 
         # Aba Única: Ícone [L] + Texto do Modo Alternativo
         btn_w = self.btn_l.get_width() if getattr(self, 'btn_l', None) else 0
-        txt_w = FONT['text'].width(target_mode)
+        txt_w = FONT[PROMO_FONT].width(target_mode)
         gap = 0
         content_w = btn_w + txt_w
 
@@ -301,7 +303,7 @@ class PromotionChoiceState(State):
         else:
             txt_x = start_x
 
-        render_text(hint_card, ['text'], [target_mode], ['white'], (txt_x, txt_y))
+        render_text(hint_card, [PROMO_FONT], [target_mode], ['white'], (txt_x, txt_y))
         # Alinhado na borda esquerda: blit em (6 - 2 = 4)
         surf.blit(hint_card, (box_x - off_x, card_y - 4))
         # ---------------------------------------------------------------------
@@ -309,7 +311,7 @@ class PromotionChoiceState(State):
         # ---------------------------------------------------------------------
         if not bonus_list:
             empty_msg = "No stat changes upon promotion." if self.stat_view_mode == 'bases' else "No growth modifiers for this class."
-            render_text(surf, ['text'], [empty_msg], ['white'], (box_x + 16, box_y + 16))
+            render_text(surf, [PROMO_FONT], [empty_msg], ['white'], (box_x + 16, box_y + 16))
             return
 
         num_stats = len(bonus_list)
@@ -328,15 +330,15 @@ class PromotionChoiceState(State):
             item_center_x = centers[col_idx]
 
             # Linha 1: Sigla do Atributo
-            key_w = FONT['text'].width(s_nid)
+            key_w = FONT[PROMO_FONT].width(s_nid)
             key_x = item_center_x - key_w // 2
-            render_text(surf, ['text'], [s_nid], ['white'], (key_x, box_y + 10))
+            render_text(surf, [PROMO_FONT], [s_nid], ['white'], (key_x, box_y + 10))
 
             # Linha 2: Valor Formatado (+2 / +10% / +10)
             val_color = 'green' if s_val > 0 else 'red'
-            val_w = FONT['text'].width(formatted_val)
+            val_w = FONT[PROMO_FONT].width(formatted_val)
             val_x = item_center_x - val_w // 2
-            render_text(surf, ['text'], [formatted_val], [val_color], (val_x, box_y + 26))
+            render_text(surf, [PROMO_FONT], [formatted_val], [val_color], (val_x, box_y + 26))
 
     def _get_help_targets(self, class_idx):
         if not self.skill_cards or class_idx >= len(self.class_details_items):
@@ -572,20 +574,20 @@ class PromotionChoiceState(State):
                 surf.blit(self.confirm_bg, (box_x - 2, box_y - 4))
 
                 prompt_x = box_x + (self.confirm_box_w - self.confirm_prompt_w) // 2
-                render_text(surf, ['text'], [self.confirm_prompt], ['white'], (prompt_x, box_y + 8))
+                render_text(surf, [PROMO_FONT], [self.confirm_prompt], ['white'], (prompt_x, box_y + 8))
 
                 center_x = box_x + self.confirm_box_w // 2
                 yes_color = 'yellow' if self.confirm_idx == 0 else 'white'
                 no_color = 'yellow' if self.confirm_idx == 1 else 'white'
 
                 # Opções Yes e No perfeitamente simétricas em relação à linha central
-                yes_w = FONT['text'].width("Yes")
+                yes_w = FONT[PROMO_FONT].width("Yes")
                 gap = 10
                 yes_x = center_x - gap - yes_w
                 no_x = center_x + gap
 
-                render_text(surf, ['text'], ["Yes"], [yes_color], (yes_x, box_y + 26))
-                render_text(surf, ['text'], ["No"], [no_color], (no_x, box_y + 26))
+                render_text(surf, [PROMO_FONT], ["Yes"], [yes_color], (yes_x, box_y + 26))
+                render_text(surf, [PROMO_FONT], ["No"], [no_color], (no_x, box_y + 26))
 
                 # Cursor aproximado a 6px do início do texto (mesmo offset dos ícones)
                 cursor_x = (yes_x - 6) if self.confirm_idx == 0 else (no_x - 6)
@@ -656,8 +658,8 @@ class PromotionState(State, MockCombat):
         self.right_platform = engine.flip_horiz(self.left_platform.copy())
 
         self.name_tag = SPRITES.get('combat_name_right_' + color).copy()
-        width = FONT['text-brown'].width(self.unit.name)
-        FONT['text-brown'].blit(self.unit.name, self.name_tag, (36 - width // 2, 8))
+        width = FONT[f'{PROMO_FONT}-brown'].width(self.unit.name)
+        FONT[f'{PROMO_FONT}-brown'].blit(self.unit.name, self.name_tag, (36 - width // 2, 8))
 
         self.setup_dark()
         self.last_update = engine.get_time()

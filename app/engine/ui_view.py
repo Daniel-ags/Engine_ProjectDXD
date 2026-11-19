@@ -22,6 +22,8 @@ from app.utilities.enums import HAlignment
 from typing import List, TYPE_CHECKING
 from app.engine.combat.utils import resolve_weapon
 
+COMBAT_FONT = 'ui_combat'
+
 if TYPE_CHECKING:
     from app.engine.objects.team import TeamObject
 
@@ -854,9 +856,9 @@ class UIView():
             x2_pos_player_partner = (topleft[0] + 107 + x2_x, topleft[1] + 38 + x2_y)
             x2_pos_enemy_partner = (topleft[0] + 20 + x2_x, topleft[1] + 38 + x2_y)
 
-            x2_font = 'small-yellow'
+            x2_font = 'combat_multipliers-yellow' if 'combat_multipliers-yellow' in FONT else 'small-yellow'
             x2_offset = (0, -4)
-            number_font = 'number_small'
+            number_font = 'combat_multipliers' if 'combat_multipliers' in FONT else 'number_small'
             number_offset = (6, -2)
 
             num_phases = combat_calcs.compute_attack_phases(attacker, defender, weapon, resolve_weapon(defender), "attack", (0 , 0))
@@ -955,52 +957,52 @@ class UIView():
 
             running_height = 8
 
-            FONT['text'].blit(defender.name, bg_surf, (30, running_height))
+            FONT[COMBAT_FONT].blit(defender.name, bg_surf, (30, running_height))
 
             running_height += 16
             # Blit HP
-            FONT['text-yellow'].blit('HP', bg_surf, (9, running_height))
+            FONT[f'{COMBAT_FONT}-yellow'].blit('HP', bg_surf, (9, running_height))
             # Blit /
-            FONT['text-yellow'].blit('/', bg_surf, (width - 25, running_height))
+            FONT[f'{COMBAT_FONT}-yellow'].blit('/', bg_surf, (width - 25, running_height))
             # Blit stats['HP']
             maxhp = str(equations.parser.hitpoints(defender))
-            maxhp_width = FONT['text-blue'].width(maxhp)
-            FONT['text-blue'].blit(maxhp, bg_surf, (width - 5 - maxhp_width, running_height))
+            maxhp_width = FONT[f'{COMBAT_FONT}-blue'].width(maxhp)
+            FONT[f'{COMBAT_FONT}-blue'].blit(maxhp, bg_surf, (width - 5 - maxhp_width, running_height))
             # Blit currenthp
             currenthp = str(defender.get_hp())
-            currenthp_width = FONT['text-blue'].width(currenthp)
-            FONT['text-blue'].blit(currenthp, bg_surf, (width - 26 - currenthp_width, running_height))
+            currenthp_width = FONT[f'{COMBAT_FONT}-blue'].width(currenthp)
+            FONT[f'{COMBAT_FONT}-blue'].blit(currenthp, bg_surf, (width - 26 - currenthp_width, running_height))
 
             if mt is not None:
                 running_height += 16
-                FONT['text-yellow'].blit('Mt', bg_surf, (9, running_height))
-                mt_width = FONT['text-blue'].width(str(mt))
-                FONT['text-blue'].blit(str(mt), bg_surf, (width - 5 - mt_width, running_height))
+                FONT[f'{COMBAT_FONT}-yellow'].blit('Mt', bg_surf, (9, running_height))
+                mt_width = FONT[f'{COMBAT_FONT}-blue'].width(str(mt))
+                FONT[f'{COMBAT_FONT}-blue'].blit(str(mt), bg_surf, (width - 5 - mt_width, running_height))
 
             if spell.hit is not None:
                 running_height += 16
-                FONT['text-yellow'].blit('Hit', bg_surf, (9, running_height))
+                FONT[f'{COMBAT_FONT}-yellow'].blit('Hit', bg_surf, (9, running_height))
                 if hit >= 100:
                     bg_surf.blit(SPRITES.get('blue_100'), (width - 21, running_height))
                 else:
-                    hit_width = FONT['text-blue'].width(str(hit))
+                    hit_width = FONT[f'{COMBAT_FONT}-blue'].width(str(hit))
                     position = width - 5 - hit_width, running_height
-                    FONT['text-blue'].blit(str(hit), bg_surf, position)
+                    FONT[f'{COMBAT_FONT}-blue'].blit(str(hit), bg_surf, position)
 
             if DB.constants.value('crit') and crit is not None:
                 running_height += 16
-                FONT['text-yellow'].blit('Crit', bg_surf, (9, running_height))
+                FONT[f'{COMBAT_FONT}-yellow'].blit('Crit', bg_surf, (9, running_height))
                 if crit >= 100:
                     bg_surf.blit(SPRITES.get('blue_100'), (width - 21, running_height))
                 else:
-                    crit_width = FONT['text-blue'].width(str(crit))
+                    crit_width = FONT[f'{COMBAT_FONT}-blue'].width(str(crit))
                     position = width - 5 - crit_width, running_height
-                    FONT['text-blue'].blit(str(crit), bg_surf, position)
+                    FONT[f'{COMBAT_FONT}-blue'].blit(str(crit), bg_surf, position)
 
             # Blit name
             running_height += 16
-            name_width = text_width('text', spell.name)
-            render_text(bg_surf, ['text'], [spell.name], ['white'], (52 - name_width//2, running_height))
+            name_width = text_width(COMBAT_FONT, spell.name)
+            render_text(bg_surf, [COMBAT_FONT], [spell.name], ['white'], (52 - name_width//2, running_height))
 
             return bg_surf
 
@@ -1147,15 +1149,15 @@ class ItemDescriptionPanel():
         if weapon and available:
             top = 4
             left = 2
-            affin_width = FONT['text'].width('Affin')
-            FONT['text'].blit('Affin', bg_surf, (left + width//2 - 16//2 - affin_width//2, top + 4))
-            FONT['text'].blit('Atk', bg_surf, (5 + left, top + 20))
-            FONT['text'].blit('Hit', bg_surf, (5 + left, top + 36))
+            affin_width = FONT[COMBAT_FONT].width('Affin')
+            FONT[COMBAT_FONT].blit('Affin', bg_surf, (left + width//2 - 16//2 - affin_width//2, top + 4))
+            FONT[COMBAT_FONT].blit('Atk', bg_surf, (5 + left, top + 20))
+            FONT[COMBAT_FONT].blit('Hit', bg_surf, (5 + left, top + 36))
             if DB.constants.value('crit'):
-                FONT['text'].blit('Crit', bg_surf, (width//2 + 5 + left, top + 20))
+                FONT[COMBAT_FONT].blit('Crit', bg_surf, (width//2 + 5 + left, top + 20))
             else:
-                FONT['text'].blit('AS', bg_surf, (width//2 + 5 + left, top + 20))
-            FONT['text'].blit('Avo', bg_surf, (width//2 + 5 + left, top + 36))
+                FONT[COMBAT_FONT].blit('AS', bg_surf, (width//2 + 5 + left, top + 20))
+            FONT[COMBAT_FONT].blit('Avo', bg_surf, (width//2 + 5 + left, top + 36))
 
             damage = combat_calcs.damage(self.unit, self.item)
             accuracy = combat_calcs.accuracy(self.unit, self.item)
@@ -1165,19 +1167,19 @@ class ItemDescriptionPanel():
             avoid = combat_calcs.avoid(self.unit, self.item)
             attack_speed = combat_calcs.attack_speed(self.unit, self.item)
 
-            FONT['text-blue'].blit_right(str(damage), bg_surf, (left + width//2 - 3, top + 20))
-            FONT['text-blue'].blit_right(str(accuracy), bg_surf, (left + width//2 - 3, top + 36))
+            FONT[f'{COMBAT_FONT}-blue'].blit_right(str(damage), bg_surf, (left + width//2 - 3, top + 20))
+            FONT[f'{COMBAT_FONT}-blue'].blit_right(str(accuracy), bg_surf, (left + width//2 - 3, top + 36))
             if DB.constants.value('crit'):
-                FONT['text-blue'].blit_right(str(crit), bg_surf, (left + width - 10, top + 20))
+                FONT[f'{COMBAT_FONT}-blue'].blit_right(str(crit), bg_surf, (left + width - 10, top + 20))
             else:
-                FONT['text-blue'].blit_right(str(attack_speed), bg_surf, (left + width - 10, top + 20))
-            FONT['text-blue'].blit_right(str(avoid), bg_surf, (left + width - 10, top + 36))
+                FONT[f'{COMBAT_FONT}-blue'].blit_right(str(attack_speed), bg_surf, (left + width - 10, top + 20))
+            FONT[f'{COMBAT_FONT}-blue'].blit_right(str(avoid), bg_surf, (left + width - 10, top + 36))
 
             weapon_type = item_system.weapon_type(self.unit, self.item)
             if weapon_type:
                 icons.draw_weapon(bg_surf, weapon_type, (left + width//2 - 16//2 + affin_width//2 + 8, top + 4))
             else:
-                FONT['text-blue'].blit('--', bg_surf, (left + width//2 - 16//2 + affin_width + 8, top + 4))
+                FONT[f'{COMBAT_FONT}-blue'].blit('--', bg_surf, (left + width//2 - 16//2 + affin_width + 8, top + 4))
 
         else:
             if item_system.hover_description(self.unit, self.item):

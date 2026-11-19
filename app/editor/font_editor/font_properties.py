@@ -53,6 +53,12 @@ class PaletteEditor(QWidget):
         list_btns.addWidget(add_btn)
         list_btns.addWidget(del_btn)
         list_panel.addLayout(list_btns)
+
+        import_btn = QPushButton("Import Globals")
+        import_btn.setToolTip("Inherit all shared project palettes into this font")
+        import_btn.clicked.connect(self._import_globals)
+        list_panel.addWidget(import_btn)
+
         body.addLayout(list_panel)
 
         # right: two labelled swatch rows
@@ -199,6 +205,15 @@ class PaletteEditor(QWidget):
         # _repopulate_list selects the new palette with signals off, so say so
         # here -- otherwise the preview stays on the palette being replaced
         self.palette_selected.emit(name)
+
+    def _import_globals(self):
+        if not self._font:
+            return
+        from app.data.resources.resources import RESOURCES
+        RESOURCES.fonts.inherit_global_palettes(self._font, overwrite=False)
+        self._repopulate_list(select=self._font.default_color)
+        self._rebuild_swatches()
+        self.palette_changed.emit()
 
     def _delete_palette(self):
         if not self._font:

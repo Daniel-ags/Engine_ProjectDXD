@@ -34,6 +34,9 @@ from app.utilities.enums import HAlignment
 from app.engine.combat.utils import resolve_weapon
 
 
+COMBAT_FONT = 'ui_combat'
+
+
 class AnimationCombat(BaseCombat, MockCombat):
     alerts: bool = True
     # On-map animated combat (delegates handle_state_stack to MapCombat's), so
@@ -634,10 +637,10 @@ class AnimationCombat(BaseCombat, MockCombat):
         left_color = self.get_color(self.left.team)
         # Name tag
         self.left_name = SPRITES.get('combat_name_left_' + left_color).copy()
-        if text_width('text', self.left.name) > 52:
+        if text_width(COMBAT_FONT, self.left.name) > 52:
             font = 'narrow'
         else:
-            font = 'text'
+            font = COMBAT_FONT
         render_text(self.left_name, [font], [self.left.name], ['brown'], (30, 8), HAlignment.CENTER)
         # Partner name tag
         if self.lp_battle_anim:
@@ -646,10 +649,10 @@ class AnimationCombat(BaseCombat, MockCombat):
             else:
                 ln = game.get_unit(self.left.traveler).name
             self.lp_name = SPRITES.get('combat_name_left_' + left_color).copy()
-            if text_width('text', ln) > 52:
+            if text_width(COMBAT_FONT, ln) > 52:
                 font = 'narrow'
             else:
-                font = 'text'
+                font = COMBAT_FONT
             render_text(self.lp_name, [font], [ln], ['brown'], (30, 8), HAlignment.CENTER)
         # Bar
         if crit_flag:
@@ -658,20 +661,20 @@ class AnimationCombat(BaseCombat, MockCombat):
             self.left_bar = SPRITES.get('combat_main_left_' + left_color).copy()
         if self.left_item:
             name = self.left_item.name
-            if text_width('text', name) > 56:
+            if text_width(COMBAT_FONT, name) > 56:
                 font = 'narrow'
             else:
-                font = 'text'
+                font = COMBAT_FONT
             render_text(self.left_bar, [font], [name], ['brown'], (WINWIDTH//4 + 31, 5 + (8 if crit_flag else 0)), HAlignment.CENTER)
 
         # Right
         right_color = self.get_color(self.right.team)
         # Name tag
         self.right_name = SPRITES.get('combat_name_right_' + right_color).copy()
-        if text_width('text', self.right.name) > 52:
+        if text_width(COMBAT_FONT, self.right.name) > 52:
             font = 'narrow'
         else:
-            font = 'text'
+            font = COMBAT_FONT
         render_text(self.right_name, [font], [self.right.name], ['brown'], (36, 8), HAlignment.CENTER)
         if self.rp_battle_anim:
             if self.right.strike_partner:
@@ -679,10 +682,10 @@ class AnimationCombat(BaseCombat, MockCombat):
             else:
                 rn = game.get_unit(self.right.traveler).name
             self.rp_name = SPRITES.get('combat_name_right_' + right_color).copy()
-            if text_width('text', rn) > 52:
+            if text_width(COMBAT_FONT, rn) > 52:
                 font = 'narrow'
             else:
-                font = 'text'
+                font = COMBAT_FONT
             render_text(self.rp_name, [font], [rn], ['brown'], (36, 8), HAlignment.CENTER)
         # Bar
         if crit_flag:
@@ -691,10 +694,10 @@ class AnimationCombat(BaseCombat, MockCombat):
             self.right_bar = SPRITES.get('combat_main_right_' + right_color).copy()
         if self.right_item:
             name = self.right_item.name
-            if text_width('text', name) > 56:
+            if text_width(COMBAT_FONT, name) > 56:
                 font = 'narrow'
             else:
-                font = 'text'
+                font = COMBAT_FONT
             render_text(self.right_bar, [font], [name], ['brown'], (WINWIDTH//4 - 13, 5 + (8 if crit_flag else 0)), HAlignment.CENTER)
 
         # Platforms
@@ -1243,11 +1246,11 @@ class AnimationCombat(BaseCombat, MockCombat):
             right_gauge = None
             left_gauge = None
             left_gauge = SPRITES.get('guard_' + left_color).copy()
-            font = FONT['number_small2']
+            font = FONT.get('combat_numbers', FONT['number_small2'])
             text = str(self.left.get_guard_gauge()) + '-' + str(self.left.get_max_guard_gauge())
             font.blit_center(text, left_gauge, (18, -1))
             right_gauge = SPRITES.get('guard_' + right_color).copy()
-            font = FONT['number_small2']
+            font = FONT.get('combat_numbers', FONT['number_small2'])
             text = str(self.right.get_guard_gauge()) + '-' + str(self.right.get_max_guard_gauge())
             font.blit_center(text, right_gauge, (18, -1))
             # Pair up info
@@ -1297,10 +1300,11 @@ class AnimationCombat(BaseCombat, MockCombat):
                 damage = str(stats[1])
             if DB.constants.value('crit') and stats[2] is not None:
                 crit = str(utils.clamp(stats[2], 0, 100))
-        FONT['number_small2'].blit_right(hit, surf, (right, top))
-        FONT['number_small2'].blit_right(damage, surf, (right, top + 8))
+        num_font = FONT.get('combat_numbers', FONT['number_small2'])
+        num_font.blit_right(hit, surf, (right, top))
+        num_font.blit_right(damage, surf, (right, top + 8))
         if DB.constants.value('crit'):
-            FONT['number_small2'].blit_right(crit, surf, (right, top + 16))
+            num_font.blit_right(crit, surf, (right, top + 16))
 
     def clean_up0(self):
         """
