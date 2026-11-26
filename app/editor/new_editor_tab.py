@@ -20,6 +20,9 @@ from app.editor.lib.components.nested_list import LTNestedList
 from app.utilities import str_utils
 from app.utilities.typing import NID
 
+if '_' not in globals():
+    _ = lambda s: s
+
 T = TypeVar('T', bound=CategorizedCatalog)
 
 class NewEditorTab(QWidget, Generic[T]):

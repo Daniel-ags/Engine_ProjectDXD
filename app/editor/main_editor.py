@@ -16,6 +16,7 @@ from app.utilities import file_utils
 
 from app.editor.file_manager.project_builder.project_builder import LTProjectBuilder
 from app.editor.file_manager.project_builder.web_exporter import WebExporter
+from app.editor.font_editor import font_tab
 from app.editor.font_editor.font_tab import FontDatabase
 from app.editor.settings.preferences_tabbed import TabbedPreferencesDialog
 from app.editor.settings import MainSettingsController
@@ -398,7 +399,7 @@ class MainEditor(QMainWindow):
                             "Combat Animations": windows(new_combat_animation_tab.get_full_editor),
                             "Tilemaps": windows(tile_tab.get_full_editor),
                             "Sounds": windows(sound_tab.get_full_editor),
-                            "Fonts": windows(FontDatabase.edit)
+                            "Fonts": windows(font_tab.get_full_editor)
                             }
         self.resource_actions = {}
         for name, func in resource_actions.items():

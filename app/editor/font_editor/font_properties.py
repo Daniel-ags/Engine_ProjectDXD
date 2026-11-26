@@ -1,6 +1,7 @@
 import logging
 import os
-from typing import Optional
+from typing import Callable, Optional
+from app.utilities.typing import NID
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
@@ -14,6 +15,7 @@ from app.data.resources.fonts import Font
 from app.engine.bmpfont import BmpFont
 from app.engine import engine
 from app.extensions.custom_gui import ComboBox, PropertyBox, PropertyCheckBox
+from app.extensions.color_icon import ColorIcon, AlphaColorIcon
 from app.editor.file_manager.staging import STAGING
 from app.editor.font_editor.font_model import detect_base_palette, seed_default_palette
 from app.editor.settings import MainSettingsController
@@ -169,15 +171,17 @@ class PaletteEditor(QWidget):
                 self._default_swatch_layout.addWidget(ref)
 
             r, g, b, *_ = color
+            a = color[3] if len(color) > 3 else 255
             if is_base:
                 swatch = QLabel()
                 swatch.setToolTip(f"({r},{g},{b})")
+                swatch.setFixedSize(24, 24)
+                swatch.setStyleSheet(f"background-color: rgb({r},{g},{b}); border: 1px solid #444;")
             else:
-                swatch = QPushButton()
+                swatch = AlphaColorIcon(QColor(r, g, b, a), self)
+                swatch.set_size(24)
                 swatch.setToolTip(f"({r},{g},{b}) — click to edit")
-                swatch.clicked.connect(lambda *_, idx=i, pname=palette_name: self._pick_color(pname, idx))
-            swatch.setFixedSize(24, 24)
-            swatch.setStyleSheet(f"background-color: rgb({r},{g},{b}); border: 1px solid #444;")
+                swatch.colorChanged.connect(lambda col, idx=i, pname=palette_name: self._on_color_icon_changed(pname, idx, col))
             self._edit_swatch_layout.addWidget(swatch)
 
     def _add_palette(self):
@@ -232,28 +236,25 @@ class PaletteEditor(QWidget):
         self._rebuild_swatches()
         self.palette_changed.emit()
 
-    def _pick_color(self, palette_name: str, index: int):
+    def _on_color_icon_changed(self, palette_name: str, index: int, color: QColor):
         if not self._font or palette_name not in self._font.palettes:
             return
-        c = self._font.palettes[palette_name][index]
-        r, g, b = c[0], c[1], c[2]
-        a = c[3] if len(c) > 3 else 255
-        color = QColorDialog.getColor(QColor(r, g, b, a), self,
-                                      f"Edit '{palette_name}' colour {index}",
-                                      QColorDialog.ShowAlphaChannel)
-        if not color.isValid():
-            return
         self._font.palettes[palette_name][index] = (color.red(), color.green(), color.blue(), color.alpha())
-        self._rebuild_swatches()
         self.palette_changed.emit()
 
 
 class FontProperties(QWidget):
-    def __init__(self, parent, current: Optional[Font] = None):
+    title = "Font"
+
+    def __init__(self, parent, current: Optional[Font] = None,
+                 attempt_change_nid: Optional[Callable[[NID, NID], bool]] = None,
+                 on_icon_change: Optional[Callable] = None):
         super().__init__(parent)
         self.window = parent
-        self._data = self.window._data
+        self._data = getattr(self.window, 'data', getattr(self.window, '_data', None))
         self.current: Optional[Font] = current
+        self.attempt_change_nid = attempt_change_nid
+        self.on_icon_change = on_icon_change
         self._bmp_font: Optional[BmpFont] = None
 
         main_layout = QVBoxLayout()
@@ -277,14 +278,14 @@ class FontProperties(QWidget):
         self.preview_color_label.setAlignment(Qt.AlignCenter)
         self.preview_color_label.setToolTip("Previewing the palette selected below")
         input_row.addWidget(self.preview_color_label)
-        self.bg_color_button = QPushButton()
-        self.bg_color_button.setFixedWidth(28)
+        self._preview_bg = QColor(0xE0, 0xE0, 0xD8)
+
+        self.bg_color_button = ColorIcon(self._preview_bg, self)
+        self.bg_color_button.set_size(24)
         self.bg_color_button.setToolTip("Pick background color")
-        self.bg_color_button.clicked.connect(self._pick_bg_color)
+        self.bg_color_button.colorChanged.connect(self._bg_color_changed)
         input_row.addWidget(self.bg_color_button)
         preview_layout.addLayout(input_row)
-
-        self._preview_bg = QColor(0xE0, 0xE0, 0xD8)
 
         self.preview_label = QLabel()
         self.preview_label.setAlignment(Qt.AlignCenter)
@@ -461,17 +462,22 @@ class FontProperties(QWidget):
 
     def _apply_preview_bg(self):
         c = self._preview_bg
-        self.bg_color_button.setStyleSheet(
-            f"background-color: {c.name()}; border: 1px solid #444;")
+        if hasattr(self, 'bg_color_button'):
+            self.bg_color_button.change_color(c)
         if hasattr(self, 'preview_label'):
             self.preview_label.setStyleSheet(
                 f"background-color: {c.name()}; border: 1px solid #444;")
 
-    def _pick_bg_color(self):
-        color = QColorDialog.getColor(self._preview_bg, self, "Preview Background")
+    def _bg_color_changed(self, color: QColor):
         if color.isValid():
             self._preview_bg = color
             self._apply_preview_bg()
+            self._update_preview()
+
+    def _pick_bg_color(self):
+        color = QColorDialog.getColor(self._preview_bg, self, "Preview Background")
+        if color.isValid():
+            self._bg_color_changed(color)
 
     def _fallback_ttf_changed(self, text):
         if self.current:

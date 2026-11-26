@@ -1,253 +1,447 @@
 import os
+from typing import Optional
+
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QTabWidget, QGroupBox,
-    QLabel, QPushButton, QScrollArea, QGridLayout, QLineEdit
+    QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
+    QLabel, QPushButton, QScrollArea, QGridLayout, QLineEdit, QMessageBox,
+    QSplitter, QListWidget, QListWidgetItem
 )
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QImage, QPixmap
+from PyQt5.QtGui import QIcon, QImage, QPixmap
 
+from app.data.database.database import DB
 from app.data.resources.resources import RESOURCES
-from app.data.resources.fonts import DEFAULT_FONT_ASSIGNMENTS
-from app.editor.base_database_gui import DatabaseTab
-from app.editor.data_editor import SingleResourceEditor
+from app.data.resources.fonts import (
+    Font, FontCatalog, DEFAULT_FONT_ASSIGNMENTS, DEFAULT_COLOR_ASSIGNMENTS,
+    get_default_font_for_role, get_default_color_for_role
+)
+from app.data.resources.resource_types import ResourceType as RType
+from app.editor import reference_dialogs
+from app.editor.data_editor import SingleResourceEditor, NewMultiResourceEditor
+from app.editor.new_editor_tab import NewEditorTab
+from app.editor.edit_history import HISTORY
 from app.editor.font_editor import font_model, font_properties
-from app.editor.font_editor.palette_tab import PaletteEditorWidget
+from app.editor.font_editor.palette_tab import FontPaletteDatabase, PaletteEditorWidget
 from app.engine.bmpfont import BmpFont
 from app.engine import engine
 from app.engine.fonts import load_fonts
 from app.extensions.custom_gui import ComboBox
+from app.utilities.typing import NID
 
 
 FONT_ROLE_CATEGORIES = [
-    ('global', "1. Core & Fallbacks (Global Engine Roles)"),
-    ('story', "2. Narrative & Dialogue (Events & Lore)"),
-    ('menu', "3. Menus & Navigation (Options & Prep)"),
-    ('status', "4. Unit Status & Stats (Growth & Ranks)"),
-    ('combat', "5. Combat Experience (Forecast & Battle HUD)"),
-    ('progression', "6. Progression & Alerts (Level Up & Promo)"),
-    ('postgame', "7. Records & Post-Game (Hall of Fame & Credits)"),
+    ('global', "Core & Fallbacks"),
+    ('story', "Dialogue & Story"),
+    ('menu', "Menus & Navigation"),
+    ('status', "Unit Status & Stats"),
+    ('combat', "Combat HUD"),
+    ('progression', "Progression"),
+    ('postgame', "Records & Credits"),
 ]
 
-UI_FONT_ROLES = [
-    # 1. Globais & Sistema
-    ('text', "General UI & Base Text", "Iron Sword  Mt 5  Hit 90", 'global'),
-    ('narrow', "Condensed / Narrow Text", "Vulnerary (3/3)  Longsword", 'global'),
-    ('small', "Small Labels & Indicators", "Def +2  Avo +10  Cost 1", 'global'),
-    ('system_debug', "FPS Counter & Diagnostics", "FPS: 60 (Min: 58)  Speed: 1x", 'global'),
+def get_ui_font_roles(db=None) -> list[tuple[str, str, str, str]]:
+    """
+    Returns the game interface roles (role_key, label_text, sample_text, cat_key).
+    Reads weapon ranks dynamically from the database (DB.weapon_ranks),
+    allowing for individual customization of any rank defined within the project.
+    """
+    roles = [
+        # 1. Global & System
+        ('text', "General UI & Base Text", "Iron Sword  Mt 5  Hit 90", 'global'),
+        ('narrow', "Condensed / Narrow Text", "Vulnerary (3/3)  Longsword", 'global'),
+        ('small', "Small Labels & Indicators", "Def +2  Avo +10  Cost 1", 'global'),
+        ('system_debug', "FPS Counter & Diagnostics", "FPS: 60 (Min: 58)  Speed: 1x", 'global'),
 
-    # 2. Narrativa & Diálogos
-    ('convo', "Main Dialogue", "Shall we head into battle, commander?", 'story'),
-    ('convo_bold', "Emphasized Dialogue (<b>)", "Stand back! This is dangerous!", 'story'),
-    ('convo_italic', "Thoughts & Narration (<i>)", "(Could this be the legendary blade...?)", 'story'),
-    ('convo_narrow', "Compact Dialogue", "We must reach the fortress before nightfall!", 'story'),
-    ('chapter_title', "Chapter Title Ribbon", "Chapter 1: Maiden of the Plains", 'story'),
+        # 2. Narrative & Dialogues
+        ('convo', "Main Dialogue", "Shall we head into battle, commander?", 'story'),
+        ('convo_bold', "Emphasized Dialogue (<b>)", "Stand back! This is dangerous!", 'story'),
+        ('convo_italic', "Thoughts & Narration (<i>)", "(Could this be the legendary blade...?)", 'story'),
+        ('convo_narrow', "Compact Dialogue", "We must reach the fortress before nightfall!", 'story'),
+        ('chapter_title', "Chapter Title Ribbon", "Chapter 1: Maiden of the Plains", 'story'),
 
-    # 3. Menus & Navegação
-    ('ui_choice', "Action & Command Menus", "Attack   Item   Trade   Wait", 'menu'),
-    ('ui_prep', "Battle Preparation Screens", "Manage Items   Check Map   Fight!", 'menu'),
-    ('ui_save_load', "Save / Load Slots", "File 1: Ch 4  Turn 12  Gold 5400G", 'menu'),
+        # 3. Menus & Navigation
+        ('ui_choice', "Action & Command Menus", "Attack   Item   Trade   Wait", 'menu'),
+        ('ui_prep', "Battle Preparation Screens", "Manage Items   Check Map   Fight!", 'menu'),
+        ('ui_save_load', "Save / Load Slots", "File 1: Ch 4  Turn 12  Gold 5400G", 'menu'),
 
-    # 4. Ficha de Unidade & Estatísticas
-    ('ui_info', "Status & Profile Screen", "STR 14   MAG 8   SKL 16   SPD 15", 'status'),
-    ('ui_stat_bonus', "Stat Modifiers & Buffs", "+3 SPD   -2 DEF   +5 HIT", 'status'),
-    ('ui_weapon_rank', "Weapon Mastery Ranks", "S   A   B   C   D   E", 'status'),
-    ('ui_help', "Tooltips & Help Boxes", "Effective against cavalry and armored units.", 'status'),
+        # 4. Unit Info & Stats
+        ('ui_info', "Status & Profile Screen", "STR 14   MAG 8   SKL 16   SPD 15", 'status'),
+        ('ui_stat_bonus', "Stat Modifiers (Fallback)", "+3 SPD   -2 DEF   +5 HIT", 'status'),
+        ('ui_stat_buff', "Stat Buffs & Bonuses (+)", "+3 SPD   +5 HIT   +2 ATK", 'status'),
+        ('ui_stat_debuff', "Stat Debuffs & Penalties (-)", "-2 DEF   -4 ATK   -3 AVO", 'status'),
+    ]
 
-    # 5. Combate & HUD de Batalha
-    ('ui_combat', "Combat Forecast HUD", "Atk 24   Hit 85%   Crit 12%   AS 14", 'combat'),
-    ('combat_numbers', "Battle Hit, Damage & Crit", "32 / 45   Dmg 14   Hit 95", 'combat'),
-    ('combat_multipliers', "Attack Multipliers", "x2   x3   x4", 'combat'),
-    ('health_bar', "Overhead Health Bars", "HP 28 / 28   Guard 100%", 'combat'),
+    # Dynamic discovery of Weapon Ranks
+    target_db = db or DB
+    weapon_ranks = getattr(target_db, 'weapon_ranks', []) if target_db else []
+    if weapon_ranks:
+        for wr in weapon_ranks:
+            rank_name = wr.nid or wr.rank
+            roles.append((
+                f'weapon_rank_{rank_name}',
+                f"Weapon Rank ({rank_name})",
+                f"Rank {rank_name}",
+                'status'
+            ))
+    else:
+        roles.append(('ui_weapon_rank', "Weapon Mastery Ranks", "S   A   B   C   D   E", 'status'))
 
-    # 6. Progressão, Promoção & Avisos
-    ('ui_level_up', "Level Up Screen", "Level 12 Paladin   EXP 100", 'progression'),
-    ('ui_level_up_bonus', "Level Up Stat Ticks (+1)", "+1 HP   +1 STR   +1 SPD", 'progression'),
-    ('ui_promo', "Promotion & Class Change", "Promote to Hero?  Gain Sol & Axes", 'progression'),
-    ('ui_banner', "Alerts & Notifications", "Learned Skill: Adept!   Item: Silver Bow", 'progression'),
+    roles.extend([
+        ('ui_help', "Tooltips & Help Boxes", "Effective against cavalry and armored units.", 'status'),
 
-    # 7. Pós-Jogo, Registros & Créditos
-    ('ui_record_book', "Hall of Fame & Record Book", "Overall MVP: Ephraim   Total Turns: 84", 'postgame'),
-    ('ui_victory', "Chapter Victory Summary", "Chapter Complete!   Cleared in 8 Turns", 'postgame'),
-    ('ui_credits_title', "Credits Department Titles", "Lead Designer & Programmer", 'postgame'),
-    ('ui_credits_body', "Credits Staff Roll & Thanks", "Special Thanks to the Lex Talionis Community", 'postgame'),
-]
+        # 5. Combat & Battle HUD
+        ('ui_combat', "Combat Forecast HUD", "Atk 24   Hit 85%   Crit 12%   AS 14", 'combat'),
+        ('combat_numbers', "Battle Hit, Damage & Crit", "32 / 45   Dmg 14   Hit 95", 'combat'),
+        ('combat_multiplier_2', "Attack Multiplier (x2)", "x2", 'combat'),
+        ('combat_multiplier_3', "Attack Multiplier (x3)", "x3", 'combat'),
+        ('combat_multiplier_4', "Attack Multiplier (x4)", "x4", 'combat'),
+        ('combat_multiplier_5', "Attack Multiplier (x5+)", "x5", 'combat'),
+        ('health_bar', "Overhead Health Bars", "HP 28 / 28   Guard 100%", 'combat'),
+
+        # 6. Progression, Promotion & Banners
+        ('ui_level_up', "Level Up Screen", "Level 12 Paladin   EXP 100", 'progression'),
+        ('ui_level_up_bonus', "Level Up Stat Ticks (+1)", "+1 HP   +1 STR   +1 SPD", 'progression'),
+        ('ui_promo', "Promotion & Class Change", "Promote to Hero?  Gain Sol & Axes", 'progression'),
+        ('ui_banner', "Alerts & Notifications", "Learned Skill: Adept!   Item: Silver Bow", 'progression'),
+
+        # 7. Post-Game, Records & Credits
+        ('ui_record_book', "Hall of Fame & Record Book", "Overall MVP: Ephraim   Total Turns: 84", 'postgame'),
+        ('ui_victory', "Chapter Victory Summary", "Chapter Complete!   Cleared in 8 Turns", 'postgame'),
+        ('ui_credits_title', "Credits Department Titles", "Lead Designer & Programmer", 'postgame'),
+        ('ui_credits_body', "Credits Staff Roll & Thanks", "Special Thanks to the Lex Talionis Community", 'postgame'),
+    ])
+    return roles
+
+UI_FONT_ROLES = get_ui_font_roles()
 
 
 class FontAssignmentsWidget(QWidget):
-    """Aba 2 do Font Editor: permite escolher qual fonte cada parte do jogo utiliza."""
+    """Font Editor tab: allows you to choose which font and palette each part of the game uses."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._combos: dict[str, ComboBox] = {}
+        self._color_combos: dict[str, ComboBox] = {}
         self._previews: dict[str, QLabel] = {}
         self._role_widgets: dict[str, tuple] = {}
-        self._category_boxes: dict[str, QGroupBox] = {}
         self._bmp_cache: dict[str, BmpFont] = {}
+        self._current_category: str = 'all'
 
-        main_layout = QVBoxLayout()
+        main_layout = QHBoxLayout()
+        main_layout.setContentsMargins(0, 0, 0, 0)
         self.setLayout(main_layout)
 
-        # Header com Instruções e Botão de Reset Geral
-        header_row = QHBoxLayout()
-        info_label = QLabel(
-            "Configure which project font is assigned to each functional system across 7 categorized groups. "
-            "Previews update live and changes are saved automatically to your project."
-        )
-        info_label.setWordWrap(True)
-        header_row.addWidget(info_label, 1)
+        self.splitter = QSplitter(Qt.Horizontal)
+        main_layout.addWidget(self.splitter)
 
-        reset_btn = QPushButton("Reset All to Defaults")
-        reset_btn.setFixedWidth(150)
-        reset_btn.clicked.connect(self._reset_defaults)
-        header_row.addWidget(reset_btn)
-        main_layout.addLayout(header_row)
+        # Left Panel: Search filter, categories and reset actions
+        self.left_frame = QWidget()
+        left_layout = QVBoxLayout()
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        self.left_frame.setLayout(left_layout)
 
-        # Barra de Pesquisa Rápida
-        search_row = QHBoxLayout()
         self._search_input = QLineEdit()
-        self._search_input.setPlaceholderText("Search font roles (e.g. combat, dialogue, status, banner, numbers)...")
+        self._search_input.setPlaceholderText("Filter roles...")
         self._search_input.textChanged.connect(self._on_search_changed)
-        search_row.addWidget(self._search_input)
-        main_layout.addLayout(search_row)
+        left_layout.addWidget(self._search_input)
 
-        # Scroll container com as 7 categorias
+        self.category_list = QListWidget()
+        all_item = QListWidgetItem("All Roles")
+        all_item.setData(Qt.UserRole, 'all')
+        self.category_list.addItem(all_item)
+        for cat_key, cat_title in FONT_ROLE_CATEGORIES:
+            item = QListWidgetItem(cat_title)
+            item.setData(Qt.UserRole, cat_key)
+            self.category_list.addItem(item)
+        self.category_list.setCurrentRow(0)
+        self.category_list.currentRowChanged.connect(self._on_category_changed)
+        left_layout.addWidget(self.category_list, 1)
+
+        self.reset_cat_btn = QPushButton("Reset Category")
+        self.reset_cat_btn.setEnabled(False)
+        self.reset_cat_btn.clicked.connect(self._on_reset_active_category)
+        left_layout.addWidget(self.reset_cat_btn)
+
+        self.reset_all_btn = QPushButton("Reset All to Defaults")
+        self.reset_all_btn.clicked.connect(self._reset_defaults)
+        left_layout.addWidget(self.reset_all_btn)
+
+        self.splitter.addWidget(self.left_frame)
+
+        # Right Panel: Font and Palette assignment grid
+        self.right_frame = QWidget()
+        right_layout = QVBoxLayout()
+        self.right_frame.setLayout(right_layout)
+
+        self.category_title_label = QLabel("All Roles")
+        self.category_title_label.setStyleSheet("font-weight: bold;")
+        right_layout.addWidget(self.category_title_label)
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        container = QWidget()
-        container_layout = QVBoxLayout()
-        container.setLayout(container_layout)
+        self._scroll_container = QWidget()
+        self._grid = QGridLayout()
+        self._grid.setAlignment(Qt.AlignTop)
+        self._grid.setColumnStretch(0, 0)
+        self._grid.setColumnStretch(1, 0)
+        self._grid.setColumnStretch(2, 0)
+        self._grid.setColumnStretch(3, 1)
+        self._scroll_container.setLayout(self._grid)
 
-        # Criação dos GroupBoxes por Categoria
-        cat_grids: dict[str, QGridLayout] = {}
-        cat_row_counts: dict[str, int] = {}
-        for cat_key, cat_title in FONT_ROLE_CATEGORIES:
-            grp = QGroupBox(cat_title)
-            grp.setStyleSheet("QGroupBox { font-weight: bold; margin-top: 6px; } QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 4px; }")
-            grp_layout = QVBoxLayout()
-            grp.setLayout(grp_layout)
+        self._populate_grid()
 
-            cat_header = QHBoxLayout()
-            cat_header.addStretch()
-            cat_reset_btn = QPushButton("Reset Category")
-            cat_reset_btn.setToolTip(f"Reset {cat_title} roles to defaults")
-            cat_reset_btn.setFixedWidth(120)
-            cat_reset_btn.clicked.connect(lambda _, ck=cat_key: self._reset_category(ck))
-            cat_header.addWidget(cat_reset_btn)
-            grp_layout.addLayout(cat_header)
+        scroll.setWidget(self._scroll_container)
+        right_layout.addWidget(scroll, 1)
 
-            grid = QGridLayout()
-            grid.setColumnStretch(0, 0)
-            grid.setColumnStretch(1, 0)
-            grid.setColumnStretch(2, 1)
-            grp_layout.addLayout(grid)
-
-            self._category_boxes[cat_key] = grp
-            cat_grids[cat_key] = grid
-            cat_row_counts[cat_key] = 0
-            container_layout.addWidget(grp)
-
-        # Preenchimento de cada papel
-        for role_key, label_text, sample_text, cat_key in UI_FONT_ROLES:
-            grid = cat_grids[cat_key]
-            row = cat_row_counts[cat_key]
-
-            lbl = QLabel(f"<b>{label_text}</b><br><span style='color:#888;font-size:10px;'>FONT['{role_key}']</span>")
-            lbl.setFixedWidth(220)
-
-            combo = ComboBox()
-            combo.setFixedWidth(140)
-            combo.currentTextChanged.connect(lambda val, rk=role_key: self._on_role_changed(rk, val))
-            self._combos[role_key] = combo
-
-            preview_lbl = QLabel()
-            preview_lbl.setMinimumHeight(36)
-            preview_lbl.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            preview_lbl.setStyleSheet("background-color: #283040; border: 1px solid #555; padding-left: 6px;")
-            preview_lbl.setProperty("sample_text", sample_text)
-            self._previews[role_key] = preview_lbl
-
-            grid.addWidget(lbl, row, 0)
-            grid.addWidget(combo, row, 1)
-            grid.addWidget(preview_lbl, row, 2)
-
-            self._role_widgets[role_key] = (lbl, combo, preview_lbl, cat_key, label_text)
-            cat_row_counts[cat_key] += 1
-
-        container_layout.addStretch()
-        scroll.setWidget(container)
-        main_layout.addWidget(scroll)
+        self.splitter.addWidget(self.right_frame)
+        self.splitter.setSizes([180, 560])
 
         self.refresh_fonts()
 
-    def _on_search_changed(self, text: str):
-        query = text.strip().lower()
-        cat_visibility = {cat_key: False for cat_key, _ in FONT_ROLE_CATEGORIES}
+    def _populate_grid(self):
+        # Clear previous widgets if rebuilding
+        for i in reversed(range(self._grid.count())):
+            item = self._grid.itemAt(i)
+            w = item.widget() if item else None
+            if w:
+                w.deleteLater()
+        self._combos.clear()
+        self._color_combos.clear()
+        self._previews.clear()
+        self._role_widgets.clear()
 
-        for role_key, (lbl, combo, preview_lbl, cat_key, label_text) in self._role_widgets.items():
-            matches = (not query) or (query in role_key.lower()) or (query in label_text.lower())
-            lbl.setVisible(matches)
-            combo.setVisible(matches)
-            preview_lbl.setVisible(matches)
-            if matches:
-                cat_visibility[cat_key] = True
+        # Grid column headers
+        h_role = QLabel("Role")
+        h_role.setFixedWidth(180)
+        h_font = QLabel("Font")
+        h_font.setFixedWidth(130)
+        h_color = QLabel("Palette / Color")
+        h_color.setFixedWidth(130)
+        h_prev = QLabel("Sample Preview")
 
-        for cat_key, grp in self._category_boxes.items():
-            grp.setVisible(cat_visibility[cat_key])
+        self._grid.addWidget(h_role, 0, 0)
+        self._grid.addWidget(h_font, 0, 1)
+        self._grid.addWidget(h_color, 0, 2)
+        self._grid.addWidget(h_prev, 0, 3)
+
+        roles = get_ui_font_roles()
+        for row_idx, (role_key, label_text, sample_text, cat_key) in enumerate(roles, start=1):
+            lbl = QLabel(label_text)
+            lbl.setToolTip(f"Engine role: FONT['{role_key}']")
+            lbl.setFixedWidth(180)
+
+            font_combo = ComboBox()
+            font_combo.setFixedWidth(130)
+            font_combo.currentTextChanged.connect(lambda val, rk=role_key: self._on_font_changed(rk, val))
+            self._combos[role_key] = font_combo
+
+            color_combo = ComboBox()
+            color_combo.setFixedWidth(130)
+            color_combo.currentTextChanged.connect(lambda val, rk=role_key: self._on_color_changed(rk, val))
+            self._color_combos[role_key] = color_combo
+
+            preview_lbl = QLabel()
+            preview_lbl.setMinimumHeight(32)
+            preview_lbl.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            preview_lbl.setStyleSheet("border: 1px solid #333; padding-left: 4px;")
+            preview_lbl.setProperty("sample_text", sample_text)
+            self._previews[role_key] = preview_lbl
+
+            self._grid.addWidget(lbl, row_idx, 0)
+            self._grid.addWidget(font_combo, row_idx, 1)
+            self._grid.addWidget(color_combo, row_idx, 2)
+            self._grid.addWidget(preview_lbl, row_idx, 3)
+
+            self._role_widgets[role_key] = (lbl, font_combo, color_combo, preview_lbl, cat_key, label_text)
+
+    def _on_category_changed(self, row: int):
+        item = self.category_list.item(row)
+        if not item:
+            return
+        self._current_category = item.data(Qt.UserRole) or 'all'
+        self.category_title_label.setText(item.text())
+        if self._current_category == 'all':
+            self.reset_cat_btn.setText("Reset Category")
+            self.reset_cat_btn.setEnabled(False)
+        else:
+            self.reset_cat_btn.setText(f"Reset {item.text()}")
+            self.reset_cat_btn.setEnabled(True)
+        self._update_visibility()
+
+    def _on_search_changed(self, _):
+        self._update_visibility()
+
+    def _update_visibility(self):
+        query = self._search_input.text().strip().lower()
+        active_cat = self._current_category
+
+        for role_key, (lbl, font_combo, color_combo, preview_lbl, cat_key, label_text) in self._role_widgets.items():
+            cat_match = (active_cat == 'all' or cat_key == active_cat)
+            text_match = (not query) or (query in role_key.lower()) or (query in label_text.lower())
+            visible = cat_match and text_match
+            lbl.setVisible(visible)
+            font_combo.setVisible(visible)
+            color_combo.setVisible(visible)
+            preview_lbl.setVisible(visible)
+
+    def _on_reset_active_category(self):
+        if self._current_category and self._current_category != 'all':
+            self._reset_category(self._current_category)
 
     def refresh_fonts(self):
         self._bmp_cache.clear()
+        current_role_keys = set(self._combos.keys())
+        expected_roles = get_ui_font_roles()
+        expected_role_keys = {rk for rk, _, _, _ in expected_roles}
+        if current_role_keys != expected_role_keys:
+            self._populate_grid()
+
         font_nids = [f.nid for f in RESOURCES.fonts]
         if not hasattr(RESOURCES.fonts, 'ui_assignments'):
-            RESOURCES.fonts.ui_assignments = DEFAULT_FONT_ASSIGNMENTS.copy()
+            RESOURCES.fonts.ui_assignments = {
+                k: {'font': v, 'color': DEFAULT_COLOR_ASSIGNMENTS.get(k, 'white')}
+                for k, v in DEFAULT_FONT_ASSIGNMENTS.items()
+            }
 
         assignments = RESOURCES.fonts.ui_assignments
 
-        for role_key, combo in self._combos.items():
-            combo.blockSignals(True)
-            combo.clear()
+        for role_key in self._combos:
+            font_combo = self._combos[role_key]
+            color_combo = self._color_combos[role_key]
+
+            font_combo.blockSignals(True)
+            font_combo.clear()
             for fnid in font_nids:
-                combo.addItem(fnid)
+                font_combo.addItem(fnid)
 
-            assigned_nid = assignments.get(role_key, DEFAULT_FONT_ASSIGNMENTS.get(role_key, 'text'))
-            if assigned_nid not in font_nids and font_nids:
-                default_target = DEFAULT_FONT_ASSIGNMENTS.get(role_key, 'text')
-                assigned_nid = default_target if default_target in font_nids else ('text' if 'text' in font_nids else font_nids[0])
-                assignments[role_key] = assigned_nid
+            raw = assignments.get(role_key)
+            if isinstance(raw, dict):
+                assigned_font = raw.get('font', get_default_font_for_role(role_key))
+                assigned_color = raw.get('color', get_default_color_for_role(role_key))
+            elif isinstance(raw, (list, tuple)) and len(raw) >= 2:
+                assigned_font, assigned_color = raw[0], raw[1]
+            elif isinstance(raw, str):
+                assigned_font = raw
+                assigned_color = get_default_color_for_role(role_key)
+            else:
+                assigned_font = get_default_font_for_role(role_key)
+                assigned_color = get_default_color_for_role(role_key)
 
-            idx = combo.findText(assigned_nid)
+            if assigned_font not in font_nids and font_nids:
+                default_target = get_default_font_for_role(role_key)
+                assigned_font = default_target if default_target in font_nids else ('text' if 'text' in font_nids else font_nids[0])
+
+            idx = font_combo.findText(assigned_font)
             if idx >= 0:
-                combo.setCurrentIndex(idx)
-            combo.blockSignals(False)
-            self._update_role_preview(role_key, assigned_nid)
+                font_combo.setCurrentIndex(idx)
+            font_combo.blockSignals(False)
 
-    def _on_role_changed(self, role_key: str, font_nid: str):
+            # Populate color ComboBox with palettes from selected font
+            font_prefab = RESOURCES.fonts.get(assigned_font)
+            palettes = list(font_prefab.palettes.keys()) if font_prefab and font_prefab.palettes else ['white']
+            color_combo.blockSignals(True)
+            color_combo.clear()
+            for p in palettes:
+                color_combo.addItem(p)
+
+            if assigned_color not in palettes:
+                assigned_color = font_prefab.default_color if font_prefab and font_prefab.default_color in palettes else palettes[0]
+
+            c_idx = color_combo.findText(assigned_color)
+            if c_idx >= 0:
+                color_combo.setCurrentIndex(c_idx)
+            color_combo.blockSignals(False)
+
+            assignments[role_key] = {'font': assigned_font, 'color': assigned_color}
+            self._update_role_preview(role_key, assigned_font, assigned_color)
+
+    def _on_font_changed(self, role_key: str, font_nid: str):
         if not font_nid:
             return
-        RESOURCES.fonts.ui_assignments[role_key] = font_nid
+        font_prefab = RESOURCES.fonts.get(font_nid)
+        palettes = list(font_prefab.palettes.keys()) if font_prefab and font_prefab.palettes else ['white']
+
+        color_combo = self._color_combos.get(role_key)
+        if color_combo:
+            color_combo.blockSignals(True)
+            cur_color = color_combo.currentText()
+            color_combo.clear()
+            for p in palettes:
+                color_combo.addItem(p)
+
+            if cur_color in palettes:
+                chosen_color = cur_color
+            elif font_prefab and font_prefab.default_color in palettes:
+                chosen_color = font_prefab.default_color
+            else:
+                chosen_color = palettes[0]
+
+            idx = color_combo.findText(chosen_color)
+            if idx >= 0:
+                color_combo.setCurrentIndex(idx)
+            color_combo.blockSignals(False)
+        else:
+            chosen_color = 'white'
+
+        RESOURCES.fonts.ui_assignments[role_key] = {'font': font_nid, 'color': chosen_color}
         if hasattr(RESOURCES.fonts, 'save_assignments'):
             RESOURCES.fonts.save_assignments()
-        self._update_role_preview(role_key, font_nid)
+        self._update_role_preview(role_key, font_nid, chosen_color)
+        try:
+            load_fonts(headless=True)
+        except Exception:
+            pass
+
+    def _on_color_changed(self, role_key: str, color_name: str):
+        if not color_name:
+            return
+        font_combo = self._combos.get(role_key)
+        current_font = font_combo.currentText() if font_combo else 'text'
+
+        RESOURCES.fonts.ui_assignments[role_key] = {'font': current_font, 'color': color_name}
+        if hasattr(RESOURCES.fonts, 'save_assignments'):
+            RESOURCES.fonts.save_assignments()
+        self._update_role_preview(role_key, current_font, color_name)
         try:
             load_fonts(headless=True)
         except Exception:
             pass
 
     def _reset_category(self, cat_key: str):
-        roles_in_cat = [rk for rk, _, _, ck in UI_FONT_ROLES if ck == cat_key]
+        roles_in_cat = [rk for rk, _, _, ck in get_ui_font_roles() if ck == cat_key]
         font_nids = [f.nid for f in RESOURCES.fonts]
         for role_key in roles_in_cat:
-            default_nid = DEFAULT_FONT_ASSIGNMENTS.get(role_key, 'text')
-            if default_nid not in font_nids and font_nids:
-                default_nid = 'text' if 'text' in font_nids else font_nids[0]
-            RESOURCES.fonts.ui_assignments[role_key] = default_nid
-            combo = self._combos.get(role_key)
-            if combo:
-                combo.blockSignals(True)
-                idx = combo.findText(default_nid)
+            default_font = get_default_font_for_role(role_key)
+            default_color = get_default_color_for_role(role_key)
+            if default_font not in font_nids and font_nids:
+                default_font = 'text' if 'text' in font_nids else font_nids[0]
+
+            font_combo = self._combos.get(role_key)
+            if font_combo:
+                font_combo.blockSignals(True)
+                idx = font_combo.findText(default_font)
                 if idx >= 0:
-                    combo.setCurrentIndex(idx)
-                combo.blockSignals(False)
-            self._update_role_preview(role_key, default_nid)
+                    font_combo.setCurrentIndex(idx)
+                font_combo.blockSignals(False)
+
+            font_prefab = RESOURCES.fonts.get(default_font)
+            palettes = list(font_prefab.palettes.keys()) if font_prefab and font_prefab.palettes else ['white']
+
+            color_combo = self._color_combos.get(role_key)
+            if color_combo:
+                color_combo.blockSignals(True)
+                color_combo.clear()
+                for p in palettes:
+                    color_combo.addItem(p)
+                if default_color not in palettes:
+                    default_color = font_prefab.default_color if font_prefab and font_prefab.default_color in palettes else palettes[0]
+                idx = color_combo.findText(default_color)
+                if idx >= 0:
+                    color_combo.setCurrentIndex(idx)
+                color_combo.blockSignals(False)
+
+            RESOURCES.fonts.ui_assignments[role_key] = {'font': default_font, 'color': default_color}
+            self._update_role_preview(role_key, default_font, default_color)
 
         if hasattr(RESOURCES.fonts, 'save_assignments'):
             RESOURCES.fonts.save_assignments()
@@ -257,7 +451,13 @@ class FontAssignmentsWidget(QWidget):
             pass
 
     def _reset_defaults(self):
-        RESOURCES.fonts.ui_assignments = DEFAULT_FONT_ASSIGNMENTS.copy()
+        new_assignments = {}
+        for rk, _, _, _ in get_ui_font_roles():
+            new_assignments[rk] = {
+                'font': get_default_font_for_role(rk),
+                'color': get_default_color_for_role(rk)
+            }
+        RESOURCES.fonts.ui_assignments = new_assignments
         if hasattr(RESOURCES.fonts, 'save_assignments'):
             RESOURCES.fonts.save_assignments()
         self.refresh_fonts()
@@ -278,7 +478,7 @@ class FontAssignmentsWidget(QWidget):
                 self._bmp_cache[font_nid] = None
         return self._bmp_cache[font_nid]
 
-    def _update_role_preview(self, role_key: str, font_nid: str):
+    def _update_role_preview(self, role_key: str, font_nid: str, color_name: Optional[str] = None):
         lbl = self._previews.get(role_key)
         if not lbl:
             return
@@ -292,7 +492,7 @@ class FontAssignmentsWidget(QWidget):
             w = max(bmp.width(sample_text), 1) + 8
             h = bmp.height + 4
             surf = pygame.Surface((w, h), pygame.SRCALPHA, 32)
-            bmp.blit(sample_text, surf, (2, 2))
+            bmp.blit(sample_text, surf, (2, 2), color=color_name)
             raw = engine.surf_to_raw(surf, 'RGBA')
             img = QImage(raw, w, h, QImage.Format_RGBA8888)
             pix = QPixmap.fromImage(img)
@@ -301,65 +501,110 @@ class FontAssignmentsWidget(QWidget):
         except Exception as e:
             lbl.setText(f"Preview error: {e}")
 
+    @classmethod
+    def create(cls, parent=None, db=None, res=None):
+        return cls(parent)
 
-class FontDatabase(DatabaseTab):
-    def __init__(self, data, title, right_frame, deletion_criteria, collection_model, parent=None):
-        super().__init__(data, title, right_frame, deletion_criteria, collection_model, parent)
-        self._wrap_in_tabs()
-
-    def _wrap_in_tabs(self):
-        """Envelopa o splitter original do DatabaseTab na Aba 1 e adiciona a Aba 2."""
-        # DatabaseTab define self.layout como um atributo QHBoxLayout (não um método)
-        old_layout = self.layout if not callable(self.layout) else self.layout()
-        catalog_page = QWidget(self)
-        catalog_layout = QHBoxLayout()
-        catalog_layout.setContentsMargins(0, 0, 0, 0)
-        catalog_page.setLayout(catalog_layout)
-
-        # Move todos os widgets/layouts originais para dentro de catalog_page
-        while old_layout.count():
-            item = old_layout.takeAt(0)
-            if item.widget():
-                catalog_layout.addWidget(item.widget())
-            elif item.layout():
-                catalog_layout.addLayout(item.layout())
-
-        self.tabs = QTabWidget(self)
-        self.palette_tab = PaletteEditorWidget(self)
-        self.assignments_tab = FontAssignmentsWidget(self)
-        self.tabs.addTab(catalog_page, "Font Catalog")
-        self.tabs.addTab(self.palette_tab, "Palette Editor")
-        self.tabs.addTab(self.assignments_tab, "UI Font Assignments")
-        self.tabs.currentChanged.connect(self._on_tab_changed)
-        self.palette_tab.palettes_updated.connect(self.assignments_tab.refresh_fonts)
-
-        old_layout.addWidget(self.tabs)
-
-    def _on_tab_changed(self, index: int):
-        if index == 1:
-            self.palette_tab.refresh_all()
-        elif index == 2:
-            self.assignments_tab.refresh_fonts()
+    def windowTitle(self) -> str:
+        return "UI Assignments"
 
     def reset(self):
-        super().reset()
-        if hasattr(self, 'palette_tab'):
-            self.palette_tab.refresh_all()
-        if hasattr(self, 'assignments_tab'):
-            self.assignments_tab.refresh_fonts()
+        self.refresh_fonts()
 
-    @classmethod
-    def create(cls, parent=None):
-        data = RESOURCES.fonts
-        title = 'Font'
-        right_frame = font_properties.FontProperties
-        collection_model = font_model.FontModel
-        dialog = cls(data, title, right_frame, (None, lambda *_: False, None), collection_model, parent)
-        return dialog
+
+FontAssignmentDatabase = FontAssignmentsWidget
+
+
+class NewFontDatabase(NewEditorTab):
+    catalog_type = FontCatalog
+    properties_type = font_properties.FontProperties
+    allow_rename = True
+    allow_duplicate = True
+    icon_size = 32
+
+    def __init__(self, parent=None, database=None, resources=None, *args, **kwargs):
+        super().__init__(parent, database or DB, resources or RESOURCES)
+        self.setWindowTitle("Fonts")
+        self._setup_legacy_compat()
+
+    def _setup_legacy_compat(self):
+        def _set_current_row(row: int):
+            keys = list(self.data.keys())
+            if 0 <= row < len(keys):
+                nid = keys[row]
+                self.tree_list.select_item(nid)
+                self.on_select(nid)
+
+        self.left_frame.set_current_row = _set_current_row
+
+        parent_tab = self
+
+        class _ModelProxy:
+            @staticmethod
+            def create_new():
+                new_font = font_model.create_new_font(parent_tab)
+                if new_font:
+                    parent_tab.reset()
+                    parent_tab.tree_list.select_item(new_font.nid)
+                    parent_tab.on_select(new_font.nid)
+                return new_font
+
+        self.left_frame.model = _ModelProxy()
+
+    @property
+    def data(self):
+        return self._res.fonts if self._res else RESOURCES.fonts
+
+    def get_icon(self, font_nid: NID) -> Optional[QIcon]:
+        if not self.data.get(font_nid):
+            return None
+        font = self.data.get(font_nid)
+        pix = font_model.get_font_preview_pixmap(font)
+        if pix:
+            return QIcon(pix)
+        return None
+
+    def create_new(self, nid=None):
+        new_font = font_model.create_new_font(self)
+        if new_font:
+            return [new_font.nid]
+        return False
+
+    def duplicate(self, old_nid: NID, nid: NID):
+        if self.data.get(nid):
+            QMessageBox.warning(self, 'Warning', 'ID %s already in use' % nid)
+            return False
+        old_font = self.data.get(old_nid)
+        if not old_font:
+            return False
+        new_font = Font.restore(old_font.save())
+        new_font.nid = nid
+        self.data.append(new_font)
+        return True
+
+    def _on_nid_changed(self, old_nid: NID, new_nid: NID):
+        HISTORY.rewrite(RType.FONTS, old_nid, new_nid)
+
+    def _on_delete(self, nid: NID) -> bool:
+        return reference_dialogs.check_delete(RType.FONTS, nid, 'Font', self)
 
     @classmethod
     def edit(cls, parent=None):
-        return SingleResourceEditor(FontDatabase, ['fonts'], parent)
+        return get_full_editor(parent)
+
+
+FontDatabase = NewFontDatabase
+
+
+def get_full_editor(parent=None) -> NewMultiResourceEditor:
+    editor = NewMultiResourceEditor(
+        (NewFontDatabase, FontPaletteDatabase, FontAssignmentDatabase),
+        ('fonts',),
+        parent
+    )
+    editor.setWindowTitle("Font Editor")
+    editor.resize(760, 520)
+    return editor
 
 
 # Testing
@@ -370,6 +615,6 @@ if __name__ == '__main__':
     app = QApplication(sys.argv)
     from app.data.serialization.versions import CURRENT_SERIALIZATION_VERSION
     RESOURCES.load('default.ltproj', CURRENT_SERIALIZATION_VERSION)
-    window = SingleResourceEditor(FontDatabase, ['fonts'])
+    window = get_full_editor()
     window.show()
     app.exec_()

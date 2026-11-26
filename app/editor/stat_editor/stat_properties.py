@@ -46,15 +46,22 @@ class StatTypeProperties(QWidget):
         self.position_box.edit.currentTextChanged.connect(self.position_changed)
         name_section.addWidget(self.position_box)
 
-        # Colored growths / custom stat color
+        # Colored Growths: Dynamic red-to-green palette based on unit growth rate
         self.growth_colors_box = PropertyCheckBox(_("Colored Growths"), QCheckBox, self)
         self.growth_colors_box.edit.stateChanged.connect(self.growth_colors_changed)
-        self.growth_colors_box.setToolTip(_("Enable custom font palette color for this stat in the Info Menu"))
+        self.growth_colors_box.setToolTip(_("Display stat label with a dynamic red-to-green palette based on unit growth rate"))
         name_section.addWidget(self.growth_colors_box)
 
+        # Colored Stat: Individual custom color toggle
+        self.colored_stat_box = PropertyCheckBox(_("Colored Stat"), QCheckBox, self)
+        self.colored_stat_box.edit.stateChanged.connect(self.colored_stat_changed)
+        self.colored_stat_box.setToolTip(_("Enable custom individual font palette color for this stat"))
+        name_section.addWidget(self.colored_stat_box)
+
+        # Stat Color: Palettes from 'text' font
         self.stat_color_box = PropertyBox(_("Stat Color"), ComboBox, self)
-        self.stat_color_box.edit.addItems(self.get_font_colors())
-        self.stat_color_box.setToolTip(_("Font palette color from 'text' used when Colored Growths is enabled"))
+        self.populate_stat_color_box()
+        self.stat_color_box.setToolTip(_("Font palette color from 'text' used when Colored Stat is enabled"))
         self.stat_color_box.edit.currentTextChanged.connect(self.stat_color_changed)
         name_section.addWidget(self.stat_color_box)
         
@@ -72,14 +79,20 @@ class StatTypeProperties(QWidget):
             return list(font_obj.palettes.keys())
         return ['new-white', 'white', 'yellow', 'blue', 'green', 'red', 'orange', 'purple', 'grey']
 
+    def populate_stat_color_box(self):
+        self.stat_color_box.edit.blockSignals(True)
+        self.stat_color_box.edit.clear()
+        for color in self.get_font_colors():
+            self.stat_color_box.edit.addItem(color)
+        self.stat_color_box.edit.blockSignals(False)
+
     def refresh_font_colors(self):
         current_palettes = self.get_font_colors()
-        existing = [self.stat_color_box.edit.itemText(i) for i in range(self.stat_color_box.edit.count())]
-        if current_palettes != existing:
-            self.stat_color_box.edit.blockSignals(True)
-            self.stat_color_box.edit.clear()
-            self.stat_color_box.edit.addItems(current_palettes)
-            self.stat_color_box.edit.blockSignals(False)
+        existing_palettes = [self.stat_color_box.edit.itemText(i) for i in range(self.stat_color_box.edit.count())]
+        if current_palettes != existing_palettes:
+            curr_val = self.current.stat_color if self.current else 'new-white'
+            self.populate_stat_color_box()
+            self.stat_color_box.edit.setValue(curr_val)
 
     def on_nid_changed(self, old_nid, new_nid):
         HISTORY.rewrite(DType.STATS, old_nid, new_nid)
@@ -110,8 +123,11 @@ class StatTypeProperties(QWidget):
         self.current.maximum = val
 
     def growth_colors_changed(self, state):
+        self.current.growth_colors = bool(state)
+
+    def colored_stat_changed(self, state):
         enabled = bool(state)
-        self.current.growth_colors = enabled
+        self.current.colored_stat = enabled
         self.stat_color_box.setEnabled(enabled)
 
     def stat_color_changed(self, val):
@@ -129,11 +145,14 @@ class StatTypeProperties(QWidget):
         self.max_box.edit.setValue(current.maximum)
         self.growth_colors_box.edit.setChecked(bool(current.growth_colors))
         
+        colored_stat = getattr(current, 'colored_stat', False)
+        self.colored_stat_box.edit.setChecked(bool(colored_stat))
+        self.stat_color_box.setEnabled(bool(colored_stat))
+
         stat_color = getattr(current, 'stat_color', 'new-white') or 'new-white'
         if self.stat_color_box.edit.findText(stat_color) == -1:
             self.stat_color_box.edit.addItem(stat_color)
         self.stat_color_box.edit.setValue(stat_color)
-        self.stat_color_box.setEnabled(bool(current.growth_colors))
 
         self.hidden_stat_box.edit.setChecked(bool(current.hidden_stat))
         self.desc_box.edit.setText(current.desc)

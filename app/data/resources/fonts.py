@@ -4,15 +4,16 @@ import json
 from pathlib import Path
 from typing import Dict, List, Optional, override, Set
 
+from app.data.category import CategorizedCatalog
 from app.data.resources.base_catalog import ManifestCatalog
 from app.data.resources.resource_prefab import WithResources
 from app.data.serialization.dataclass_serialization import dataclass_from_dict
 from app.utilities.data import Prefab
 from app.utilities.typing import Color4, NestedPrimitiveDict
 
-# Mapeamento padrão das categorias de fonte do jogo
+# Default mapping of semantic in-game font roles
 DEFAULT_FONT_ASSIGNMENTS: Dict[str, str] = {
-    # 1. Globais & Sistema
+    # 1. Global & System
     'text': 'text',
     'narrow': 'narrow',
     'small': 'small',
@@ -20,48 +21,127 @@ DEFAULT_FONT_ASSIGNMENTS: Dict[str, str] = {
     'chapter': 'chapter',
     'system_debug': 'small',
 
-    # 2. Narrativa & Diálogos
+    # 2. Narrative & Dialogues
     'convo': 'convo',
     'convo_bold': 'bconvo',
     'convo_italic': 'iconvo',
     'convo_narrow': 'nconvo',
     'chapter_title': 'chapter',
 
-    # 3. Menus & Navegação
+    # 3. Menus & Navigation
     'ui_choice': 'text',
     'ui_prep': 'text',
     'ui_save_load': 'text',
 
-    # 4. Ficha de Unidade & Estatísticas
+    # 4. Unit Info & Stats
     'ui_info': 'text',
     'ui_stat_bonus': 'small',
+    'ui_stat_buff': 'small',
+    'ui_stat_debuff': 'small',
     'ui_weapon_rank': 'rank',
     'ui_help': 'info',
 
-    # 5. Combate & HUD de Batalha
+    # 5. Combat & Battle HUD
     'ui_combat': 'text',
     'combat_numbers': 'number_small2',
     'combat_multipliers': 'small',
+    'combat_multiplier_2': 'small',
+    'combat_multiplier_3': 'small',
+    'combat_multiplier_4': 'small',
+    'combat_multiplier_5': 'small',
     'health_bar': 'number_small2',
 
-    # 6. Progressão, Promoção & Avisos
+    # 6. Progression, Promotion & Banners
     'ui_level_up': 'text',
     'ui_level_up_bonus': 'stat',
     'ui_promo': 'text',
     'ui_banner': 'text',
 
-    # 7. Pós-Jogo, Registros & Créditos
+    # 7. Post-Game, Records & Credits
     'ui_record_book': 'text',
     'ui_victory': 'text',
     'ui_credits_title': 'credit_title',
     'ui_credits_body': 'credit',
 }
 
-# Paletas globais padrão do projeto separadas por perfis de contraste e cor
-# UI (3 Cores): Texto claro sobre fundos escuros de janelas e menus
-# Slot 0: Corpo Claro / Primário
-# Slot 1: Sombra Escura
-# Slot 2: Meio-tom / Suavização
+DEFAULT_COLOR_ASSIGNMENTS: Dict[str, str] = {
+    # 1. Global & System
+    'text': 'white',
+    'narrow': 'white',
+    'small': 'white',
+    'number': 'white',
+    'chapter': 'white',
+    'system_debug': 'white',
+
+    # 2. Narrative & Dialogues
+    'convo': 'black',
+    'convo_bold': 'black',
+    'convo_italic': 'black',
+    'convo_narrow': 'black',
+    'chapter_title': 'white',
+
+    # 3. Menus & Navigation
+    'ui_choice': 'white',
+    'ui_prep': 'white',
+    'ui_save_load': 'white',
+
+    # 4. Unit Info & Stats
+    'ui_info': 'white',
+    'ui_stat_bonus': 'green',
+    'ui_stat_buff': 'green',
+    'ui_stat_debuff': 'red',
+    'ui_weapon_rank': 'blue',
+    'ui_help': 'white',
+
+    # 5. Combat & Battle HUD
+    'ui_combat': 'white',
+    'combat_numbers': 'yellow',
+    'combat_multipliers': 'green',
+    'combat_multiplier_2': 'green',
+    'combat_multiplier_3': 'yellow',
+    'combat_multiplier_4': 'red',
+    'combat_multiplier_5': 'purple',
+    'health_bar': 'white',
+
+    # 6. Progression, Promotion & Banners
+    'ui_level_up': 'white',
+    'ui_level_up_bonus': 'yellow',
+    'ui_promo': 'white',
+    'ui_banner': 'white',
+
+    # 7. Post-Game, Records & Credits
+    'ui_record_book': 'white',
+    'ui_victory': 'white',
+    'ui_credits_title': 'white',
+    'ui_credits_body': 'white',
+}
+
+def get_default_font_for_role(role_key: str) -> str:
+    """Returns the default font for any UI role, including dynamic weapon ranks."""
+    if role_key in DEFAULT_FONT_ASSIGNMENTS:
+        return DEFAULT_FONT_ASSIGNMENTS[role_key]
+    if role_key.startswith('weapon_rank_'):
+        return DEFAULT_FONT_ASSIGNMENTS.get('ui_weapon_rank', 'rank')
+    return 'text'
+
+def get_default_color_for_role(role_key: str) -> str:
+    """Returns the default color palette for any UI element, including dynamic weapon ranks."""
+    if role_key in DEFAULT_COLOR_ASSIGNMENTS:
+        return DEFAULT_COLOR_ASSIGNMENTS[role_key]
+    if role_key.startswith('weapon_rank_'):
+        rank_nid = role_key[len('weapon_rank_'):]
+        if rank_nid in ('S', 'SS'):
+            return 'yellow'
+        elif rank_nid in ('A', 'B'):
+            return 'green'
+        return DEFAULT_COLOR_ASSIGNMENTS.get('ui_weapon_rank', 'blue')
+    return 'white'
+
+# Default project global palettes separated by contrast and color profiles
+# UI (3 Colors): Light text on dark window and menu backgrounds
+# Slot 0: Light / Primary Body
+# Slot 1: Dark Shadow
+# Slot 2: Midtone / Antialiasing
 DEFAULT_UI_PALETTES: Dict[str, List[Color4]] = {
     'white': [(248, 248, 248, 255), (56, 48, 40, 255), (160, 136, 216, 255)],
     'blue': [(192, 248, 248, 255), (24, 24, 88, 255), (80, 112, 248, 255)],
@@ -89,9 +169,9 @@ DEFAULT_UI_PALETTES: Dict[str, List[Color4]] = {
     'pink': [(255, 102, 178, 255), (120, 24, 64, 255), (255, 204, 229, 255)],
 }
 
-# Diálogo & História (2 Cores): Texto escuro sobre balões de diálogo claros
-# Slot 0: Corpo Escuro / Tinta
-# Slot 1: Sombra / Realce Claro
+# Dialogue & Story (2 Colors): Dark text on light speech bubbles
+# Slot 0: Dark Body / Ink
+# Slot 1: Shadow / Light Highlight
 DEFAULT_DIALOGUE_PALETTES: Dict[str, List[Color4]] = {
     'black': [(40, 40, 40, 255), (184, 184, 184, 255)],
     'blue': [(24, 48, 168, 255), (168, 192, 248, 255)],
@@ -106,14 +186,14 @@ DEFAULT_DIALOGUE_PALETTES: Dict[str, List[Color4]] = {
     'pink': [(168, 40, 112, 255), (248, 176, 216, 255)],
 }
 
-# Perfis de paletas globais
+# Global palette profiles
 DEFAULT_GLOBAL_PALETTE_PROFILES: Dict[str, Dict[str, List[Color4]]] = {
     'ui_3color': DEFAULT_UI_PALETTES,
     'dialogue_2color': DEFAULT_DIALOGUE_PALETTES,
     'custom': {},
 }
 
-# Retrocompatibilidade
+# Backward compatibility
 DEFAULT_GLOBAL_PALETTES: Dict[str, List[Color4]] = DEFAULT_UI_PALETTES
 
 
@@ -124,11 +204,11 @@ def adapt_palette_to_font(palette_colors: List[Color4], target_count: int) -> Li
     if len(palette_colors) == target_count:
         return [tuple(c) if len(c) == 4 else (c[0], c[1], c[2], 255) for c in palette_colors]
 
-    # Fonte com 2 cores (Corpo + Sombra) e paleta com 3+ cores: usa os 2 tons principais
+    # 2-color font (Body + Shadow) with 3+ color palette: use top 2 primary shades
     if target_count == 2 and len(palette_colors) >= 2:
         return [tuple(palette_colors[0]), tuple(palette_colors[1])]
 
-    # Fonte com 3 cores e paleta com 2 cores: sintetiza meio-tom suave
+    # 3-color font with 2-color palette: synthesize smooth midtone
     if target_count == 3 and len(palette_colors) == 2:
         c0, c1 = palette_colors[0], palette_colors[1]
         mid = (
@@ -139,7 +219,7 @@ def adapt_palette_to_font(palette_colors: List[Color4], target_count: int) -> Li
         )
         return [tuple(c0), tuple(c1), mid]
 
-    # Interpolação linear para fontes com número arbitrário de cores (ex: gradientes)
+    # Linear interpolation for fonts with arbitrary color count (e.g. gradients)
     res = []
     src_len = len(palette_colors)
     for i in range(target_count):
@@ -345,7 +425,7 @@ class Font(WithResources, Prefab):
     def restore(cls, s_dict):
         return dataclass_from_dict(cls, s_dict)
 
-class FontCatalog(ManifestCatalog[Font]):
+class FontCatalog(ManifestCatalog[Font], CategorizedCatalog[Font]):
     datatype = Font
     manifest = 'fonts.json'
     title = 'fonts'
@@ -354,7 +434,10 @@ class FontCatalog(ManifestCatalog[Font]):
     def __init__(self):
         super().__init__()
         self._loc: Optional[str] = None
-        self.ui_assignments: Dict[str, str] = DEFAULT_FONT_ASSIGNMENTS.copy()
+        self.ui_assignments: Dict[str, Dict[str, str]] = {
+            k: {'font': v, 'color': DEFAULT_COLOR_ASSIGNMENTS.get(k, 'white')}
+            for k, v in DEFAULT_FONT_ASSIGNMENTS.items()
+        }
         self.palette_profiles: Dict[str, Dict[str, List[Color4]]] = {
             'ui_3color': {k: list(v) for k, v in DEFAULT_UI_PALETTES.items()},
             'dialogue_2color': {k: list(v) for k, v in DEFAULT_DIALOGUE_PALETTES.items()},
@@ -364,8 +447,13 @@ class FontCatalog(ManifestCatalog[Font]):
 
     def clear(self):
         super().clear()
+        if hasattr(self, 'categories'):
+            self.categories.clear()
         self._loc = None
-        self.ui_assignments = DEFAULT_FONT_ASSIGNMENTS.copy()
+        self.ui_assignments = {
+            k: {'font': v, 'color': DEFAULT_COLOR_ASSIGNMENTS.get(k, 'white')}
+            for k, v in DEFAULT_FONT_ASSIGNMENTS.items()
+        }
         self.palette_profiles = {
             'ui_3color': {k: list(v) for k, v in DEFAULT_UI_PALETTES.items()},
             'dialogue_2color': {k: list(v) for k, v in DEFAULT_DIALOGUE_PALETTES.items()},
@@ -375,7 +463,16 @@ class FontCatalog(ManifestCatalog[Font]):
 
     def get_assignment(self, role: str) -> str:
         default_target = DEFAULT_FONT_ASSIGNMENTS.get(role, 'text')
-        assigned = self.ui_assignments.get(role, default_target)
+        raw = self.ui_assignments.get(role)
+        if isinstance(raw, dict):
+            assigned = raw.get('font', default_target)
+        elif isinstance(raw, (list, tuple)) and len(raw) > 0:
+            assigned = raw[0]
+        elif isinstance(raw, str):
+            assigned = raw
+        else:
+            assigned = default_target
+
         if assigned in self:
             return assigned
         if default_target in self:
@@ -384,8 +481,17 @@ class FontCatalog(ManifestCatalog[Font]):
             return 'text'
         return self[0].nid if len(self) > 0 else 'text'
 
+    def get_assigned_color(self, role: str) -> str:
+        default_color = DEFAULT_COLOR_ASSIGNMENTS.get(role, 'white')
+        raw = self.ui_assignments.get(role)
+        if isinstance(raw, dict):
+            return raw.get('color', default_color) or default_color
+        elif isinstance(raw, (list, tuple)) and len(raw) > 1:
+            return raw[1] or default_color
+        return default_color
+
     def get_profile_for_font(self, font: Font) -> str:
-        """Determina o perfil de paleta ideal para uma fonte pelo número de cores da base."""
+        """Determines the ideal palette profile for a source based on the number of base colors."""
         base_nid = font.base_palette_nid
         base_palette = font.palettes.get(base_nid) if base_nid else None
         num_colors = len(base_palette) if base_palette else 3
@@ -396,7 +502,7 @@ class FontCatalog(ManifestCatalog[Font]):
         return 'custom' if 'custom' in self.palette_profiles and self.palette_profiles['custom'] else 'ui_3color'
 
     def sync_font_base_palette_with_sheet(self, font: Font) -> bool:
-        """Extrai as cores reais da folha PNG da fonte e sincroniza a paleta base para garantir recolorização perfeita."""
+        """Extracts the actual colors from the source PNG sheet and synchronizes the base palette to ensure perfect recoloring."""
         img_path = font.image_path()
         if not img_path or not os.path.exists(img_path):
             return False
@@ -410,7 +516,7 @@ class FontCatalog(ManifestCatalog[Font]):
                     counts[(r, g, b, 255)] += 1
             if not counts:
                 return False
-            # Ordena por luminosidade para preservar a correspondência de papéis (claro -> médio -> escuro)
+            # Sort by luminance to preserve role correspondence (light -> mid -> dark)
             sorted_colors = sorted(counts.keys(), key=lambda c: (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]), reverse=True)
             base_key = font.base_palette_nid or 'white'
             font.palettes[base_key] = [tuple(c) for c in sorted_colors]
@@ -419,7 +525,7 @@ class FontCatalog(ManifestCatalog[Font]):
             return False
 
     def inherit_global_palettes(self, font: Font, overwrite: bool = False, profile_key: Optional[str] = None):
-        """Injeta as paletas do perfil correspondente na fonte, sem inverter contrastes."""
+        """Injects the palettes of the corresponding profile into the source, without inverting contrasts."""
         base_nid = font.base_palette_nid
         base_palette = font.palettes.get(base_nid) if base_nid else None
         target_count = len(base_palette) if base_palette else 3
@@ -428,7 +534,7 @@ class FontCatalog(ManifestCatalog[Font]):
         source_palettes = self.palette_profiles.get(selected_profile) or self.global_palettes
 
         for pal_name, pal_colors in source_palettes.items():
-            # NUNCA sobrescreve a paleta base (base_palette_nid), pois ela define as cores nativas dos pixels do PNG!
+            # NEVER overwrite base palette (base_palette_nid), as it defines the PNG pixels native colors!
             if pal_name == base_nid:
                 continue
             if overwrite or pal_name not in font.palettes:
@@ -438,15 +544,27 @@ class FontCatalog(ManifestCatalog[Font]):
         self._loc = str(loc)
         super().load(loc, *args, **kwargs)
         assign_path = Path(loc, 'font_assignments.json')
-        self.ui_assignments = DEFAULT_FONT_ASSIGNMENTS.copy()
+        self.ui_assignments = {
+            k: {'font': v, 'color': DEFAULT_COLOR_ASSIGNMENTS.get(k, 'white')}
+            for k, v in DEFAULT_FONT_ASSIGNMENTS.items()
+        }
         if assign_path.exists():
             try:
                 with open(assign_path, 'r', encoding='utf-8') as fp:
                     loaded = json.load(fp)
                     if isinstance(loaded, dict):
                         for k, v in loaded.items():
-                            if isinstance(k, str) and isinstance(v, str):
-                                self.ui_assignments[k] = v
+                            if isinstance(k, str):
+                                if isinstance(v, str):
+                                    self.ui_assignments[k] = {
+                                        'font': v,
+                                        'color': DEFAULT_COLOR_ASSIGNMENTS.get(k, 'white')
+                                    }
+                                elif isinstance(v, dict):
+                                    self.ui_assignments[k] = {
+                                        'font': v.get('font', DEFAULT_FONT_ASSIGNMENTS.get(k, 'text')),
+                                        'color': v.get('color', DEFAULT_COLOR_ASSIGNMENTS.get(k, 'white'))
+                                    }
             except Exception:
                 pass
 
@@ -462,7 +580,7 @@ class FontCatalog(ManifestCatalog[Font]):
                     loaded_p = json.load(fp)
                     if isinstance(loaded_p, dict):
                         if 'profiles' in loaded_p and isinstance(loaded_p['profiles'], dict):
-                            # Formato novo com perfis tipados
+                            # New format with typed profiles
                             for pkey, pdict in loaded_p['profiles'].items():
                                 if isinstance(pdict, dict):
                                     if pkey not in self.palette_profiles:
@@ -473,7 +591,7 @@ class FontCatalog(ManifestCatalog[Font]):
                                                 tuple(c) if len(c) == 4 else (c[0], c[1], c[2], 255) for c in cv
                                             ]
                         else:
-                            # Formato legado flat: distribui paletas por contagem de cores
+                            # Legacy flat format: distribute palettes by color count
                             for k, v in loaded_p.items():
                                 if isinstance(k, str) and isinstance(v, list):
                                     parsed = [tuple(c) if len(c) == 4 else (c[0], c[1], c[2], 255) for c in v]
@@ -508,7 +626,7 @@ class FontCatalog(ManifestCatalog[Font]):
             os.makedirs(target_loc, exist_ok=True)
             data_to_save = {
                 'profiles': self.palette_profiles,
-                # Salva também a flat list ui_3color na raiz para máxima retrocompatibilidade com ferramentas externas
+                # Also save flat ui_3color list at root for backwards compatibility with external tools
                 **self.palette_profiles.get('ui_3color', {})
             }
             with open(palettes_path, 'w', encoding='utf-8') as fp:

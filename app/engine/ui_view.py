@@ -856,10 +856,25 @@ class UIView():
             x2_pos_player_partner = (topleft[0] + 107 + x2_x, topleft[1] + 38 + x2_y)
             x2_pos_enemy_partner = (topleft[0] + 20 + x2_x, topleft[1] + 38 + x2_y)
 
-            x2_font = 'combat_multipliers-yellow' if 'combat_multipliers-yellow' in FONT else 'small-yellow'
             x2_offset = (0, -4)
-            number_font = 'combat_multipliers' if 'combat_multipliers' in FONT else 'number_small'
             number_offset = (6, -2)
+
+            def get_multiplier_fonts(attacks: int):
+                # Determine font/color based on attack multiplier count
+                if attacks == 2:
+                    n_role = 'combat_multiplier_2'
+                elif attacks == 3:
+                    n_role = 'combat_multiplier_3'
+                elif attacks == 4:
+                    n_role = 'combat_multiplier_4'
+                else:
+                    # 5 or more attacks
+                    n_role = 'combat_multiplier_5'
+                
+                n_font = n_role if n_role in FONT else ('combat_multipliers' if 'combat_multipliers' in FONT else 'number_small')
+                # 'X' symbol uses matching multiplier color/font with fallback to default x2_font
+                x_font = n_font if n_font in FONT else ('combat_multipliers-yellow' if 'combat_multipliers-yellow' in FONT else 'small-yellow')
+                return x_font, n_font
 
             num_phases = combat_calcs.compute_attack_phases(attacker, defender, weapon, resolve_weapon(defender), "attack", (0 , 0))
             num_attacks = num_phases
@@ -872,12 +887,9 @@ class UIView():
                 num_attacks = min(num_attacks, weapon.data.get('uses', 100), weapon.data.get('c_uses', 100))
 
             if num_attacks > 1:
-                im = SPRITES.get("x%d" % (num_attacks), fallback=None)
-                if im:
-                    surf.blit(im, x2_pos_player)
-                else:
-                    FONT[x2_font].blit("X", surf, utils.tuple_add(x2_pos_player, x2_offset))
-                    FONT[number_font].blit(str(num_attacks), surf, utils.tuple_add(x2_pos_player, number_offset))
+                x2_font, number_font = get_multiplier_fonts(num_attacks)
+                FONT[x2_font].blit("X", surf, utils.tuple_add(x2_pos_player, x2_offset))
+                FONT[number_font].blit(str(num_attacks), surf, utils.tuple_add(x2_pos_player, number_offset))
 
             if a_assist:
                 if DB.constants.value('limit_attack_stance'):
@@ -888,12 +900,9 @@ class UIView():
                         a_assist_num_attacks += combat_calcs.compute_multiattacks(a_assist, defender, a_assist.get_weapon(), "attack", (attack_phase, 0))
 
                 if a_assist_num_attacks > 1:
-                    im = SPRITES.get("x%d" % (a_assist_num_attacks), fallback=None)
-                    if im:
-                        surf.blit(im, x2_pos_player_partner)
-                    else:
-                        FONT[x2_font].blit("X", surf, utils.tuple_add(x2_pos_player_partner, x2_offset))
-                        FONT[number_font].blit(str(a_assist_num_attacks), surf, utils.tuple_add(x2_pos_player_partner, number_offset))
+                    x2_font, number_font = get_multiplier_fonts(a_assist_num_attacks)
+                    FONT[x2_font].blit("X", surf, utils.tuple_add(x2_pos_player_partner, x2_offset))
+                    FONT[number_font].blit(str(a_assist_num_attacks), surf, utils.tuple_add(x2_pos_player_partner, number_offset))
 
             # Enemy doubling
             eweapon = defender.get_weapon()
@@ -905,12 +914,9 @@ class UIView():
                 e_num_attacks = min(e_num_attacks, eweapon.data.get('uses', 100))
 
                 if e_num_attacks > 1:
-                    im = SPRITES.get("x%d" % (e_num_attacks), fallback=None)
-                    if im:
-                        surf.blit(im, x2_pos_enemy)
-                    else:
-                        FONT[x2_font].blit("X", surf, utils.tuple_add(x2_pos_enemy, x2_offset))
-                        FONT[number_font].blit(str(e_num_attacks), surf, utils.tuple_add(x2_pos_enemy, number_offset))
+                    x2_font, number_font = get_multiplier_fonts(e_num_attacks)
+                    FONT[x2_font].blit("X", surf, utils.tuple_add(x2_pos_enemy, x2_offset))
+                    FONT[number_font].blit(str(e_num_attacks), surf, utils.tuple_add(x2_pos_enemy, number_offset))
 
                 if d_assist:     
                     if DB.constants.value('limit_attack_stance'):
@@ -921,12 +927,9 @@ class UIView():
                             d_assist_num_attacks += combat_calcs.compute_multiattacks(d_assist, attacker, d_assist.get_weapon(), "defense", (attack_phase, 0))
 
                     if d_assist_num_attacks > 1:
-                        im = SPRITES.get("x%d" % (d_assist_num_attacks), fallback=None)
-                        if im:
-                            surf.blit(im, x2_pos_enemy_partner)
-                        else:
-                            FONT[x2_font].blit("X", surf, utils.tuple_add(x2_pos_enemy_partner, x2_offset))
-                            FONT[number_font].blit(str(d_assist_num_attacks), surf, utils.tuple_add(x2_pos_enemy_partner, number_offset))
+                        x2_font, number_font = get_multiplier_fonts(d_assist_num_attacks)
+                        FONT[x2_font].blit("X", surf, utils.tuple_add(x2_pos_enemy_partner, x2_offset))
+                        FONT[number_font].blit(str(d_assist_num_attacks), surf, utils.tuple_add(x2_pos_enemy_partner, number_offset))
 
         # Turns off combat conditionals
         skill_system.test_off([], defender, resolve_weapon(defender), attacker, weapon, 'defense')

@@ -440,13 +440,56 @@ class InfoMenuState(State):
             y_pos = WINHEIGHT - 61
             surf.blit(active_sprite, (x_pos, y_pos + self.scroll_offset_y))
 
-    def get_stat_label_color(self, stat_nid: str, default_color: str = 'new-white') -> str:
+    def growth_colors(self, value: int) -> str:
+        color = 'yellow'
+        if value <= 20:
+            color = 'red-orange'
+        elif value <= 30:
+            color = 'light-red'
+        elif value <= 40:
+            color = 'pink-orange'
+        elif value <= 50:
+            color = 'light-orange'
+        elif value <= 60:
+            color = 'corn-yellow'
+        elif value <= 70:
+            color = 'light-green'
+        elif value <= 80:
+            color = 'olive-green'
+        elif value <= 90:
+            color = 'soft-green'
+        else:  # > 90
+            color = 'yellow-green'
+        return color
+
+    def get_stat_label_color(self, stat_nid: str, growths: bool = False, default_color: str = 'new-white') -> str:
         stat_obj = DB.stats.get(stat_nid)
-        if stat_obj and stat_obj.growth_colors and self.unit.team == 'player':
-            chosen_color = getattr(stat_obj, 'stat_color', default_color) or default_color
-            if f'{self.font_name}-{chosen_color}' in FONT or f'text-{chosen_color}' in FONT or chosen_color == default_color:
-                return chosen_color
-        return default_color
+        if not stat_obj:
+            return default_color
+        has_growth_colors = bool(getattr(stat_obj, 'growth_colors', False))
+        has_colored_stat = bool(getattr(stat_obj, 'colored_stat', False))
+        stat_color = getattr(stat_obj, 'stat_color', default_color) or default_color
+
+        if growths:
+            # 1. Growth view: dynamic growth gradient takes precedence if enabled for player unit
+            if has_growth_colors and self.unit.team == 'player':
+                rate = unit_funcs.growth_rate(self.unit, stat_nid)
+                return self.growth_colors(rate)
+            # 2. If Colored Stat is enabled, use custom stat color
+            if has_colored_stat:
+                return stat_color
+            # 3. Fallback to default
+            return default_color
+        else:
+            # 1. Standard view: custom stat color takes precedence if enabled
+            if has_colored_stat:
+                return stat_color
+            # 2. If Colored Stat is disabled but Colored Growths is enabled, follow growth intervals
+            if has_growth_colors and self.unit.team == 'player':
+                rate = unit_funcs.growth_rate(self.unit, stat_nid)
+                return self.growth_colors(rate)
+            # 3. Fallback to default
+            return default_color
 
     def create_portrait_section(self):
         surf = engine.create_surface((96, WINHEIGHT), transparent=True)
@@ -493,7 +536,7 @@ class InfoMenuState(State):
         else:
             hp_font = self.font_name
         render_text(surf, [hp_font], [current_hp], ['new-white'], (31, 0), HAlignment.RIGHT)
-        render_text(surf, [hp_font], [max_hp], ['green'], (55, 0), HAlignment.RIGHT)
+        render_text(surf, [hp_font], [max_hp], ['new-white'], (55, 0), HAlignment.RIGHT)
         return surf
 
     def draw_top_arrows(self, surf):
@@ -597,7 +640,7 @@ class InfoMenuState(State):
                     build_groove(surf, (27, 16 * idx + 32), total_length, frac)
 
             name = curr_stat.name
-            color = self.get_stat_label_color(stat_nid, 'new-white')
+            color = self.get_stat_label_color(stat_nid, growths=growths, default_color='new-white')
             render_text(surf, [self.font_name], [name], [color], (8, 16 * idx + 24))
             if growths:
                 contribution = unit_funcs.growth_contribution(self.unit, stat_nid)
@@ -615,7 +658,7 @@ class InfoMenuState(State):
             curr_stat = DB.stats.get(stat_nid)
 
             name = curr_stat.name
-            color = self.get_stat_label_color(stat_nid, 'new-white')
+            color = self.get_stat_label_color(stat_nid, growths=growths, default_color='new-white')
             render_text(surf, [self.font_name], [name], [color], (72, 16 * idx + 24))
             if growths:
                 icons.draw_growth(surf, stat_nid, self.unit, (111, 16 * idx + 24))
@@ -667,15 +710,13 @@ class InfoMenuState(State):
             elif stat == 'AID':
                 if growths:
                     icons.draw_growth(surf, 'HP', self.unit, (111, 16 * true_idx + 24))
-                    color = self.get_stat_label_color('HP', 'white')
+                    color = self.get_stat_label_color('HP', growths=growths, default_color='white')
                     render_text(surf, [self.font_name], [text_funcs.translate('HP')], [color], (72, 16 * true_idx + 24))
                     desc = text_funcs.translate_and_text_evaluate('HP_desc', unit=self.unit)
                     self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
                 else:
                     aid = equations.parser.rescue_aid(self.unit)
-                    render_text(surf, [self.font_name], [str(aid)], ['white'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
-                    aid = equations.parser.rescue_aid(self.unit)
-                render_text(surf, [self.font_name], [str(aid)], ['blue'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
+                    render_text(surf, [self.font_name], [str(aid)], ['blue'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
 
                 for tag in self.unit.tags:
                     if ('aid_icon_%s' % tag) in SPRITES:
@@ -710,21 +751,9 @@ class InfoMenuState(State):
                 self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
 
             elif stat == 'GAUGE':
-                if growths:
-                    icons.draw_growth(surf, 'HP', self.unit, (111, 16 * true_idx + 24))
-                    color = self.get_stat_label_color('HP', 'white')
-                    render_text(surf, [self.font_name], [text_funcs.translate('HP')], [color], (72, 16 * true_idx + 24))
-                    desc = text_funcs.translate_and_text_evaluate('HP_desc', unit=self.unit)
-                    self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
-                else:
-                    gge = str(self.unit.get_guard_gauge())
-                    render_text(surf, [self.font_name], [gge], ['white'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
-                    render_text(surf, [self.font_name], [text_funcs.translate('GAUGE')], ['white'], (72, 16 * true_idx + 24))
-                    desc = text_funcs.translate_and_text_evaluate('GAUGE_desc', unit=self.unit)
-                    self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
                 gge = str(self.unit.get_guard_gauge())
-                render_text(surf, [self.font_name], [gge], ['blue'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
-                render_text(surf, [self.font_name], [text_funcs.translate('GAUGE')], ['yellow'], (72, 16 * true_idx + 24))
+                render_text(surf, [self.font_name], [gge], ['new-white'], (111, 16 * true_idx + 24), HAlignment.RIGHT)
+                render_text(surf, [self.font_name], [text_funcs.translate('GAUGE')], ['new-white'], (72, 16 * true_idx + 24))
                 desc = text_funcs.translate_and_text_evaluate('GAUGE_desc', unit=self.unit)
                 self.info_graph.register((96 + 72, 16 * true_idx + 24, 64, 16), desc, state)
 
@@ -788,8 +817,10 @@ class InfoMenuState(State):
 
                 build_groove(surf, (offset + 18, 10 + y), width - 24, perc)
                 pos = (offset + 7 + width//2, 4 + y)
-                rank_font = 'ui_weapon_rank' if 'ui_weapon_rank' in FONT else ('rank' if 'rank' in FONT else self.font_name)
-                render_text(surf, [rank_font], [weapon_rank.nid], ['new-white'], pos, HAlignment.CENTER)
+                rank_role = f'weapon_rank_{weapon_rank.nid}'
+                rank_font = rank_role if rank_role in FONT else ('ui_weapon_rank' if 'ui_weapon_rank' in FONT else ('rank' if 'rank' in FONT else self.font_name)
+                )
+                render_text(surf, [rank_font], [weapon_rank.nid], [None], pos, HAlignment.CENTER)
                 self.info_graph.register((96 + pos[0] - width//2 - 8, 24 + pos[1], width, 16), "%s mastery level: %d" % (DB.weapons.get(weapon).name, value), 'supports_wlvl', first=(counter==0))
                 counter += 1
                 if counter >= len(wexp_to_draw):

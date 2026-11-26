@@ -4,35 +4,22 @@ from typing import Dict, List, Optional, Tuple
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QGroupBox,
     QLabel, QPushButton, QListWidget, QListWidgetItem, QLineEdit,
-    QColorDialog, QMessageBox, QInputDialog, QScrollArea, QCheckBox
+    QColorDialog, QMessageBox, QInputDialog, QScrollArea, QMenu, QSpinBox,
+    QFrame
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QEvent
-from PyQt5.QtGui import QColor, QImage, QPixmap, QWheelEvent
+from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtGui import QColor, QImage, QPixmap
 
 from app.data.resources.resources import RESOURCES
 from app.data.resources.fonts import (
-    Font, Color4, DEFAULT_UI_PALETTES, DEFAULT_DIALOGUE_PALETTES,
-    DEFAULT_GLOBAL_PALETTE_PROFILES, DEFAULT_GLOBAL_PALETTES, adapt_palette_to_font
+    Color4, DEFAULT_UI_PALETTES, DEFAULT_DIALOGUE_PALETTES,
+    adapt_palette_to_font
 )
-from app.engine import engine, image_mods
 from app.engine.bmpfont import BmpFont
+from app.engine import engine, image_mods
 from app.extensions.custom_gui import ComboBox
+from app.extensions.color_icon import AlphaColorIcon
 
-
-PRESET_BACKGROUNDS = [
-    ("Menu Dark (#202838)", QColor(0x20, 0x28, 0x38)),
-    ("Parchment Light (#E0E0D8)", QColor(0xE0, 0xE0, 0xD8)),
-    ("Dialogue Bubble (#F8F8F0)", QColor(0xF8, 0xF8, 0xF0)),
-    ("Deep Black (#080808)", QColor(0x08, 0x08, 0x08)),
-    ("Navy Combat (#101828)", QColor(0x10, 0x18, 0x28)),
-]
-
-SAMPLE_TEXTS = {
-    'default': "Iron Sword  Mt 5  Hit 90  Crit 0",
-    'dialogue': "Shall we head into battle, commander?",
-    'stats': "HP 32/45   STR 14   MAG 8   SKL 16",
-    'numbers': "1234567890   +3 SPD   -2 DEF",
-}
 
 PALETTE_PROFILES_META = [
     ('ui_3color', "UI & Menus (3 Colors)", "Body, Shadow, Midtone — Light text for dark menus"),
@@ -41,85 +28,79 @@ PALETTE_PROFILES_META = [
 ]
 
 
-class ZoomableScrollArea(QScrollArea):
-    """QScrollArea que intercepta wheelEvent para permitir Zoom In e Zoom Out via scroll do mouse."""
-    zoom_changed = pyqtSignal(int)
+def color_to_hex(r: int, g: int, b: int, a: int = 255) -> str:
+    if a < 255:
+        return f"#{r:02X}{g:02X}{b:02X}{a:02X}"
+    return f"#{r:02X}{g:02X}{b:02X}"
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWidgetResizable(True)
 
-    def wheelEvent(self, event: QWheelEvent):
-        delta = event.angleDelta().y()
-        if delta > 0:
-            self.zoom_changed.emit(1)
+def hex_to_color(hex_str: str) -> Optional[Tuple[int, int, int, int]]:
+    cleaned = hex_str.strip().lstrip('#')
+    if len(cleaned) == 6:
+        try:
+            r = int(cleaned[0:2], 16)
+            g = int(cleaned[2:4], 16)
+            b = int(cleaned[4:6], 16)
+            return (r, g, b, 255)
+        except ValueError:
+            return None
+    elif len(cleaned) == 8:
+        try:
+            r = int(cleaned[0:2], 16)
+            g = int(cleaned[2:4], 16)
+            b = int(cleaned[4:6], 16)
+            a = int(cleaned[6:8], 16)
+            return (r, g, b, a)
+        except ValueError:
+            return None
+    return None
+
+
+class PaletteListWidget(QListWidget):
+    """QListWidget with keyboard shortcuts for rename (F2) and delete (Delete)."""
+
+    def __init__(self, parent_widget):
+        super().__init__(parent_widget)
+        self.parent_widget = parent_widget
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Delete:
+            self.parent_widget._delete_palette()
             event.accept()
-        elif delta < 0:
-            self.zoom_changed.emit(-1)
+        elif event.key() == Qt.Key_F2:
+            self.parent_widget._rename_palette()
             event.accept()
         else:
-            super().wheelEvent(event)
+            super().keyPressEvent(event)
 
 
 class PaletteEditorWidget(QWidget):
-    """Aba de Gerenciamento e Bancada de Testes de Paletas Globais de Fontes."""
+    """Global Font Palette Management and Editor Tab."""
     palettes_updated = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._current_profile_key: str = 'ui_3color'
         self._current_palette_name: Optional[str] = None
-        self._bmp_cache: Dict[str, BmpFont] = {}
-        self._preview_bg_color = PRESET_BACKGROUNDS[0][1]
-        self._preview_zoom: float = 2.0
-        self._showcase_selected_fonts: List[str] = ['text', 'convo', 'profont', 'small']
+        self._updating_inputs: bool = False
+        self._bmp_cache: Dict[str, Optional[BmpFont]] = {}
 
-        main_layout = QVBoxLayout()
+        main_layout = QHBoxLayout()
+        main_layout.setContentsMargins(0, 0, 0, 0)
         self.setLayout(main_layout)
 
-        # -- Top Action Bar --
-        action_bar = QHBoxLayout()
-        
-        info_label = QLabel(
-            "<b>Global Font Palettes</b>: Configure shared color ramps inherited by imported fonts. "
-            "Separated by profile (UI vs Dialogue) to prevent contrast inversion."
-        )
-        action_bar.addWidget(info_label, 1)
+        # -- Main Splitter --
+        self.splitter = QSplitter(Qt.Horizontal)
+        main_layout.addWidget(self.splitter)
 
-        apply_font_btn = QPushButton("Apply to Test Font")
-        apply_font_btn.setToolTip("Inject current palette into the currently selected test font")
-        apply_font_btn.clicked.connect(self._apply_current_to_selected_font)
-        action_bar.addWidget(apply_font_btn)
-
-        apply_all_btn = QPushButton("Apply to All Fonts")
-        apply_all_btn.setToolTip("Inject this palette into every project font")
-        apply_all_btn.clicked.connect(self._apply_current_to_all_fonts)
-        action_bar.addWidget(apply_all_btn)
-
-        sync_all_btn = QPushButton("Sync All Palettes to All Fonts")
-        sync_all_btn.setToolTip("Propagate all global palettes across every project font using matching profiles")
-        sync_all_btn.clicked.connect(self._sync_all_palettes_to_all_fonts)
-        action_bar.addWidget(sync_all_btn)
-
-        reset_all_btn = QPushButton("Reset Palettes to Factory")
-        reset_all_btn.setToolTip("Restore all global palette profiles to canonical GBA defaults")
-        reset_all_btn.clicked.connect(self._reset_to_factory)
-        action_bar.addWidget(reset_all_btn)
-
-        main_layout.addLayout(action_bar)
-
-        # -- Main Content Splitter --
-        splitter = QSplitter(Qt.Horizontal)
-        main_layout.addWidget(splitter, 1)
-
-        # Left Column: Palette List & Profile Selector
-        left_widget = QWidget()
+        # Column 1: Palette List & Profile Selector (left_frame)
+        self.left_frame = QWidget()
         left_layout = QVBoxLayout()
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_widget.setLayout(left_layout)
+        self.left_frame.setLayout(left_layout)
 
         profile_row = QHBoxLayout()
-        profile_row.addWidget(QLabel("<b>Profile:</b>"))
+        profile_row.addWidget(QLabel("Profile:"))
         self.profile_combo = ComboBox()
         for pkey, plabel, pdesc in PALETTE_PROFILES_META:
             self.profile_combo.addItem(plabel, pkey)
@@ -127,38 +108,85 @@ class PaletteEditorWidget(QWidget):
         profile_row.addWidget(self.profile_combo, 1)
         left_layout.addLayout(profile_row)
 
-        search_box = QLineEdit()
-        search_box.setPlaceholderText("Search palette in profile...")
-        search_box.textChanged.connect(self._on_search_palette)
-        self._search_box = search_box
-        left_layout.addWidget(search_box)
+        self._search_box = QLineEdit()
+        self._search_box.setPlaceholderText("Filter by keyword...")
+        self._search_box.textChanged.connect(self._on_search_palette)
+        left_layout.addWidget(self._search_box)
 
-        self.palette_list = QListWidget()
+        self.palette_list = PaletteListWidget(self)
+        self.palette_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.palette_list.customContextMenuRequested.connect(self._on_palette_context_menu)
         self.palette_list.currentTextChanged.connect(self._on_palette_selected)
         left_layout.addWidget(self.palette_list, 1)
 
-        list_btn_row = QHBoxLayout()
-        add_btn = QPushButton("+ Add")
-        add_btn.clicked.connect(self._add_palette)
-        del_btn = QPushButton("− Delete")
-        del_btn.clicked.connect(self._delete_palette)
-        dup_btn = QPushButton("Duplicate")
-        dup_btn.clicked.connect(self._duplicate_palette)
-        list_btn_row.addWidget(add_btn)
-        list_btn_row.addWidget(del_btn)
-        list_btn_row.addWidget(dup_btn)
-        left_layout.addLayout(list_btn_row)
+        # Bottom actions on left panel (Vanilla pattern)
+        self.create_btn = QPushButton("Create Palette...")
+        self.create_btn.clicked.connect(self._add_palette)
+        left_layout.addWidget(self.create_btn)
 
-        splitter.addWidget(left_widget)
+        btn_row = QHBoxLayout()
+        self.sync_btn = QPushButton("Sync to Fonts")
+        self.sync_btn.setToolTip("Synchronize all palette profiles across all project fonts")
+        self.sync_btn.clicked.connect(self._sync_all_palettes_to_all_fonts)
+        btn_row.addWidget(self.sync_btn)
 
-        # Middle Column: Palette Colors Swatch Editor
-        mid_group = QGroupBox("Selected Palette Colors")
-        mid_layout = QVBoxLayout()
-        mid_group.setLayout(mid_layout)
+        self.reset_btn = QPushButton("Reset Defaults")
+        self.reset_btn.setToolTip("Reset all global palette profiles to default")
+        self.reset_btn.clicked.connect(self._reset_to_factory)
+        btn_row.addWidget(self.reset_btn)
+        left_layout.addLayout(btn_row)
 
-        self._pal_title_label = QLabel("<b>Palette:</b> (none)")
-        mid_layout.addWidget(self._pal_title_label)
+        self.splitter.addWidget(self.left_frame)
 
+        # Column 2: Selected Palette Color Editor (right_frame)
+        self.right_frame = QWidget()
+        right_layout = QVBoxLayout()
+        self.right_frame.setLayout(right_layout)
+
+        # Palette Header
+        header_row = QHBoxLayout()
+        header_row.addWidget(QLabel("Palette:"))
+        self.name_edit = QLineEdit()
+        self.name_edit.setPlaceholderText("Palette Name")
+        self.name_edit.editingFinished.connect(self._on_palette_name_edited)
+        header_row.addWidget(self.name_edit, 1)
+
+        self._profile_badge = QLabel("")
+        header_row.addWidget(self._profile_badge)
+
+        apply_all_btn = QPushButton("Apply to All Fonts")
+        apply_all_btn.setToolTip("Apply this palette to all project fonts")
+        apply_all_btn.clicked.connect(self._apply_current_to_all_fonts)
+        header_row.addWidget(apply_all_btn)
+
+        right_layout.addLayout(header_row)
+
+        # Palette Preview Section
+        preview_group = QGroupBox("Preview")
+        preview_layout = QVBoxLayout()
+        preview_group.setLayout(preview_layout)
+
+        preview_ctrl_row = QHBoxLayout()
+        preview_ctrl_row.addWidget(QLabel("Font:"))
+        self.preview_font_combo = ComboBox()
+        self.preview_font_combo.currentIndexChanged.connect(self._on_preview_font_changed)
+        preview_ctrl_row.addWidget(self.preview_font_combo, 1)
+
+        self.preview_text_edit = QLineEdit("What? How?")
+        self.preview_text_edit.setPlaceholderText("Sample preview text...")
+        self.preview_text_edit.textChanged.connect(self._update_palette_preview)
+        preview_ctrl_row.addWidget(self.preview_text_edit, 2)
+        preview_layout.addLayout(preview_ctrl_row)
+
+        self.preview_display_lbl = QLabel()
+        self.preview_display_lbl.setMinimumHeight(44)
+        self.preview_display_lbl.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.preview_display_lbl.setStyleSheet("background-color: #141c2b; border: 1px solid #283854; border-radius: 6px; padding: 4px 10px;")
+        preview_layout.addWidget(self.preview_display_lbl)
+
+        right_layout.addWidget(preview_group)
+
+        # Swatch Slot Grid
         swatch_scroll = QScrollArea()
         swatch_scroll.setWidgetResizable(True)
         self._swatch_container = QWidget()
@@ -166,136 +194,40 @@ class PaletteEditorWidget(QWidget):
         self._swatch_layout.setAlignment(Qt.AlignTop)
         self._swatch_container.setLayout(self._swatch_layout)
         swatch_scroll.setWidget(self._swatch_container)
-        mid_layout.addWidget(swatch_scroll, 1)
+        right_layout.addWidget(swatch_scroll, 1)
 
-        twin_btn = QPushButton("⇄ Generate Twin Profile Counterpart")
-        twin_btn.setToolTip("Automatically generate 2-color dialogue version from 3-color UI, or vice versa")
-        twin_btn.clicked.connect(self._generate_twin_profile)
-        mid_layout.addWidget(twin_btn)
-
-        swatch_ctrl_row = QHBoxLayout()
-        add_color_btn = QPushButton("+ Color Slot")
+        # Swatch Actions Bar
+        bottom_row = QHBoxLayout()
+        add_color_btn = QPushButton("Add Slot")
         add_color_btn.clicked.connect(self._add_swatch_color)
-        del_color_btn = QPushButton("− Remove Slot")
+        del_color_btn = QPushButton("Remove Slot")
         del_color_btn.clicked.connect(self._del_swatch_color)
-        swatch_ctrl_row.addWidget(add_color_btn)
-        swatch_ctrl_row.addWidget(del_color_btn)
-        mid_layout.addLayout(swatch_ctrl_row)
+        self.twin_btn = QPushButton("Convert to Dialogue")
+        self.twin_btn.clicked.connect(self._generate_twin_profile)
 
-        splitter.addWidget(mid_group)
+        bottom_row.addWidget(add_color_btn)
+        bottom_row.addWidget(del_color_btn)
+        bottom_row.addWidget(self.twin_btn)
+        bottom_row.addStretch()
+        right_layout.addLayout(bottom_row)
 
-        # Right Column: Interactive Test Bench
-        test_group = QGroupBox("Interactive Test Bench (Live Preview)")
-        test_layout = QVBoxLayout()
-        test_group.setLayout(test_layout)
-
-        test_ctrl_row = QHBoxLayout()
-        test_ctrl_row.addWidget(QLabel("Test Font:"))
-        self.font_combo = ComboBox()
-        self.font_combo.setFixedWidth(160)
-        self.font_combo.currentTextChanged.connect(self._update_test_preview)
-        test_ctrl_row.addWidget(self.font_combo)
-
-        test_ctrl_row.addWidget(QLabel("Background:"))
-        self.bg_combo = ComboBox()
-        for label, _ in PRESET_BACKGROUNDS:
-            self.bg_combo.addItem(label)
-        self.bg_combo.currentIndexChanged.connect(self._on_bg_changed)
-        test_ctrl_row.addWidget(self.bg_combo)
-
-        # Zoom Controls
-        test_ctrl_row.addWidget(QLabel("<b>Zoom:</b>"))
-        zoom_out_btn = QPushButton("−")
-        zoom_out_btn.setFixedSize(24, 24)
-        zoom_out_btn.setToolTip("Zoom Out (or scroll wheel down on preview)")
-        zoom_out_btn.clicked.connect(lambda: self._adjust_zoom(-1))
-        test_ctrl_row.addWidget(zoom_out_btn)
-
-        self._zoom_label = QLabel("200%")
-        self._zoom_label.setFixedWidth(40)
-        self._zoom_label.setAlignment(Qt.AlignCenter)
-        test_ctrl_row.addWidget(self._zoom_label)
-
-        zoom_in_btn = QPushButton("+")
-        zoom_in_btn.setFixedSize(24, 24)
-        zoom_in_btn.setToolTip("Zoom In (or scroll wheel up on preview)")
-        zoom_in_btn.clicked.connect(lambda: self._adjust_zoom(1))
-        test_ctrl_row.addWidget(zoom_in_btn)
-
-        zoom_reset_btn = QPushButton("Reset 1x")
-        zoom_reset_btn.setToolTip("Reset to native 100% scale")
-        zoom_reset_btn.clicked.connect(lambda: self._set_zoom(1.0))
-        test_ctrl_row.addWidget(zoom_reset_btn)
-
-        test_ctrl_row.addStretch()
-        test_layout.addLayout(test_ctrl_row)
-
-        text_input_row = QHBoxLayout()
-        text_input_row.addWidget(QLabel("Sample Text:"))
-        self.test_text_input = QLineEdit()
-        self.test_text_input.setText(SAMPLE_TEXTS['default'])
-        self.test_text_input.textChanged.connect(self._update_test_preview)
-        text_input_row.addWidget(self.test_text_input, 1)
-
-        preset_text_combo = ComboBox()
-        preset_text_combo.addItem("Presets...")
-        for k, v in SAMPLE_TEXTS.items():
-            preset_text_combo.addItem(f"{k}: {v[:16]}...", v)
-        preset_text_combo.currentIndexChanged.connect(self._on_preset_text_chosen)
-        text_input_row.addWidget(preset_text_combo)
-        test_layout.addLayout(text_input_row)
-
-        # Multi-Font Showcase Header & Controls
-        showcase_ctrl_row = QHBoxLayout()
-        self.multi_font_check = QCheckBox("Showcase Multi-Font Comparison")
-        self.multi_font_check.stateChanged.connect(self._on_showcase_toggle)
-        showcase_ctrl_row.addWidget(self.multi_font_check)
-
-        self._showcase_add_combo = ComboBox()
-        self._showcase_add_combo.addItem("+ Add Font to Showcase...")
-        self._showcase_add_combo.currentIndexChanged.connect(self._on_showcase_add_chosen)
-        self._showcase_add_combo.setVisible(False)
-        showcase_ctrl_row.addWidget(self._showcase_add_combo)
-
-        self._showcase_clear_btn = QPushButton("Clear Showcase")
-        self._showcase_clear_btn.setVisible(False)
-        self._showcase_clear_btn.clicked.connect(self._on_showcase_clear)
-        showcase_ctrl_row.addWidget(self._showcase_clear_btn)
-
-        showcase_ctrl_row.addStretch()
-        test_layout.addLayout(showcase_ctrl_row)
-
-        # Showcase Active Chips Bar
-        self._showcase_chips_widget = QWidget()
-        self._showcase_chips_layout = QHBoxLayout()
-        self._showcase_chips_layout.setContentsMargins(0, 0, 0, 0)
-        self._showcase_chips_widget.setLayout(self._showcase_chips_layout)
-        self._showcase_chips_widget.setVisible(False)
-        test_layout.addWidget(self._showcase_chips_widget)
-
-        # Preview Display Box with Zoomable Scroll Area
-        preview_scroll = ZoomableScrollArea()
-        preview_scroll.zoom_changed.connect(self._adjust_zoom)
-        self._preview_container = QWidget()
-        self._preview_layout = QVBoxLayout()
-        self._preview_layout.setAlignment(Qt.AlignCenter)
-        self._preview_container.setLayout(self._preview_layout)
-        preview_scroll.setWidget(self._preview_container)
-        test_layout.addWidget(preview_scroll, 1)
-
-        self.main_preview_label = QLabel()
-        self.main_preview_label.setAlignment(Qt.AlignCenter)
-        self._preview_layout.addWidget(self.main_preview_label)
-
-        self.showcase_rows: List[QWidget] = []
-
-        splitter.addWidget(test_group)
-        splitter.setSizes([180, 260, 420])
+        self.splitter.addWidget(self.right_frame)
+        self.splitter.setSizes([220, 520])
 
         self.refresh_all()
 
+    @classmethod
+    def create(cls, parent=None, db=None, res=None):
+        return cls(parent)
+
+    def windowTitle(self) -> str:
+        return "Palettes"
+
+    def reset(self):
+        self.refresh_all()
+
     def refresh_all(self):
-        self._populate_font_combo()
+        self._update_compatible_fonts()
         self._populate_palette_list()
 
     def _get_active_profile_palettes(self) -> Dict[str, List[Color4]]:
@@ -313,34 +245,131 @@ class PaletteEditorWidget(QWidget):
 
     def _on_profile_changed(self, idx: int):
         self._current_profile_key = self.profile_combo.currentData() or 'ui_3color'
-        # Atualiza a fonte de teste sugerida e o background para combinar com o perfil
-        if self._current_profile_key == 'dialogue_2color':
-            if 'convo' in [f.nid for f in RESOURCES.fonts]:
-                self.font_combo.setCurrentText('convo')
-            # Seleciona Dialogue Bubble (#F8F8F0)
-            self.bg_combo.setCurrentIndex(2)
-            self.test_text_input.setText(SAMPLE_TEXTS['dialogue'])
-        elif self._current_profile_key == 'ui_3color':
-            if 'text' in [f.nid for f in RESOURCES.fonts]:
-                self.font_combo.setCurrentText('text')
-            # Seleciona Menu Dark (#202838)
-            self.bg_combo.setCurrentIndex(0)
-            self.test_text_input.setText(SAMPLE_TEXTS['default'])
-
+        if hasattr(self, 'twin_btn'):
+            if self._current_profile_key == 'ui_3color':
+                self.twin_btn.setText("Convert to Dialogue")
+            elif self._current_profile_key == 'dialogue_2color':
+                self.twin_btn.setText("Convert to UI")
+            else:
+                self.twin_btn.setText("Generate Twin")
+        self._update_compatible_fonts()
         self._populate_palette_list()
 
-    def _populate_font_combo(self):
-        curr = self.font_combo.currentText()
-        self.font_combo.blockSignals(True)
-        self.font_combo.clear()
+    def _on_preview_font_changed(self, idx: int):
+        self._update_palette_preview()
+
+    def _update_compatible_fonts(self):
+        if not hasattr(self, 'preview_font_combo'):
+            return
+        self.preview_font_combo.blockSignals(True)
+        cur_text = self.preview_font_combo.currentText()
+        self.preview_font_combo.clear()
+
+        # Discover fonts compatible with current profile
+        compatible_fonts = []
+        all_fonts = [f.nid for f in RESOURCES.fonts]
         for f in RESOURCES.fonts:
-            self.font_combo.addItem(f.nid)
-        if curr in [f.nid for f in RESOURCES.fonts]:
-            self.font_combo.setCurrentText(curr)
-        elif self.font_combo.count() > 0:
-            default_font = 'text' if 'text' in [f.nid for f in RESOURCES.fonts] else self.font_combo.itemText(0)
-            self.font_combo.setCurrentText(default_font)
-        self.font_combo.blockSignals(False)
+            prof = RESOURCES.fonts.get_profile_for_font(f)
+            if prof == self._current_profile_key:
+                compatible_fonts.append(f.nid)
+
+        font_choices = compatible_fonts if compatible_fonts else all_fonts
+        for fn in font_choices:
+            self.preview_font_combo.addItem(fn)
+
+        # Select a preferred default font if available
+        if cur_text in font_choices:
+            self.preview_font_combo.setCurrentText(cur_text)
+        else:
+            if self._current_profile_key == 'ui_3color':
+                for pref in ('text', 'text_white', 'small', 'narrow-blue'):
+                    if pref in font_choices:
+                        self.preview_font_combo.setCurrentText(pref)
+                        break
+            elif self._current_profile_key == 'dialogue_2color':
+                for pref in ('convo', 'bconvo', 'hint'):
+                    if pref in font_choices:
+                        self.preview_font_combo.setCurrentText(pref)
+                        break
+
+        self.preview_font_combo.blockSignals(False)
+        self._update_palette_preview()
+
+    def _get_bmp(self, font_nid: str):
+        if font_nid not in self._bmp_cache:
+            font_prefab = RESOURCES.fonts.get(font_nid)
+            if font_prefab and font_prefab.image_path() and os.path.exists(font_prefab.image_path()):
+                try:
+                    self._bmp_cache[font_nid] = BmpFont(font_prefab, headless=True)
+                except Exception:
+                    self._bmp_cache[font_nid] = None
+            else:
+                self._bmp_cache[font_nid] = None
+        return self._bmp_cache[font_nid]
+
+    def _update_palette_preview(self):
+        if not hasattr(self, 'preview_display_lbl') or not hasattr(self, 'preview_font_combo'):
+            return
+
+        font_nid = self.preview_font_combo.currentText()
+        palettes = self._get_active_profile_palettes()
+        if not self._current_palette_name or self._current_palette_name not in palettes:
+            self.preview_display_lbl.clear()
+            self.preview_display_lbl.setText("  (No palette selected)")
+            return
+
+        current_colors = palettes[self._current_palette_name]
+        sample_text = self.preview_text_edit.text() if hasattr(self, 'preview_text_edit') else "Preview 123"
+        if not sample_text:
+            sample_text = "Preview 123"
+
+        font_prefab = RESOURCES.fonts.get(font_nid)
+        bmp = self._get_bmp(font_nid) if font_nid else None
+
+        if not bmp or not font_prefab:
+            self.preview_display_lbl.clear()
+            self.preview_display_lbl.setText(f"  ({font_nid or 'No font'} preview unavailable)")
+            return
+
+        try:
+            import pygame
+            temp_key = "__temp_preview_palette__"
+
+            # Base colors and surface from the font sheet
+            base_nid = font_prefab.base_palette_nid or bmp.default_color
+            base_palette = font_prefab.palettes.get(base_nid) if base_nid else None
+            base_surf = bmp.surfaces.get(base_nid, bmp.surfaces.get(bmp.default_color))
+
+            target_count = len(base_palette) if base_palette else len(current_colors)
+            adapted_colors = adapt_palette_to_font(current_colors, target_count)
+
+            if base_surf and base_palette:
+                palette_map = {orig: new for orig, new in zip(map(tuple, base_palette), map(tuple, adapted_colors))}
+                custom_surf = image_mods.color_convert_alpha(base_surf.copy(), palette_map)
+                bmp.surfaces[temp_key] = custom_surf
+                # Invalidate cached glyphs for the temp palette
+                bmp._chars = {k: v for k, v in bmp._chars.items() if k[1] != temp_key}
+                bmp._stacked_chars = {k: v for k, v in bmp._stacked_chars.items() if k[1] != temp_key}
+            else:
+                font_prefab.palettes[temp_key] = [tuple(c) for c in adapted_colors]
+
+            w = max(bmp.width(sample_text), 1) + 12
+            h = bmp.height + 6
+            surf = pygame.Surface((w, h), pygame.SRCALPHA, 32)
+            bmp.blit(sample_text, surf, (2, 2), color=temp_key)
+
+            # Cleanup temp allocations
+            bmp.surfaces.pop(temp_key, None)
+            font_prefab.palettes.pop(temp_key, None)
+
+            raw = engine.surf_to_raw(surf, 'RGBA')
+            img = QImage(raw, w, h, QImage.Format_RGBA8888)
+            pix = QPixmap.fromImage(img)
+            scaled = pix.scaled(w * 2, h * 2, Qt.KeepAspectRatio, Qt.FastTransformation)
+            self.preview_display_lbl.setPixmap(scaled)
+        except Exception:
+            self.preview_display_lbl.clear()
+            self.preview_display_lbl.setText("  (Error rendering preview)")
 
     def _populate_palette_list(self, select_name: Optional[str] = None):
         self.palette_list.blockSignals(True)
@@ -370,7 +399,6 @@ class PaletteEditorWidget(QWidget):
 
         self.palette_list.blockSignals(False)
         self._rebuild_swatches()
-        self._update_test_preview()
 
     def _on_search_palette(self, _):
         self._populate_palette_list(self._current_palette_name)
@@ -380,163 +408,264 @@ class PaletteEditorWidget(QWidget):
             return
         self._current_palette_name = name
         self._rebuild_swatches()
-        self._update_test_preview()
+
+    def _on_palette_context_menu(self, pos):
+        menu = QMenu(self)
+        add_act = menu.addAction("New Palette...")
+        add_act.triggered.connect(self._add_palette)
+
+        selected_item = self.palette_list.itemAt(pos)
+        if selected_item:
+            dup_act = menu.addAction("Duplicate")
+            dup_act.triggered.connect(self._duplicate_palette)
+
+            rename_act = menu.addAction("Rename...")
+            rename_act.triggered.connect(self._rename_palette)
+
+            menu.addSeparator()
+            del_act = menu.addAction("Delete")
+            del_act.triggered.connect(self._delete_palette)
+
+        menu.exec_(self.palette_list.mapToGlobal(pos))
+
+    def _on_palette_name_edited(self):
+        new_name = self.name_edit.text().strip()
+        if not self._current_palette_name or not new_name or new_name == self._current_palette_name:
+            if self._current_palette_name:
+                self.name_edit.setText(self._current_palette_name)
+            return
+        palettes = self._get_active_profile_palettes()
+        if new_name in palettes:
+            QMessageBox.warning(self, "Duplicate Name", f"A palette named '{new_name}' already exists in this profile.")
+            self.name_edit.setText(self._current_palette_name)
+            return
+
+        palettes[new_name] = palettes.pop(self._current_palette_name)
+        self._current_palette_name = new_name
+        self._save_palettes_to_project()
+        self._populate_palette_list(select_name=new_name)
 
     def _rebuild_swatches(self):
-        # Limpa swatches anteriores
+        # Clear previous widgets
         while self._swatch_layout.count():
             item = self._swatch_layout.takeAt(0)
             if item.widget():
                 item.widget().setParent(None)
+            elif item.layout():
+                while item.layout().count():
+                    sub_item = item.layout().takeAt(0)
+                    if sub_item.widget():
+                        sub_item.widget().setParent(None)
 
         palettes = self._get_active_profile_palettes()
         if not self._current_palette_name or self._current_palette_name not in palettes:
-            self._pal_title_label.setText("<b>Palette:</b> (none)")
+            self.name_edit.blockSignals(True)
+            self.name_edit.setText("")
+            self.name_edit.setEnabled(False)
+            self.name_edit.blockSignals(False)
+            self._profile_badge.setText("(No palette selected)")
             return
 
-        colors = palettes[self._current_palette_name]
+        self.name_edit.setEnabled(True)
+        self.name_edit.blockSignals(True)
+        self.name_edit.setText(self._current_palette_name)
+        self.name_edit.blockSignals(False)
+
         profile_names = {
             'ui_3color': "UI (3 Colors)",
             'dialogue_2color': "Dialogue (2 Colors)",
             'custom': "Custom",
         }
         prof_title = profile_names.get(self._current_profile_key, self._current_profile_key)
-        self._pal_title_label.setText(
-            f"<b>Profile:</b> <span style='color:#ffaa00;'>{prof_title}</span> | "
-            f"<b>Palette:</b> <span style='color:#55aaff;'>{self._current_palette_name}</span> "
-            f"({len(colors)} slots)"
-        )
+        colors = palettes[self._current_palette_name]
+        self._profile_badge.setText(f"({prof_title})")
 
         if self._current_profile_key == 'ui_3color':
             role_hints = [
-                "0: Body / Fore (Light)",
-                "1: Shadow (Dark)",
-                "2: Midtone / Anti-alias"
+                "Body (Light)",
+                "Shadow (Dark)",
+                "Midtone"
             ]
         elif self._current_profile_key == 'dialogue_2color':
             role_hints = [
-                "0: Ink Body (Dark)",
-                "1: Highlight / Shadow (Light)"
+                "Ink (Dark)",
+                "Highlight (Light)"
             ]
         else:
-            role_hints = [f"{i}: Slot {i}" for i in range(len(colors))]
+            role_hints = [f"Slot {i}" for i in range(len(colors))]
+
+        self._swatch_layout.setSpacing(6)
 
         for idx, color in enumerate(colors):
-            row_widget = QWidget()
-            row_layout = QHBoxLayout()
-            row_layout.setContentsMargins(2, 2, 2, 2)
-            row_widget.setLayout(row_layout)
+            card = QFrame()
+            card.setFrameShape(QFrame.StyledPanel)
+            card.setStyleSheet(
+                "QFrame { background-color: #2b2b30; border: 1px solid #3c3c44; border-radius: 6px; padding: 4px; }"
+                "QLabel { border: none; background: transparent; }"
+            )
+            row_layout = QHBoxLayout(card)
+            row_layout.setContentsMargins(8, 4, 8, 4)
+            row_layout.setSpacing(10)
 
             r, g, b = color[0], color[1], color[2]
             a = color[3] if len(color) > 3 else 255
 
-            btn = QPushButton()
-            btn.setFixedSize(32, 32)
-            btn.setStyleSheet(f"background-color: rgba({r},{g},{b},{a/255.0}); border: 2px solid #555;")
-            btn.setToolTip(f"RGBA({r}, {g}, {b}, {a}) — Click to change color")
-            btn.clicked.connect(lambda _, i=idx: self._pick_swatch_color(i))
+            # Slot badge
+            slot_lbl = QLabel(f"#{idx}")
+            slot_lbl.setFixedWidth(24)
+            slot_lbl.setStyleSheet("font-weight: bold; color: #a0a0b0; font-size: 11px;")
+
+            # Role badge
+            hint = role_hints[idx] if idx < len(role_hints) else f"Slot {idx}"
+            role_lbl = QLabel(hint)
+            role_lbl.setFixedWidth(115)
+            role_lbl.setStyleSheet("font-weight: 500; color: #e0e0e0;")
+
+            # Color Picker Swatch (32x32)
+            btn = AlphaColorIcon(QColor(r, g, b, a), self)
+            btn.set_size(30)
+            btn.setToolTip("Click to choose color from palette picker")
+
+            # Hex field
+            hex_layout = QHBoxLayout()
+            hex_layout.setSpacing(2)
+            hex_prefix = QLabel("#")
+            hex_prefix.setStyleSheet("color: #888; font-weight: bold;")
+            hex_edit = QLineEdit()
+            hex_edit.setFixedWidth(75)
+            clean_hex = color_to_hex(r, g, b, a).lstrip('#')
+            hex_edit.setText(clean_hex)
+            hex_edit.setPlaceholderText("RRGGBB")
+            hex_edit.setToolTip("Hex code (RRGGBB or RRGGBBAA)")
+            hex_edit.setStyleSheet("font-family: monospace; font-size: 11px;")
+            hex_layout.addWidget(hex_prefix)
+            hex_layout.addWidget(hex_edit)
+
+            # RGBA channels with compact identifier badges
+            channels_layout = QHBoxLayout()
+            channels_layout.setSpacing(4)
+
+            def create_channel_box(name: str, val: int, bg_color: str, tooltip: str):
+                box = QHBoxLayout()
+                box.setSpacing(2)
+                badge = QLabel(name)
+                badge.setFixedSize(16, 20)
+                badge.setAlignment(Qt.AlignCenter)
+                badge.setStyleSheet(f"background-color: {bg_color}; color: #ffffff; border-radius: 3px; font-weight: bold; font-size: 10px;")
+                spin = QSpinBox()
+                spin.setRange(0, 255)
+                spin.setValue(val)
+                spin.setFixedWidth(48)
+                spin.setToolTip(tooltip)
+                box.addWidget(badge)
+                box.addWidget(spin)
+                return box, spin
+
+            r_box, r_spin = create_channel_box("R", r, "#b71c1c", "Red channel (0-255)")
+            g_box, g_spin = create_channel_box("G", g, "#1b5e20", "Green channel (0-255)")
+            b_box, b_spin = create_channel_box("B", b, "#0d47a1", "Blue channel (0-255)")
+            a_box, a_spin = create_channel_box("A", a, "#4a148c", "Alpha / Opacity channel (0-255)")
+
+            channels_layout.addLayout(r_box)
+            channels_layout.addLayout(g_box)
+            channels_layout.addLayout(b_box)
+            channels_layout.addLayout(a_box)
+
+            def make_color_handlers(i=idx, b_widget=btn, h_widget=hex_edit, rs=r_spin, gs=g_spin, bs=b_spin, as_s=a_spin):
+                def on_color_icon_changed(nc: QColor):
+                    pal = self._get_active_profile_palettes()
+                    if not self._current_palette_name or i >= len(pal.get(self._current_palette_name, [])):
+                        return
+                    new_tuple = (nc.red(), nc.green(), nc.blue(), nc.alpha())
+                    pal[self._current_palette_name][i] = new_tuple
+                    rs.blockSignals(True)
+                    gs.blockSignals(True)
+                    bs.blockSignals(True)
+                    as_s.blockSignals(True)
+                    h_widget.blockSignals(True)
+                    rs.setValue(nc.red())
+                    gs.setValue(nc.green())
+                    bs.setValue(nc.blue())
+                    as_s.setValue(nc.alpha())
+                    h_widget.setText(color_to_hex(*new_tuple).lstrip('#'))
+                    rs.blockSignals(False)
+                    gs.blockSignals(False)
+                    bs.blockSignals(False)
+                    as_s.blockSignals(False)
+                    h_widget.blockSignals(False)
+                    self._save_palettes_to_project()
+                    self._update_palette_preview()
+
+                def on_hex_changed(text):
+                    clean_text = text.strip().lstrip('#')
+                    parsed = hex_to_color(clean_text)
+                    if not parsed:
+                        return
+                    pal = self._get_active_profile_palettes()
+                    if not self._current_palette_name or i >= len(pal.get(self._current_palette_name, [])):
+                        return
+                    pal[self._current_palette_name][i] = parsed
+                    b_widget.blockSignals(True)
+                    b_widget.change_color(QColor(*parsed))
+                    b_widget.blockSignals(False)
+                    rs.blockSignals(True)
+                    gs.blockSignals(True)
+                    bs.blockSignals(True)
+                    as_s.blockSignals(True)
+                    rs.setValue(parsed[0])
+                    gs.setValue(parsed[1])
+                    bs.setValue(parsed[2])
+                    as_s.setValue(parsed[3])
+                    rs.blockSignals(False)
+                    gs.blockSignals(False)
+                    bs.blockSignals(False)
+                    as_s.blockSignals(False)
+                    self._save_palettes_to_project()
+                    self._update_palette_preview()
+
+                def on_spin_changed():
+                    pal = self._get_active_profile_palettes()
+                    if not self._current_palette_name or i >= len(pal.get(self._current_palette_name, [])):
+                        return
+                    new_tuple = (rs.value(), gs.value(), bs.value(), as_s.value())
+                    pal[self._current_palette_name][i] = new_tuple
+                    b_widget.blockSignals(True)
+                    b_widget.change_color(QColor(*new_tuple))
+                    b_widget.blockSignals(False)
+                    h_widget.blockSignals(True)
+                    h_widget.setText(color_to_hex(*new_tuple).lstrip('#'))
+                    h_widget.blockSignals(False)
+                    self._save_palettes_to_project()
+                    self._update_palette_preview()
+
+                b_widget.colorChanged.connect(on_color_icon_changed)
+                h_widget.textEdited.connect(on_hex_changed)
+                rs.valueChanged.connect(on_spin_changed)
+                gs.valueChanged.connect(on_spin_changed)
+                bs.valueChanged.connect(on_spin_changed)
+                as_s.valueChanged.connect(on_spin_changed)
+
+            make_color_handlers()
+
+            row_layout.addWidget(slot_lbl)
+            row_layout.addWidget(role_lbl)
             row_layout.addWidget(btn)
+            row_layout.addLayout(hex_layout)
+            row_layout.addLayout(channels_layout)
+            row_layout.addStretch()
 
-            hint = role_hints[idx] if idx < len(role_hints) else f"{idx}: Tone {idx}"
-            lbl = QLabel(f"<b>{hint}</b><br><span style='color:#888;font-size:10px;'>RGB({r}, {g}, {b})</span>")
-            row_layout.addWidget(lbl, 1)
+            self._swatch_layout.addWidget(card)
 
-            self._swatch_layout.addWidget(row_widget)
-
-    def _pick_swatch_color(self, index: int):
-        palettes = self._get_active_profile_palettes()
-        if not self._current_palette_name or self._current_palette_name not in palettes:
-            return
-        colors = palettes[self._current_palette_name]
-        if index >= len(colors):
-            return
-
-        cur = colors[index]
-        r, g, b = cur[0], cur[1], cur[2]
-        a = cur[3] if len(cur) > 3 else 255
-        dialog = QColorDialog(QColor(r, g, b, a), self)
-        dialog.setOption(QColorDialog.ShowAlphaChannel, True)
-        if dialog.exec_():
-            chosen = dialog.selectedColor()
-            colors[index] = (chosen.red(), chosen.green(), chosen.blue(), chosen.alpha())
-            self._save_palettes_to_project()
-            self._rebuild_swatches()
-            self._update_test_preview()
-
-    def _add_swatch_color(self):
-        palettes = self._get_active_profile_palettes()
-        if not self._current_palette_name or self._current_palette_name not in palettes:
-            return
-        colors = palettes[self._current_palette_name]
-        last_color = colors[-1] if colors else (128, 128, 128, 255)
-        colors.append(last_color)
-        self._save_palettes_to_project()
-        self._rebuild_swatches()
-        self._update_test_preview()
-
-    def _del_swatch_color(self):
-        palettes = self._get_active_profile_palettes()
-        if not self._current_palette_name or self._current_palette_name not in palettes:
-            return
-        colors = palettes[self._current_palette_name]
-        if len(colors) <= 1:
-            QMessageBox.information(self, "Notice", "A palette must have at least one color slot.")
-            return
-        colors.pop()
-        self._save_palettes_to_project()
-        self._rebuild_swatches()
-        self._update_test_preview()
-
-    def _generate_twin_profile(self):
-        """Gera versão de diálogo a partir de UI ou versão de UI a partir de diálogo."""
-        if not self._current_palette_name:
-            return
-        profiles = getattr(RESOURCES.fonts, 'palette_profiles', {})
-        cur_colors = self._get_active_profile_palettes().get(self._current_palette_name)
-        if not cur_colors:
-            return
-
-        if self._current_profile_key == 'ui_3color':
-            # Converte UI (3 cores: corpo claro, sombra escura, midtone) para Dialogue (2 cores: tinta escura, sombra clara)
-            # Slot 0 de diálogo = Tinta escura derivada da sombra da UI ou saturação
-            # Slot 1 de diálogo = Realce claro derivado do midtone ou corpo
-            dark_ink = cur_colors[1] if len(cur_colors) > 1 else (40, 40, 40, 255)
-            light_shadow = cur_colors[2] if len(cur_colors) > 2 else (184, 184, 184, 255)
-            twin = [dark_ink, light_shadow]
-            target_profile = 'dialogue_2color'
-            msg_target = "Dialogue & Story (2 Colors)"
-        else:
-            # Converte Dialogue (2 cores: tinta escura, sombra clara) para UI (3 cores: corpo claro, sombra escura, midtone)
-            light_body = cur_colors[1] if len(cur_colors) > 1 else (248, 248, 248, 255)
-            dark_shadow = cur_colors[0] if len(cur_colors) > 0 else (40, 40, 40, 255)
-            midtone = (
-                int(light_body[0] * 0.6 + dark_shadow[0] * 0.4),
-                int(light_body[1] * 0.6 + dark_shadow[1] * 0.4),
-                int(light_body[2] * 0.6 + dark_shadow[2] * 0.4),
-                255
-            )
-            twin = [light_body, dark_shadow, midtone]
-            target_profile = 'ui_3color'
-            msg_target = "UI & Menus (3 Colors)"
-
-        if target_profile not in profiles:
-            profiles[target_profile] = {}
-        profiles[target_profile][self._current_palette_name] = twin
-        self._save_palettes_to_project()
-
-        QMessageBox.information(
-            self, "Twin Profile Generated",
-            f"Successfully generated '{self._current_palette_name}' in profile '{msg_target}'."
-        )
+        self._update_palette_preview()
 
     def _add_palette(self):
-        name, ok = QInputDialog.getText(self, "Add Global Palette", "Palette name:")
+        name, ok = QInputDialog.getText(self, "Add Palette", "Palette name:")
         if not ok or not name.strip():
             return
         name = name.strip()
         palettes = self._get_active_profile_palettes()
         if name in palettes:
-            QMessageBox.warning(self, "Duplicate", f"A palette named '{name}' already exists in this profile.")
+            QMessageBox.warning(self, "Duplicate Name", f"A palette named '{name}' already exists in this profile.")
             return
 
         ref_colors = palettes.get(self._current_palette_name)
@@ -580,10 +709,88 @@ class PaletteEditorWidget(QWidget):
         self._save_palettes_to_project()
         self._populate_palette_list(select_name=new_name)
 
+    def _rename_palette(self):
+        if not self._current_palette_name:
+            return
+        old_name = self._current_palette_name
+        new_name, ok = QInputDialog.getText(
+            self, "Rename Palette", "New palette name:", QLineEdit.Normal, old_name)
+        if not ok or not new_name.strip() or new_name.strip() == old_name:
+            return
+        new_name = new_name.strip()
+        palettes = self._get_active_profile_palettes()
+        if new_name in palettes:
+            QMessageBox.warning(self, "Duplicate Name", f"A palette named '{new_name}' already exists in this profile.")
+            return
+        palettes[new_name] = palettes.pop(old_name)
+        self._current_palette_name = new_name
+        self._save_palettes_to_project()
+        self._populate_palette_list(select_name=new_name)
+
+    def _add_swatch_color(self):
+        palettes = self._get_active_profile_palettes()
+        if not self._current_palette_name or self._current_palette_name not in palettes:
+            return
+        colors = palettes[self._current_palette_name]
+        last_color = colors[-1] if colors else (128, 128, 128, 255)
+        colors.append(last_color)
+        self._save_palettes_to_project()
+        self._rebuild_swatches()
+
+    def _del_swatch_color(self):
+        palettes = self._get_active_profile_palettes()
+        if not self._current_palette_name or self._current_palette_name not in palettes:
+            return
+        colors = palettes[self._current_palette_name]
+        if len(colors) <= 1:
+            QMessageBox.information(self, "Notice", "A palette must have at least one color slot.")
+            return
+        colors.pop()
+        self._save_palettes_to_project()
+        self._rebuild_swatches()
+
+    def _generate_twin_profile(self):
+        """Generates a dialogue counterpart from UI palette or a UI counterpart from dialogue palette."""
+        if not self._current_palette_name:
+            return
+        cur_colors = self._get_active_profile_palettes().get(self._current_palette_name)
+        if not cur_colors:
+            return
+
+        if self._current_profile_key == 'ui_3color':
+            dark_ink = cur_colors[1] if len(cur_colors) > 1 else (40, 40, 40, 255)
+            light_shadow = cur_colors[2] if len(cur_colors) > 2 else (184, 184, 184, 255)
+            twin = [dark_ink, light_shadow]
+            target_profile = 'dialogue_2color'
+            msg_target = "Dialogue & Story (2 Colors)"
+        else:
+            light_body = cur_colors[1] if len(cur_colors) > 1 else (248, 248, 248, 255)
+            dark_shadow = cur_colors[0] if len(cur_colors) > 0 else (40, 40, 40, 255)
+            midtone = (
+                int(light_body[0] * 0.6 + dark_shadow[0] * 0.4),
+                int(light_body[1] * 0.6 + dark_shadow[1] * 0.4),
+                int(light_body[2] * 0.6 + dark_shadow[2] * 0.4),
+                255
+            )
+            twin = [light_body, dark_shadow, midtone]
+            target_profile = 'ui_3color'
+            msg_target = "UI & Menus (3 Colors)"
+
+        target_dict = getattr(RESOURCES.fonts, 'palette_profiles', {}).get(target_profile)
+        if target_dict is None:
+            return
+        target_dict[self._current_palette_name] = twin
+        self._save_palettes_to_project()
+
+        QMessageBox.information(
+            self, "Twin Profile Created",
+            f"Successfully generated twin palette for '{self._current_palette_name}' in profile '{msg_target}'."
+        )
+
     def _reset_to_factory(self):
         confirm = QMessageBox.question(
-            self, "Reset to Factory",
-            "This will reset all global palette profiles (UI, Dialogue) to canonical GBA / Lex Talionis defaults. Proceed?",
+            self, "Reset Defaults",
+            "This will reset all global palette profiles (UI, Dialogue) to defaults. Proceed?",
             QMessageBox.Yes | QMessageBox.No
         )
         if confirm != QMessageBox.Yes:
@@ -596,27 +803,6 @@ class PaletteEditorWidget(QWidget):
         RESOURCES.fonts.global_palettes = RESOURCES.fonts.palette_profiles['ui_3color']
         self._save_palettes_to_project()
         self._populate_palette_list()
-
-    def _apply_current_to_selected_font(self):
-        target_fnid = self.font_combo.currentText()
-        font_obj = RESOURCES.fonts.get(target_fnid)
-        if not font_obj or not self._current_palette_name:
-            return
-        palettes = self._get_active_profile_palettes()
-        pal_colors = palettes.get(self._current_palette_name)
-        if not pal_colors:
-            return
-
-        base_nid = font_obj.base_palette_nid
-        base_palette = font_obj.palettes.get(base_nid) if base_nid else None
-        target_count = len(base_palette) if base_palette else len(pal_colors)
-        font_obj.palettes[self._current_palette_name] = adapt_palette_to_font(pal_colors, target_count)
-        self._save_all_project_resources()
-        QMessageBox.information(
-            self, "Applied",
-            f"Palette '{self._current_palette_name}' successfully applied to font '{target_fnid}'."
-        )
-        self._update_test_preview()
 
     def _apply_current_to_all_fonts(self):
         if not self._current_palette_name:
@@ -639,7 +825,6 @@ class PaletteEditorWidget(QWidget):
             self, "Applied Everywhere",
             f"Palette '{self._current_palette_name}' was applied to all {count} fonts in the project."
         )
-        self._update_test_preview()
 
     def _sync_all_palettes_to_all_fonts(self):
         profiles = getattr(RESOURCES.fonts, 'palette_profiles', {})
@@ -653,7 +838,6 @@ class PaletteEditorWidget(QWidget):
             self, "Synchronization Complete",
             f"All palette profiles synchronized across all {len(RESOURCES.fonts)} project fonts!"
         )
-        self._update_test_preview()
 
     def _save_palettes_to_project(self):
         if hasattr(RESOURCES.fonts, 'save_palettes'):
@@ -665,208 +849,6 @@ class PaletteEditorWidget(QWidget):
         if hasattr(RESOURCES.fonts, 'save_assignments'):
             RESOURCES.fonts.save_assignments()
 
-    def _on_bg_changed(self, idx: int):
-        if 0 <= idx < len(PRESET_BACKGROUNDS):
-            self._preview_bg_color = PRESET_BACKGROUNDS[idx][1]
-            self._update_test_preview()
 
-    def _on_preset_text_chosen(self, idx: int):
-        if idx > 0:
-            combo = self.sender()
-            text = combo.itemData(idx)
-            if text:
-                self.test_text_input.setText(text)
-
-    def _adjust_zoom(self, step: int):
-        zoom_levels = [0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0]
-        # Encontra o nível mais próximo
-        closest_idx = 0
-        min_diff = 999
-        for i, lvl in enumerate(zoom_levels):
-            diff = abs(lvl - self._preview_zoom)
-            if diff < min_diff:
-                min_diff = diff
-                closest_idx = i
-
-        new_idx = max(0, min(len(zoom_levels) - 1, closest_idx + step))
-        self._set_zoom(zoom_levels[new_idx])
-
-    def _set_zoom(self, zoom: float):
-        self._preview_zoom = max(0.5, min(8.0, zoom))
-        self._zoom_label.setText(f"{int(self._preview_zoom * 100)}%")
-        self._update_test_preview()
-
-    def _on_showcase_toggle(self, state):
-        is_checked = (state == Qt.Checked)
-        self._showcase_add_combo.setVisible(is_checked)
-        self._showcase_clear_btn.setVisible(is_checked)
-        self._showcase_chips_widget.setVisible(is_checked)
-        if is_checked:
-            self._update_showcase_chips()
-        self._update_test_preview()
-
-    def _on_showcase_add_chosen(self, idx: int):
-        if idx > 0:
-            chosen_font = self._showcase_add_combo.itemText(idx)
-            if chosen_font and chosen_font not in self._showcase_selected_fonts:
-                self._showcase_selected_fonts.append(chosen_font)
-                self._update_showcase_chips()
-                self._update_test_preview()
-            self._showcase_add_combo.setCurrentIndex(0)
-
-    def _on_showcase_clear(self):
-        self._showcase_selected_fonts.clear()
-        self._update_showcase_chips()
-        self._update_test_preview()
-
-    def _update_showcase_chips(self):
-        # Limpa layout anterior de chips
-        while self._showcase_chips_layout.count():
-            item = self._showcase_chips_layout.takeAt(0)
-            if item.widget():
-                item.widget().setParent(None)
-
-        self._showcase_chips_layout.addWidget(QLabel("<b>Comparing:</b>"))
-
-        for fnid in list(self._showcase_selected_fonts):
-            chip = QPushButton(f"{fnid} ✕")
-            chip.setStyleSheet("padding: 2px 6px; font-size: 11px; border: 1px solid #777; border-radius: 3px;")
-            chip.setToolTip(f"Click to remove '{fnid}' from showcase")
-            chip.clicked.connect(lambda _, f=fnid: self._remove_showcase_font(f))
-            self._showcase_chips_layout.addWidget(chip)
-
-        self._showcase_chips_layout.addStretch()
-
-        # Atualiza itens disponíveis no combo de adição
-        self._showcase_add_combo.blockSignals(True)
-        self._showcase_add_combo.clear()
-        self._showcase_add_combo.addItem("+ Add Font to Showcase...")
-        for f in RESOURCES.fonts:
-            if f.nid not in self._showcase_selected_fonts:
-                self._showcase_add_combo.addItem(f.nid)
-        self._showcase_add_combo.blockSignals(False)
-
-    def _remove_showcase_font(self, fnid: str):
-        if fnid in self._showcase_selected_fonts:
-            self._showcase_selected_fonts.remove(fnid)
-            self._update_showcase_chips()
-            self._update_test_preview()
-
-    def _render_font_text(self, font_nid: str, text: str, palette_colors: List[Tuple[int, int, int, int]]) -> Optional[QPixmap]:
-        font_obj = RESOURCES.fonts.get(font_nid)
-        if not font_obj or not font_obj.image_path() or not os.path.exists(font_obj.image_path()):
-            return None
-
-        # Cria ou obtém BmpFont
-        if font_nid not in self._bmp_cache:
-            try:
-                self._bmp_cache[font_nid] = BmpFont(font_obj, headless=True)
-            except Exception:
-                return None
-        bmp = self._bmp_cache[font_nid]
-        if not bmp or not bmp.index:
-            return None
-
-        base_nid = font_obj.base_palette_nid
-        base_palette = font_obj.palettes.get(base_nid, [])
-        if not base_palette:
-            return None
-
-        adapted = adapt_palette_to_font(palette_colors, len(base_palette))
-        palette_map = {tuple(orig): tuple(new) for orig, new in zip(base_palette, adapted)}
-
-        try:
-            import pygame
-            base_surf = engine.image_load(font_obj.image_path(), convert_alpha=False)
-            recolored_sheet = image_mods.color_convert_alpha(base_surf, palette_map)
-
-            # Renderiza o texto
-            line_w = max(bmp.width(text), 1) + 12
-            line_h = bmp.height + 6
-            out_surf = pygame.Surface((line_w, line_h), pygame.SRCALPHA, 32)
-
-            curr_x = 4
-            for char in text:
-                char_to_use = char.upper() if bmp.all_uppercase else (char.lower() if bmp.all_lowercase else char)
-                glyph = bmp.index.get(char_to_use)
-                if glyph:
-                    rect = (glyph.x, glyph.y, glyph.char_width, bmp.index.char_height)
-                    char_surf = engine.subsurface(recolored_sheet, rect)
-                    out_surf.blit(char_surf, (curr_x, 3))
-                    curr_x += glyph.char_width + bmp.space_offset
-                else:
-                    curr_x += bmp.index.char_width
-
-            raw = engine.surf_to_raw(out_surf, 'RGBA')
-            img = QImage(raw, line_w, line_h, QImage.Format_RGBA8888)
-            pix = QPixmap.fromImage(img)
-            
-            # Escala conforme o nível de zoom ativo (com renderização nítida pixel art)
-            scaled_w = max(1, int(line_w * self._preview_zoom))
-            scaled_h = max(1, int(line_h * self._preview_zoom))
-            return pix.scaled(scaled_w, scaled_h, Qt.KeepAspectRatio, Qt.FastTransformation)
-        except Exception:
-            return None
-
-    def _update_test_preview(self):
-        palettes = self._get_active_profile_palettes()
-        if not self._current_palette_name or self._current_palette_name not in palettes:
-            self.main_preview_label.setText("(No palette selected)")
-            return
-
-        palette_colors = palettes[self._current_palette_name]
-        sample_text = self.test_text_input.text().strip() or "Sample Text 123"
-        bg_hex = self._preview_bg_color.name()
-
-        # Atualiza cor de fundo dos previews
-        self._preview_container.setStyleSheet(f"background-color: {bg_hex}; border-radius: 4px; padding: 12px;")
-
-        show_multi = self.multi_font_check.isChecked()
-
-        if not show_multi:
-            # Modo Único
-            for r in self.showcase_rows:
-                r.setVisible(False)
-            self.main_preview_label.setVisible(True)
-
-            font_nid = self.font_combo.currentText()
-            pix = self._render_font_text(font_nid, sample_text, palette_colors)
-            if pix:
-                self.main_preview_label.setPixmap(pix)
-            else:
-                self.main_preview_label.setText(f"({font_nid} preview unavailable)")
-        else:
-            # Modo Showcase Multi-Font Customizável
-            self.main_preview_label.setVisible(False)
-
-            # Limpa widgets anteriores do showcase layout
-            while self._preview_layout.count() > 1:
-                item = self._preview_layout.takeAt(1)
-                if item.widget():
-                    item.widget().setParent(None)
-            self.showcase_rows.clear()
-
-            fonts_to_show = self._showcase_selected_fonts or ['text', 'convo', 'profont']
-            for fnid in fonts_to_show:
-                row_box = QWidget()
-                row_layout = QVBoxLayout()
-                row_layout.setContentsMargins(4, 4, 4, 8)
-                row_layout.setAlignment(Qt.AlignCenter)
-                row_box.setLayout(row_layout)
-
-                name_lbl = QLabel(f"<b>{fnid}</b>")
-                name_lbl.setStyleSheet("color: #aaa; font-size: 11px;")
-                name_lbl.setAlignment(Qt.AlignCenter)
-                row_layout.addWidget(name_lbl)
-
-                img_lbl = QLabel()
-                img_lbl.setAlignment(Qt.AlignCenter)
-                pix = self._render_font_text(fnid, sample_text, palette_colors)
-                if pix:
-                    img_lbl.setPixmap(pix)
-                else:
-                    img_lbl.setText(f"({fnid} unavailable)")
-                row_layout.addWidget(img_lbl)
-
-                self._preview_layout.addWidget(row_box)
-                self.showcase_rows.append(row_box)
+# Alias for standard vanilla naming convention
+FontPaletteDatabase = PaletteEditorWidget

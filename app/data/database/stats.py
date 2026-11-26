@@ -18,6 +18,7 @@ class StatPrefab(Prefab):
     position: str = "left"
     
     growth_colors: bool = False
+    colored_stat: bool = False
     stat_color: str = "new-white"
     hidden_stat: bool = False
 
@@ -29,6 +30,8 @@ class StatPrefab(Prefab):
             return 'left'
         if name == 'stat_color' and not value:
             return 'new-white'
+        if name == 'colored_stat' and value is None:
+            return False
         return value
 
 class StatCatalog(Data[StatPrefab]):

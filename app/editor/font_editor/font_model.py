@@ -160,6 +160,36 @@ def get_font_preview_pixmap(font: Font) -> Optional[QPixmap]:
     return None
 
 
+def create_new_font(parent=None) -> Optional[Font]:
+    settings = MainSettingsController()
+    starting_path = settings.get_last_open_path()
+    fn, ok = QFileDialog.getOpenFileName(
+        parent, "Select Font Image", starting_path,
+        "PNG Files (*.png);;All Files(*)")
+    if not ok:
+        return None
+    if not fn.endswith('.png'):
+        QMessageBox.critical(parent, "File Type Error!", "Font image must be a PNG file!")
+        return None
+    file_name_no_ext = fn[:-4]
+    idx_path = file_name_no_ext + '.idx'
+    if not os.path.exists(idx_path):
+        QMessageBox.warning(
+            parent, 'Missing Index File',
+            'No matching .idx file found for %s.\n'
+            'The font may not render correctly without one.' % os.path.basename(fn))
+    nid = os.path.splitext(os.path.basename(fn))[0]
+    nid = str_utils.get_next_name(nid, [d.nid for d in RESOURCES.fonts])
+    new_font = Font(nid=nid)
+    version_dir = STAGING.stage_files([fn, idx_path])
+    new_font.set_full_path(os.path.join(version_dir, os.path.basename(file_name_no_ext)))
+    seed_default_palette(new_font)
+    RESOURCES.fonts.inherit_global_palettes(new_font)
+    RESOURCES.fonts.append(new_font)
+    settings.set_last_open_path(os.path.dirname(fn))
+    return new_font
+
+
 class FontModel(ResourceCollectionModel):
     def __init__(self, data, window):
         super().__init__(data, window)
@@ -184,33 +214,7 @@ class FontModel(ResourceCollectionModel):
         return self._icon_cache[font.nid]
 
     def create_new(self):
-        settings = MainSettingsController()
-        starting_path = settings.get_last_open_path()
-        fn, ok = QFileDialog.getOpenFileName(
-            self.window, "Select Font Image", starting_path,
-            "PNG Files (*.png);;All Files(*)")
-        if not ok:
-            return None
-        if not fn.endswith('.png'):
-            QMessageBox.critical(self.window, "File Type Error!", "Font image must be a PNG file!")
-            return None
-        file_name_no_ext = fn[:-4]
-        idx_path = file_name_no_ext + '.idx'
-        if not os.path.exists(idx_path):
-            QMessageBox.warning(
-                self.window, 'Missing Index File',
-                'No matching .idx file found for %s.\n'
-                'The font may not render correctly without one.' % os.path.basename(fn))
-        nid = os.path.splitext(os.path.basename(fn))[0]
-        nid = str_utils.get_next_name(nid, [d.nid for d in RESOURCES.fonts])
-        new_font = Font(nid=nid)
-        version_dir = STAGING.stage_files([fn, idx_path])
-        new_font.set_full_path(os.path.join(version_dir, os.path.basename(file_name_no_ext)))
-        seed_default_palette(new_font)
-        RESOURCES.fonts.inherit_global_palettes(new_font)
-        RESOURCES.fonts.append(new_font)
-        settings.set_last_open_path(os.path.dirname(fn))
-        return new_font
+        return create_new_font(self.window)
 
     def delete(self, idx):
         # Nothing in the database names a font, but event scripts may

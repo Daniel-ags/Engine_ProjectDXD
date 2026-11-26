@@ -260,11 +260,13 @@ def draw_stat(surf: engine.Surface, stat_nid: str, unit: unit.UnitObject,
             draw_glow(surf, FONT[f'{base_font}-green'], str(value), topright, HAlignment.RIGHT)
         else:
             FONT[f'{base_font}-new-white'].blit_right(str(value), surf, topright)
-        bonus_font = 'ui_stat_bonus' if 'ui_stat_bonus-green' in FONT else 'small'
+        
         if bonus > 0:
-            draw_glow(surf, FONT[f'{bonus_font}-green'], "+%d" % bonus, topright)
+            buff_font = 'ui_stat_buff' if 'ui_stat_buff' in FONT else ('ui_stat_bonus' if 'ui_stat_bonus' in FONT else 'small-green')
+            draw_glow(surf, FONT[buff_font], "+%d" % bonus, topright)
         elif bonus < 0:
-            draw_glow(surf, FONT[f'{bonus_font}-red'], str(bonus), topright)
+            debuff_font = 'ui_stat_debuff' if 'ui_stat_debuff' in FONT else ('small-red' if 'small-red' in FONT else 'small')
+            draw_glow(surf, FONT[debuff_font], str(bonus), topright)
 
 def draw_growth(surf: engine.Surface, stat_nid: str, unit: unit.UnitObject,
                 topright: Tuple[int, int], compact:bool=False, percent: bool = False) -> None:
@@ -283,11 +285,12 @@ def draw_growth(surf: engine.Surface, stat_nid: str, unit: unit.UnitObject,
         if percent:
             FONT['text-new-white'].blit('%', surf, topright)
             bonus_pos = (topright[0] + FONT['text-new-white'].width('%'), topright[1])
-        bonus_font = 'ui_stat_bonus' if 'ui_stat_bonus-green' in FONT else 'small'
         if bonus > 0:
-            FONT[f'{bonus_font}-green'].blit("+%d" % bonus, surf, bonus_pos)
+            buff_font = 'ui_stat_buff' if 'ui_stat_buff' in FONT else ('ui_stat_bonus' if 'ui_stat_bonus' in FONT else 'small-green')
+            FONT[buff_font].blit("+%d" % bonus, surf, bonus_pos)
         elif bonus < 0:
-            FONT[f'{bonus_font}-red'].blit(str(bonus), surf, bonus_pos)
+            debuff_font = 'ui_stat_debuff' if 'ui_stat_debuff' in FONT else ('small-red' if 'small-red' in FONT else 'small')
+            FONT[debuff_font].blit(str(bonus), surf, bonus_pos)
 
 def draw_glow(surf: engine.Surface, font_obj: BmpFont, text: str, topright: Tuple[int, int],
               align: HAlignment = HAlignment.LEFT, color: str = None) -> engine.Surface:
