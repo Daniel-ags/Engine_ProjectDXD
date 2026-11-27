@@ -66,8 +66,8 @@ tab_names = {'config': 'Config', 'keyboard': 'Keyboard', 'controller': 'Controll
 
 # The controls tabs show fewer rows than config to make room
 # for the reset button beneath them
-CONTROLS_LIMIT = 5
-RESET_BUTTON_RECT = (64, 120, 112, 24)
+CONTROLS_LIMIT = max(5, (WINHEIGHT - 80) // 16)
+RESET_BUTTON_RECT = ((WINWIDTH - 112) // 2, WINHEIGHT - 40, 112, 24)
 
 def in_rect(position, rect) -> bool:
     x, y, width, height = rect

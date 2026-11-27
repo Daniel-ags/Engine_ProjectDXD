@@ -181,22 +181,25 @@ class PhaseIn():
 
         # Black square transition
         t_half = self.t_display//2
+        half_height = self.transition_space.get_height()
         if time_passed < t_half:
             diff = time_passed / t_half
-            height = 64 * diff
+            height = int(half_height * diff)
             alpha = int(max_opacity * math.sqrt(time_passed / t_half))
             t = int(2 + diff * 16)  # Starts a little ways along at the beginning
         else:
             diff = -(t_half - time_passed) / t_half
-            height = 64 * (1 - diff)
+            height = int(half_height * (1 - diff))
             alpha = int(max_opacity - max_opacity * ((time_passed - t_half)/t_half) ** 2)
             t = int(diff * 16)
 
+        x_tiles = WINWIDTH // 16
         for x in range(0, WINWIDTH, 16):
-            for y in range(0, WINHEIGHT//2 - 16, 16):
+            for y in range(0, half_height, 16):
                 i, j = x//16, y//16
-                k1 = int(t * 1.5 - (i - j%2)/2 + j/2 - 4)
-                k2 = int(t * 1.5 - (i - j%2)/2 + j/2 - 1)
+                norm_i = (i * 15) / max(1, x_tiles)
+                k1 = int(t * 1.5 - (norm_i - j%2)/2 + j/2 - 4)
+                k2 = int(t * 1.5 - (norm_i - j%2)/2 + j/2 - 1)
                 if time_passed < t_half:
                     frame1 = utils.clamp(8 - abs(max(k1, 8) - 8), 0, 8)
                     frame2 = utils.clamp(8 - abs(max(k2, 8) - 8), 0, 8)

@@ -160,7 +160,8 @@ class Particle():
 
     def draw(self, surf, offset_x=0, offset_y=0):
         pos = (self.x - offset_x, self.y - offset_y)
-        surf.blit(self.sprite, pos)
+        if self.sprite:
+            surf.blit(self.sprite, pos)
 
 class Raindrop(Particle):
     sprite = SPRITES.get('particle_raindrop')
@@ -200,12 +201,22 @@ class Sand(Particle):
             self.remove_me_flag = True
 
 class Smoke(Particle):
-    sprite = SPRITES.get('particle_smoke')
-    if sprite:
-        bottom_sprite = engine.subsurface(sprite, (3, 0, 3, 4))
-        top_sprite = engine.subsurface(sprite, (0, 0, 3, 4))
-    else:
-        bottom_sprite = top_sprite = None
+    bottom_sprite = None
+    top_sprite = None
+
+    @classmethod
+    def _init_sprites(cls):
+        sprite = SPRITES.get('particle_smoke')
+        if sprite:
+            cls.bottom_sprite = engine.subsurface(sprite, (3, 0, 3, 4))
+            cls.top_sprite = engine.subsurface(sprite, (0, 0, 3, 4))
+
+    def reset(self, pos):
+        super().reset(pos)
+        if not self.top_sprite:
+            self._init_sprites()
+        return self
+
     speed = 6
 
     def update(self):
@@ -223,24 +234,31 @@ class Smoke(Particle):
             sprite = self.top_sprite
         else:
             sprite = self.bottom_sprite
-        surf.blit(sprite, (self.x + offset_x, self.y + offset_y))
+        if sprite:
+            surf.blit(sprite, (self.x + offset_x, self.y + offset_y))
 
-_fire_sprite = SPRITES.get('particle_fire')
 class Fire(Particle):
-    if _fire_sprite:
-        sprites = [engine.subsurface(_fire_sprite, (0, i*2, 3, 2)) for i in range(6)]
-    else:
-        sprites = []
+    sprites = []
+
+    @classmethod
+    def _init_sprites(cls):
+        fire_sprite = SPRITES.get('particle_fire')
+        if fire_sprite:
+            cls.sprites = [engine.subsurface(fire_sprite, (0, i*2, 3, 2)) for i in range(6)]
 
     def reset(self, pos):
         super().reset(pos)
+        if not self.sprites:
+            self._init_sprites()
         self.speed = random.randint(1, 4)
-        self.sprite = self.sprites[-1]
+        self.sprite = self.sprites[-1] if self.sprites else None
         return self
 
     def update(self):
         self.x -= random.randint(0, self.speed)
         self.y -= random.randint(0, self.speed)
+        if not self.sprites:
+            return
         if self.y > 112:
             self.sprite = self.sprites[-1]
         elif self.y > 104:
@@ -258,14 +276,20 @@ class Fire(Particle):
 
     def draw(self, surf, offset_x=0, offset_y=0):
         # Fire does obey camera offset
-        surf.blit(self.sprite, (self.x, self.y))
+        if self.sprite:
+            surf.blit(self.sprite, (self.x, self.y))
 
 class Snow(Particle):
-    full_sprite = SPRITES.get('particle_snow')
+    full_sprite = None
 
     def reset(self, pos):
         super().reset(pos)
-        self.sprite = engine.subsurface(self.full_sprite, (0, random.randint(0, 2) * 8, 8, 8))
+        if not self.full_sprite:
+            Snow.full_sprite = SPRITES.get('particle_snow')
+        if self.full_sprite:
+            self.sprite = engine.subsurface(self.full_sprite, (0, random.randint(0, 2) * 8, 8, 8))
+        else:
+            self.sprite = None
         speeds = [1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 3.25, 3.5]
         self.y_speed = random.choice(speeds)
         x_speeds = speeds[:speeds.index(self.y_speed) + 1]
@@ -449,16 +473,21 @@ class EventTileParticle(Particle):
         surf.blit(sprite, (self.x - offset_x, self.y - offset_y))
 
 class FirePillar(Particle):
-    if _fire_sprite:
-        sprites = [engine.subsurface(_fire_sprite, (0, i*2, 3, 2)) for i in range(6)]
-    else:
-        sprites = []
+    sprites = []
+
+    @classmethod
+    def _init_sprites(cls):
+        fire_sprite = SPRITES.get('particle_fire')
+        if fire_sprite:
+            cls.sprites = [engine.subsurface(fire_sprite, (0, i*2, 3, 2)) for i in range(6)]
 
     def reset(self, pos):
         super().reset(pos)
         self.orig_pos = pos
+        if not self.sprites:
+            self._init_sprites()
         self.speed = random.randint(1, 4)
-        self.sprite = self.sprites[-1]
+        self.sprite = self.sprites[-1] if self.sprites else None
         self.counter = 0
         return self
 
@@ -466,6 +495,8 @@ class FirePillar(Particle):
         self.x += (random.random() * self.speed * 2) - self.speed
         self.y -= random.random() * self.speed
         self.counter += 1
+        if not self.sprites:
+            return
         if self.counter < 4:
             self.sprite = self.sprites[-1]
         elif self.counter < 8:
@@ -482,7 +513,8 @@ class FirePillar(Particle):
             self.remove_me_flag = True
 
     def draw(self, surf, offset_x=0, offset_y=0):
-        surf.blit(self.sprite, (self.x - offset_x, self.y - offset_y))
+        if self.sprite:
+            surf.blit(self.sprite, (self.x - offset_x, self.y - offset_y))
 
 # As on the GBA (WfxSnow_Init and the rest), there are 64 particles of rain, snow or sand to
 # every 256 by 256 pixels, about 37 on the screen, and each is drawn every other frame: so
@@ -521,15 +553,21 @@ def create_system(nid, width, height, position):
     elif nid == 'fire':
         creation_bounds = 0, WINWIDTH + 64, WINHEIGHT, WINHEIGHT + 16
         blend = SPRITES.get('particle_bg_fire')
+        if blend and blend.get_size() != (WINWIDTH, WINHEIGHT):
+            blend = engine.transform_scale(blend, (WINWIDTH, WINHEIGHT))
         ps = MapParticleSystem(nid, Fire, .06, creation_bounds, (width, height), blend=blend)
     elif nid == 'night':
         creation_bounds = 0, WINWIDTH + 64, WINHEIGHT, WINHEIGHT + 16
         blend = SPRITES.get('particle_bg_night')
+        if blend and blend.get_size() != (WINWIDTH, WINHEIGHT):
+            blend = engine.transform_scale(blend, (WINWIDTH, WINHEIGHT))
         blend_type = engine.BLEND_RGB_MULT
         ps = MapParticleSystem(nid, Night, 0, creation_bounds, (width, height), blend=blend, blend_type=blend_type)
     elif nid == 'sunset':
         creation_bounds = 0, WINWIDTH + 64, WINHEIGHT, WINHEIGHT + 16
         blend = SPRITES.get('particle_bg_sunset')
+        if blend and blend.get_size() != (WINWIDTH, WINHEIGHT):
+            blend = engine.transform_scale(blend, (WINWIDTH, WINHEIGHT))
         blend_type = engine.BLEND_RGB_MULT
         ps = MapParticleSystem(nid, Sunset, 0, creation_bounds, (width, height), blend=blend, blend_type=blend_type)
     elif nid == 'event_tile':

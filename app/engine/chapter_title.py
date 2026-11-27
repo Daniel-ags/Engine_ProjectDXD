@@ -22,7 +22,17 @@ class ChapterTitleState(State):
         self.wait_time = engine.get_time()
 
         self.bg = background.TransitionBackground(SPRITES.get('chapter_title_bg'), fade=False)
-        self.ribbon = SPRITES.get('chapter_title_ribbon')
+        orig_ribbon = SPRITES.get('chapter_title_ribbon')
+        if orig_ribbon and orig_ribbon.get_width() != WINWIDTH:
+            self.ribbon = engine.transform_scale(orig_ribbon, (WINWIDTH, orig_ribbon.get_height()))
+        else:
+            self.ribbon = orig_ribbon
+
+        orig_banner = SPRITES.get('chapter_title_banner')
+        if orig_banner and orig_banner.get_width() != WINWIDTH:
+            self.banner_sprite = engine.transform_scale(orig_banner, (WINWIDTH, orig_banner.get_height()))
+        else:
+            self.banner_sprite = orig_banner
 
         self.sigil_fade = 0
         self.banner_grow_y = 6
@@ -135,7 +145,10 @@ class ChapterTitleState(State):
             engine.blit_center(surf, new_ribbon)
 
         # # Draw banner
-        banner = image_mods.make_translucent(SPRITES.get('chapter_title_banner'), self.banner_fade)
+        banner_sprite = getattr(self, 'banner_sprite', None) or SPRITES.get('chapter_title_banner')
+        if banner_sprite.get_width() != WINWIDTH:
+            banner_sprite = engine.transform_scale(banner_sprite, (WINWIDTH, banner_sprite.get_height()))
+        banner = image_mods.make_translucent(banner_sprite, self.banner_fade)
         banner = engine.subsurface(banner, (0, 0, self.banner_grow_x, self.banner_grow_y))
         engine.blit_center(surf, banner)
 

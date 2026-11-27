@@ -241,11 +241,15 @@ class UIView():
         if DB.constants.value('initiative') and not game.initiative.draw_me:
             self.initiative_info_disp = None
 
+        # Determine active map screen boundaries
+        map_left_px = max(0, int(-game.camera.get_x() * 16)) if game.tilemap else 0
+        map_right_px = min(WINWIDTH, map_left_px + game.tilemap.width * 16) if game.tilemap else WINWIDTH
+
         # === Final drawing
         if game.state.current() in self.legal_states and self.unit_info_disp:
             if not DB.constants.value('initiative') or not game.initiative.draw_me:
                 width = self.unit_info_disp.get_width()
-                x = self.unit_slide.shown_width(width) - width
+                x = map_left_px + self.unit_slide.shown_width(width) - width
                 y = 0 if self.unit_info_top else WINHEIGHT - self.unit_info_disp.get_height()
                 surf.blit(self.unit_info_disp, (x, y))
 
@@ -260,11 +264,11 @@ class UIView():
                 # Should be in bottom. Can be in bottomleft or bottomright, depending on where cursor is. May move to the top if Initiative is enabled.
                 if self.tile_info_left:
                     if self.initiative_info_disp and game.cursor.position[1] < TILEY // 2 + game.camera.get_y():
-                        surf.blit(self.tile_info_disp, (5 - hidden, 0)) # Topleft
+                        surf.blit(self.tile_info_disp, (map_left_px + 5 - hidden, 0)) # Topleft
                     else:
-                        surf.blit(self.tile_info_disp, (5 - hidden, WINHEIGHT - self.tile_info_disp.get_height() - 3)) # Bottomleft
+                        surf.blit(self.tile_info_disp, (map_left_px + 5 - hidden, WINHEIGHT - self.tile_info_disp.get_height() - 3)) # Bottomleft
                 else:
-                    xpos = WINWIDTH - width - 5 + hidden
+                    xpos = map_right_px - width - 5 + hidden
                     if self.initiative_info_disp and game.cursor.position[1] < TILEY // 2 + game.camera.get_y():
                         surf.blit(self.tile_info_disp, (xpos, 0))
                     else:
@@ -276,7 +280,7 @@ class UIView():
             # Topright, or bottomright while the cursor is in the topright. It comes in
             # from the top or the bottom of the screen
             height = self.obj_info_disp.get_height()
-            x = WINWIDTH - 4 - self.obj_info_disp.get_width()
+            x = map_right_px - 4 - self.obj_info_disp.get_width()
             if self.obj_top:
                 hidden = height + 1 - self.obj_slide.shown_width(height + 1)
                 surf.blit(self.obj_info_disp, (x, 1 - hidden))
@@ -790,16 +794,19 @@ class UIView():
         # Only if either units is paired up
         guard_flag = DB.constants.value('pairup') and (attacker.traveler or defender.traveler)
 
+        map_left_px = max(0, int(-game.camera.get_x() * 16)) if game.tilemap else 0
+        map_right_px = min(WINWIDTH, map_left_px + game.tilemap.width * 16) if game.tilemap else WINWIDTH
+
         if self.attack_info_left:
             if has_defender_strike_partner():
-                topleft = (5 - offset, 4)
+                topleft = (map_left_px + 5 - offset, 4)
             else:
-                topleft = (-19 - offset, 4)
+                topleft = (map_left_px - 19 - offset, 4)
         else:
             if has_attacker_strike_partner():
-                topleft = (WINWIDTH - 122 + offset, 4)
+                topleft = (map_right_px - 122 + offset, 4)
             else:
-                topleft = (WINWIDTH - 97 + offset, 4)
+                topleft = (map_right_px - 97 + offset, 4)
 
         surf.blit(self.attack_info_disp, topleft)
 

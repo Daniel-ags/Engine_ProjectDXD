@@ -72,12 +72,18 @@ class Camera():
             return (self.current_x, self.current_y)
 
     def _shift_x(self, x):
+        if self.game.tilemap.width < TILEX:
+            self.target_x = -(TILEX - self.game.tilemap.width) / 2.0
+            return
         if x <= self.target_x + 2:
             self.target_x -= 1
         elif x >= (TILEX + self.target_x - 3):
             self.target_x += 1
 
     def _shift_y(self, y):
+        if self.game.tilemap.height < TILEY:
+            self.target_y = -(TILEY - self.game.tilemap.height) / 2.0
+            return
         if y <= self.target_y + 1:
             self.target_y -= 1
         elif y >= (TILEY + self.target_y - 2):
@@ -112,27 +118,35 @@ class Camera():
     # As on the GBA, a position is kept at least 3 tiles in from the left and right
     # of the screen, and 2 from the top and bottom, the same as the cursor is
     def _change_x(self, x):
+        if self.game.tilemap.width < TILEX:
+            return -(TILEX - self.game.tilemap.width) / 2.0
         if x < self.target_x + 3:
             new_x = x - 3
         elif x > self.target_x + TILEX - 4:
             new_x = x - TILEX + 4
         else:
             new_x = self.target_x
-        return new_x
+        return utils.clamp(new_x, 0, self.game.tilemap.width - TILEX)
 
     def _change_y(self, y):
+        if self.game.tilemap.height < TILEY:
+            return -(TILEY - self.game.tilemap.height) / 2.0
         if y < self.target_y + 2:
             new_y = y - 2
         elif y > self.target_y + TILEY - 3:
             new_y = y - TILEY + 3
         else:
             new_y = self.target_y
-        return new_y
+        return utils.clamp(new_y, 0, self.game.tilemap.height - TILEY)
 
     def _center_x(self, x):
+        if self.game.tilemap.width < TILEX:
+            return -(TILEX - self.game.tilemap.width) / 2.0
         return utils.clamp(x - TILEX//2, 0, self.game.tilemap.width - TILEX)
 
     def _center_y(self, y):
+        if self.game.tilemap.height < TILEY:
+            return -(TILEY - self.game.tilemap.height) / 2.0
         return utils.clamp(y - TILEY//2, 0, self.game.tilemap.height - TILEY)
 
     def set_xy(self, x, y):
@@ -203,24 +217,42 @@ class Camera():
         return self.current_x == self.target_x and self.current_y == self.target_y
 
     def set_target_limits(self, tilemap):
-        if self.target_x < 0:
-            self.target_x = 0
-        elif self.target_x > tilemap.width - TILEX:
-            self.target_x = max(0, tilemap.width - TILEX)
-        if self.target_y < 0:
-            self.target_y = 0
-        elif self.target_y > tilemap.height - TILEY:
-            self.target_y = max(0, tilemap.height - TILEY)
+        if not tilemap:
+            return
+        if tilemap.width < TILEX:
+            self.target_x = -(TILEX - tilemap.width) / 2.0
+        else:
+            if self.target_x < 0:
+                self.target_x = 0
+            elif self.target_x > tilemap.width - TILEX:
+                self.target_x = tilemap.width - TILEX
+
+        if tilemap.height < TILEY:
+            self.target_y = -(TILEY - tilemap.height) / 2.0
+        else:
+            if self.target_y < 0:
+                self.target_y = 0
+            elif self.target_y > tilemap.height - TILEY:
+                self.target_y = tilemap.height - TILEY
 
     def set_current_limits(self, tilemap):
-        if self.current_x < 0:
-            self.current_x = 0
-        elif self.current_x > tilemap.width - TILEX:
-            self.current_x = max(0, tilemap.width - TILEX)
-        if self.current_y < 0:
-            self.current_y = 0
-        elif self.current_y > tilemap.height - TILEY:
-            self.current_y = max(0, tilemap.height - TILEY)
+        if not tilemap:
+            return
+        if tilemap.width < TILEX:
+            self.current_x = -(TILEX - tilemap.width) / 2.0
+        else:
+            if self.current_x < 0:
+                self.current_x = 0
+            elif self.current_x > tilemap.width - TILEX:
+                self.current_x = tilemap.width - TILEX
+
+        if tilemap.height < TILEY:
+            self.current_y = -(TILEY - tilemap.height) / 2.0
+        else:
+            if self.current_y < 0:
+                self.current_y = 0
+            elif self.current_y > tilemap.height - TILEY:
+                self.current_y = tilemap.height - TILEY
 
     def do_slow_pan(self, duration):
         # queues up a slower algorithm for the next pan

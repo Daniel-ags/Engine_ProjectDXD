@@ -46,7 +46,23 @@ class LayerObject():
 
     def get_image(self, cull_rect):
         # Cull to only the part I need
-        im = engine.subsurface(self.image, cull_rect)
+        img_w, img_h = self.image.get_size()
+        cx, cy, cw, ch = cull_rect
+        if cx >= 0 and cy >= 0 and cx + cw <= img_w and cy + ch <= img_h:
+            im = engine.subsurface(self.image, cull_rect)
+        else:
+            im = engine.create_surface((cw, ch))
+            engine.fill(im, COLORKEY)
+            engine.set_colorkey(im, COLORKEY)
+            src_x = max(0, min(img_w, cx))
+            src_y = max(0, min(img_h, cy))
+            src_w = max(0, min(img_w - src_x, cx + cw - src_x))
+            src_h = max(0, min(img_h - src_y, cy + ch - src_y))
+            if src_w > 0 and src_h > 0:
+                dest_x = src_x - cx
+                dest_y = src_y - cy
+                sub = engine.subsurface(self.image, (src_x, src_y, src_w, src_h))
+                im.blit(sub, (dest_x, dest_y))
         if self.state in ('fade_in', 'fade_out'):
             im = im.convert_alpha()
             im = image_mods.make_translucent(im, self.translucence)
@@ -55,10 +71,27 @@ class LayerObject():
     def get_autotile_image(self, cull_rect):
         if not self.autotile_images:
             return None
-        im = engine.subsurface(self.autotile_images[self.autotile_frame], cull_rect)
+        auto_img = self.autotile_images[self.autotile_frame]
+        img_w, img_h = auto_img.get_size()
+        cx, cy, cw, ch = cull_rect
+        if cx >= 0 and cy >= 0 and cx + cw <= img_w and cy + ch <= img_h:
+            im = engine.subsurface(auto_img, cull_rect)
+        else:
+            im = engine.create_surface((cw, ch))
+            engine.fill(im, COLORKEY)
+            engine.set_colorkey(im, COLORKEY)
+            src_x = max(0, min(img_w, cx))
+            src_y = max(0, min(img_h, cy))
+            src_w = max(0, min(img_w - src_x, cx + cw - src_x))
+            src_h = max(0, min(img_h - src_y, cy + ch - src_y))
+            if src_w > 0 and src_h > 0:
+                dest_x = src_x - cx
+                dest_y = src_y - cy
+                sub = engine.subsurface(auto_img, (src_x, src_y, src_w, src_h))
+                im.blit(sub, (dest_x, dest_y))
         if self.state in ('fade_in', 'fade_out'):
             im = im.convert_alpha()
-            return image_mods.make_translucent(im, self.translucence)
+            im = image_mods.make_translucent(im, self.translucence)
         return im
 
     def quick_show(self):

@@ -4,7 +4,7 @@ import app.engine.graphics.ui_framework as uif
 from app.engine import engine
 
 from typing import List, TYPE_CHECKING, Tuple
-from app.constants import COLORKEY, WINHEIGHT
+from app.constants import COLORKEY, WINWIDTH, WINHEIGHT
 
 if TYPE_CHECKING:
     from app.engine.engine import Surface
@@ -22,12 +22,14 @@ class NarrationDialogue(uif.UIComponent):
 
         # TODO This should be configurable instead of magic number
         self.text_vertical_offset = 32
-        self.text_horizontal_area = 200
         self.text_horizontal_margin = 20
+        self.text_horizontal_area = WINWIDTH - 2 * self.text_horizontal_margin
 
         # initialize the animated top bar and bottom text area
         # create the box sprite
         narration_window_sprite: Surface = SPRITES.get('narration_window').convert()
+        if narration_window_sprite.get_width() != WINWIDTH:
+            narration_window_sprite = engine.transform_scale(narration_window_sprite, (WINWIDTH, narration_window_sprite.get_height()))
         top_height = narration_window_sprite.get_height() // 2
         bottom_height = narration_window_sprite.get_height() - top_height
         width = narration_window_sprite.get_width()

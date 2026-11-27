@@ -18,11 +18,23 @@ class VictoryState(MapState):
 
     def start(self):
         game.cursor.hide()
-        img = SPRITES.get('focus_fade').convert_alpha()
-        self.bg = SpriteBackground(img)
+        img = SPRITES.get('focus_fade')
+        if img:
+            img = img.convert_alpha()
+            if img.get_size() != (WINWIDTH, WINHEIGHT):
+                img = engine.transform_scale(img, (WINWIDTH, WINHEIGHT))
+            self.bg = SpriteBackground(img)
+        else:
+            self.bg = None
 
         self.state = 'init'
         self.stat_surf = self.create_stat_surf()
+
+        self.victory_surf = SPRITES.get('victory')
+        if self.victory_surf:
+            self.vic_width, self.vic_height = self.victory_surf.get_size()
+        else:
+            self.vic_width, self.vic_height = 240, 72
 
         self.stat_surf_target = self.stat_surf.get_height() + 4
         self.num_frame = 0
@@ -89,9 +101,17 @@ class VictoryState(MapState):
         surf.blit(self.stat_surf, pos)
 
         # Victory draw
+        height = max(1, int(self.vic_height * offset))
+        band_y = self.vic_height // 2 - height // 2
+        # Draw translucent backdrop band across full screen width
+        band = engine.create_surface((WINWIDTH, height), transparent=True)
+        engine.fill(band, (0, 0, 0, int(204 * offset)))
+        surf.blit(band, (0, band_y))
+
+        # Center the victory emblem without horizontally distorting the lettering
         vic_surf = image_mods.make_translucent(self.victory_surf, 1 - offset)
-        height = int(self.vic_height * offset)
-        vic_surf = engine.transform_scale(vic_surf, (WINWIDTH, height))
-        surf.blit(vic_surf, (0, self.vic_height//2 - height//2))
+        vic_scaled = engine.transform_scale(vic_surf, (self.vic_width, height))
+        vic_x = (WINWIDTH - self.vic_width) // 2
+        surf.blit(vic_scaled, (vic_x, band_y))
 
         return surf

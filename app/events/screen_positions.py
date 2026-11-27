@@ -1,18 +1,21 @@
 from __future__ import annotations
 from typing import Tuple
 from app.constants import WINHEIGHT, WINWIDTH
+from app.utilities import utils
 from app.utilities.typing import Point
+
+_edge_margin = max(0, (WINWIDTH - 240) // 4)
 
 horizontal_screen_positions = {'OffscreenLeft': -96,
                                'FarLeft': -24,
                                'LeftCorner': -16,
-                               'Left': 0,
-                               'MidLeft': 24,
-                               'CenterLeft': 24,
-                               'CenterRight': WINWIDTH - 120,
-                               'MidRight': WINWIDTH - 120,
+                               'Left': _edge_margin,
+                               'MidLeft': _edge_margin + 24,
+                               'CenterLeft': WINWIDTH // 2 - 96 - 12,
+                               'CenterRight': WINWIDTH // 2 + 12,
+                               'MidRight': WINWIDTH - 96 - _edge_margin - 24,
                                'LevelUpRight': WINWIDTH - 100,
-                               'Right': WINWIDTH - 96,
+                               'Right': WINWIDTH - 96 - _edge_margin,
                                'RightCorner': WINWIDTH - 80,
                                'FarRight': WINWIDTH - 72,
                                'OffscreenRight': WINWIDTH}
@@ -54,17 +57,4 @@ def parse_screen_position(pos: Tuple | str, portrait_size: Tuple[int, int] = (96
 
 
 def get_desired_center(x: int) -> int:
-    if x < 48:  # FarLeft
-        return 8
-    elif x < 72:  # Left
-        return 80
-    elif x < 104:  # MidLeft
-        return 104
-    elif x > WINWIDTH - 48:  # FarRight
-        return WINWIDTH - 8
-    elif x > WINWIDTH - 72:  # Right
-        return WINWIDTH - 88
-    elif x > WINWIDTH - 144:  # MidRight
-        return WINWIDTH - 112
-    else:
-        return WINWIDTH//2
+    return utils.clamp(x, 80, WINWIDTH - 88)

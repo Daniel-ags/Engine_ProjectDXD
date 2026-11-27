@@ -2992,7 +2992,8 @@ class ShopState(State):
 
         items = game.memory['shop_items']
         self.stock = game.memory.get('shop_stock', None)
-        topleft = (44, WINHEIGHT - 16 * 5 - 8 - 4)
+        shop_x = (WINWIDTH - 152) // 2
+        topleft = (shop_x, WINHEIGHT - 16 * 5 - 8 - 4)
 
         # Sell Menu
         if not self.preview:
@@ -3005,7 +3006,7 @@ class ShopState(State):
             self.sell_menu.set_takes_input(False)
 
         if self.stock:
-            topleft = (36, topleft[1] + 4)
+            topleft = (shop_x - 8, topleft[1] + 4)
 
         # Buy Menu
         self.buy_menu = menus.Shop(self.unit, items, topleft, disp_value='buy', stock=self.stock)
@@ -3015,12 +3016,12 @@ class ShopState(State):
         self.buy_menu.shimmer = 0
         self.buy_menu.set_takes_input(False)
 
-        self.choice_menu = menus.Choice(self.unit, ["Buy", "Sell"], (120, 32), background=None)
+        self.choice_menu = menus.Choice(self.unit, ["Buy", "Sell"], (WINWIDTH // 2, 32), background=None)
         self.choice_menu.set_horizontal(True)
         self.choice_menu.set_color(['convo-white', 'convo-white'])
         self.choice_menu.set_highlight(False)
         # As on the GBA, every sale and purchase is asked about first
-        self.confirm_menu = menus.Choice(self.unit, ["Yes", "No"], (120, 32), background=None)
+        self.confirm_menu = menus.Choice(self.unit, ["Yes", "No"], (WINWIDTH // 2, 32), background=None)
         self.confirm_menu.set_horizontal(True)
         self.confirm_menu.set_color(['convo-white', 'convo-white'])
         self.confirm_menu.set_highlight(False)
@@ -3033,7 +3034,7 @@ class ShopState(State):
             self.current_msg = self.get_dialog(self.opening_message)
 
         self.message_bg = base_surf.create_base_surf(WINWIDTH + 8, 48, 'menu_bg_clear')
-        self.money_counter_disp = gui.PopUpDisplay((223, 32))
+        self.money_counter_disp = gui.PopUpDisplay((WINWIDTH - 17, 32))
 
         self.bg = background.create_background('rune_background')
         self.purchases = [] # Caches the purchases for use in events
@@ -3372,7 +3373,8 @@ class RepairShopState(ShopState):
         self.again_message = apply_flavor('%s_again')
 
         items = self.unit.items[:]
-        topleft = (44, WINHEIGHT - 16 * 5 - 8 - 4)
+        shop_x = (WINWIDTH - 152) // 2
+        topleft = (shop_x, WINHEIGHT - 16 * 5 - 8 - 4)
         self.menu = menus.RepairShop(self.unit, items, topleft, disp_value='repair')
         self.menu.set_limit(5)
         self.menu.set_hard_limit(True)
@@ -3383,7 +3385,7 @@ class RepairShopState(ShopState):
         self.current_msg = self.get_dialog(self.opening_message)
 
         self.message_bg = base_surf.create_base_surf(WINWIDTH + 8, 48, 'menu_bg_clear')
-        self.money_counter_disp = gui.PopUpDisplay((223, 32))
+        self.money_counter_disp = gui.PopUpDisplay((WINWIDTH - 17, 32))
 
         self.bg = background.create_background('rune_background')
 

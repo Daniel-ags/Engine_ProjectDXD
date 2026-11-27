@@ -1,3 +1,4 @@
+from app.constants import WINWIDTH, WINHEIGHT
 from app.data.database.database import DB
 
 from app.engine.sound import get_sound_thread
@@ -9,8 +10,6 @@ from app.engine.game_state import game
 
 class GameOverState(State):
     name = 'game_over'
-
-    game_over_fade = SPRITES.get('game_over_fade').convert_alpha()
 
     def start(self):
         """
@@ -27,6 +26,16 @@ class GameOverState(State):
             get_sound_thread().fade_in(DB.constants.value('music_game_over'))
 
         self.text_surf = SPRITES.get('game_over_text')
+
+        fade = SPRITES.get('game_over_fade')
+        if fade:
+            fade = fade.convert_alpha()
+            if fade.get_size() != (WINWIDTH, WINHEIGHT):
+                self.game_over_fade = engine.transform_scale(fade, (WINWIDTH, WINHEIGHT))
+            else:
+                self.game_over_fade = fade
+        else:
+            self.game_over_fade = None
 
         self.bg = background.TransitionBackground(SPRITES.get('game_over_bg'))
         game.memory['transition_speed'] = 0.1
@@ -57,5 +66,6 @@ class GameOverState(State):
         self.bg.draw(surf)
         text_surf = image_mods.make_translucent(self.text_surf, self.text_transparency)
         engine.blit_center(surf, text_surf)
-        surf.blit(self.game_over_fade, (0, 0))
+        if hasattr(self, 'game_over_fade') and self.game_over_fade:
+            surf.blit(self.game_over_fade, (0, 0))
         return surf

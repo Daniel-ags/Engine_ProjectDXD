@@ -665,7 +665,7 @@ class AnimationCombat(BaseCombat, MockCombat):
                 font = 'narrow'
             else:
                 font = COMBAT_FONT
-            render_text(self.left_bar, [font], [name], ['brown'], (WINWIDTH//4 + 31, 5 + (8 if crit_flag else 0)), HAlignment.CENTER)
+            render_text(self.left_bar, [font], [name], ['brown'], (91, 5 + (8 if crit_flag else 0)), HAlignment.CENTER)
 
         # Right
         right_color = self.get_color(self.right.team)
@@ -698,7 +698,7 @@ class AnimationCombat(BaseCombat, MockCombat):
                 font = 'narrow'
             else:
                 font = COMBAT_FONT
-            render_text(self.right_bar, [font], [name], ['brown'], (WINWIDTH//4 - 13, 5 + (8 if crit_flag else 0)), HAlignment.CENTER)
+            render_text(self.right_bar, [font], [name], ['brown'], (47, 5 + (8 if crit_flag else 0)), HAlignment.CENTER)
 
         # Platforms
         if self.left.position:
@@ -1229,10 +1229,10 @@ class AnimationCombat(BaseCombat, MockCombat):
             self.draw_item(right_bar, self.right_item, self.left_item, self.right, self.left, (1, 2 + crit))
         # Stats
         self.draw_stats(left_bar, self.left_stats, (42, 0))
-        self.draw_stats(right_bar, self.right_stats, (WINWIDTH//2 - 3, 0))
+        self.draw_stats(right_bar, self.right_stats, (right_bar.get_width() - 6, 0))
 
         bar_trans = 52
-        left_pos_x = -3 + self.shake_offset[0]
+        left_pos_x = WINWIDTH // 2 - left_bar.get_width() + self.shake_offset[0]
         left_pos_y = WINHEIGHT - left_bar.get_height() + (bar_trans - self.bar_offset * bar_trans) + self.shake_offset[1]
         right_pos_x = WINWIDTH // 2 + self.shake_offset[0]
         right_pos_y = left_pos_y
@@ -1261,12 +1261,13 @@ class AnimationCombat(BaseCombat, MockCombat):
 
         # Nametag
         top = -60 + self.name_offset * 60 + self.shake_offset[1]
+        right_nametag_x = right_pos_x + right_bar.get_width()
         if self.lp_battle_anim:
             combat_surf.blit(self.lp_name, (left_pos_x, top + 19))
         if self.rp_battle_anim:
-            combat_surf.blit(self.rp_name, (WINWIDTH + 3 - self.rp_name.get_width() + self.shake_offset[0], top + 19))
+            combat_surf.blit(self.rp_name, (right_nametag_x - self.rp_name.get_width() + self.shake_offset[0], top + 19))
         combat_surf.blit(self.left_name, (left_pos_x, top))
-        combat_surf.blit(self.right_name, (WINWIDTH + 3 - self.right_name.get_width() + self.shake_offset[0], top))
+        combat_surf.blit(self.right_name, (right_nametag_x - self.right_name.get_width() + self.shake_offset[0], top))
 
         self.color_ui(combat_surf)
 

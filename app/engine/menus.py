@@ -383,7 +383,7 @@ class Simple():
             if parent_topleft[0] < WINWIDTH//2:
                 return (parent_topleft[0] - 20 + self.topleft.get_menu_width(), parent_topleft[1] + self.topleft.current_index * 16 + 4 - self.topleft.scroll * 16)
             else:
-                return (WINWIDTH - 40 - self.topleft.get_menu_width(), parent_topleft[1] + self.topleft.current_index * 16 + 8 - self.topleft.scroll * 16)
+                return (parent_topleft[0] - self.get_menu_width() + 20, parent_topleft[1] + self.topleft.current_index * 16 + 8 - self.topleft.scroll * 16)
         else:
             return self.topleft
 
@@ -889,10 +889,14 @@ class Trade(Simple):
         full_items1 = self.get_items(self.owner)
         full_items2 = self.get_items(self.partner)
 
-        self.menu1 = Choice(self.owner, full_items1, (11, 68))
+        bg_surf_width = 104
+        menu1_x = (WINWIDTH // 2 - bg_surf_width) // 2
+        menu2_x = WINWIDTH // 2 + (WINWIDTH // 2 - bg_surf_width) // 2
+
+        self.menu1 = Choice(self.owner, full_items1, (menu1_x, 68))
         self.menu1.set_limit(min(5, DB.constants.total_items()))
         self.menu1.set_hard_limit(True)  # Makes hard limit
-        self.menu2 = Choice(self.partner, full_items2, (125, 68))
+        self.menu2 = Choice(self.partner, full_items2, (menu2_x, 68))
         self.menu2.set_limit(min(5, DB.constants.total_items()))
         self.menu2.set_hard_limit(True)  # Makes hard limit
         self.menu2.set_cursor(0)
@@ -1076,25 +1080,31 @@ class Trade(Simple):
         self.menu2.update()
 
     def draw(self, surf):
+        bg_surf_width = 104
+        menu1_x = (WINWIDTH // 2 - bg_surf_width) // 2
+        menu2_x = WINWIDTH // 2 + (WINWIDTH // 2 - bg_surf_width) // 2
+        banner_w = self.trade_name_surf.get_width()
+        banner1_x = menu1_x + (bg_surf_width - banner_w) // 2
+        banner2_x = menu2_x + (bg_surf_width - banner_w) // 2
+
         # Draw trade names
-        surf.blit(self.trade_name_surf, (-4, -1))
-        surf.blit(self.trade_name_surf, (WINWIDTH - self.trade_name_surf.get_width() + 4, -1))
-        FONT['text'].blit(self.owner.name, surf, (24 - FONT['text'].width(self.owner.name)//2, 0))
-        FONT['text'].blit(self.partner.name, surf, (WINWIDTH - 24 - FONT['text'].width(self.partner.name)//2, 0))
+        surf.blit(self.trade_name_surf, (banner1_x, -1))
+        surf.blit(self.trade_name_surf, (banner2_x, -1))
+        FONT['text'].blit(self.owner.name, surf, (banner1_x + banner_w // 2 - FONT['text'].width(self.owner.name)//2, 0))
+        FONT['text'].blit(self.partner.name, surf, (banner2_x + banner_w // 2 - FONT['text'].width(self.partner.name)//2, 0))
 
         # Draw Portraits
         # Owner
-        bg_surf_width = 104
         portrait_size = (96, 68)
         owner_surf = icons.get_portrait_with_size(self.owner, *portrait_size)
         if owner_surf:
             owner_surf = engine.flip_horiz(owner_surf)
-            surf.blit(owner_surf, (11 + (bg_surf_width - owner_surf.get_width()) // 2, 0))
+            surf.blit(owner_surf, (menu1_x + (bg_surf_width - owner_surf.get_width()) // 2, 0))
 
         # Partner
         partner_surf = icons.get_portrait_with_size(self.partner, *portrait_size)
         if partner_surf:
-            surf.blit(partner_surf, (125 + (bg_surf_width - partner_surf.get_width()) // 2, 0))
+            surf.blit(partner_surf, (menu2_x + (bg_surf_width - partner_surf.get_width()) // 2, 0))
 
         if self.menu1.info_flag:
             self.menu2.draw(surf)
@@ -1347,7 +1357,7 @@ class Table(Simple):
         max_width = max(option.width() - option.width()%8 for option in self.options)
         total_width = max_width * self.columns
         if self.mode == 'objective_menu':
-            total_width = 120
+            total_width = max(120, WINWIDTH - 136)
         else:
             total_width = total_width - total_width%8
         if self.mode in ('unit', 'prep_manage'):
@@ -1509,6 +1519,13 @@ class Convoy():
         self.include_other_units = include_other_units
 
         self.order = [w.nid for w in DB.weapons.get_convoy_visible_weapon_types().values()]
+        self.menu_width = 152 if self.disp_value else 112
+        if WINWIDTH > 240:
+            convoy_x = WINWIDTH // 2 + 8
+            self.topleft = (convoy_x, self.topleft[1])
+            self.inv_x = WINWIDTH // 2 - 112 - 8
+        else:
+            self.inv_x = 12
         self.build_menus()
 
         self._info_flag = False  # Whether to show item info
@@ -1546,7 +1563,7 @@ class Convoy():
             self.menus[w_type] = new_menu
 
         height = DB.constants.total_items() * 16 + 8
-        self.inventory = Inventory(self.owner, self.owner.items, (12, WINHEIGHT - height - 4))
+        self.inventory = Inventory(self.owner, self.owner.items, (self.inv_x, WINHEIGHT - height - 4))
         self.inventory.gem = False
         self.inventory.shimmer = 2
 
@@ -1782,10 +1799,11 @@ class Convoy():
         owner_surf = icons.get_portrait_with_size(self.owner, 96, 68) if not self.disp_value else None
         if owner_surf:
             owner_surf = engine.flip_horiz(owner_surf)
-            surf.blit(owner_surf, (18, 68 - owner_surf.get_height()))
+            surf.blit(owner_surf, (self.inv_x + 6, 68 - owner_surf.get_height()))
 
         # Get item owner
-        surf.blit(self.owner_surf, (156, 0))
+        owner_box_x = self.topleft[0] + self.menu_width - self.owner_surf.get_width()
+        surf.blit(self.owner_surf, (owner_box_x, 0))
         item = self.get_current()
         unit = None
         if item:
@@ -1815,7 +1833,7 @@ class Convoy():
             unit_str = "Owner: %s" % unit.name
         else:
             unit_str = "Owner: ---"
-        FONT['text'].blit(unit_str, surf, (160, 4))
+        FONT['text'].blit(unit_str, surf, (owner_box_x + 4, 4))
 
         self.left_arrow.draw(surf)
         self.right_arrow.draw(surf)
@@ -2150,7 +2168,7 @@ class ChapterSelect(Main):
 class ModeSelect(Main):
     def __init__(self, options):
         super().__init__(options, None)
-        self.center = 68, WINHEIGHT//2
+        self.center = (WINWIDTH // 4 + 8, WINHEIGHT // 2)
 
     @property
     def cursor(self):
@@ -2552,8 +2570,8 @@ class RadialMenu:
     - Analógico Esquerdo: apontamento direto em 360° com retorno elástico ao centro ao soltar.
     - Teclado / D-Pad: seleção persistente no anel, órbita passo a passo e recuo ao centro via B ou direção oposta.
     """
-    DEFAULT_CENTER = (120, 80)
-    DEFAULT_RADIUS = (82, 58)
+    DEFAULT_CENTER = (WINWIDTH // 2, WINHEIGHT // 2)
+    DEFAULT_RADIUS = (76, 76)
     ANALOG_DEADZONE = 0.35
     CENTER_SNAP_THRESHOLD = 0.85
 

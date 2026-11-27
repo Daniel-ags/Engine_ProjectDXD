@@ -254,6 +254,12 @@ class Pennant():
         self.width = WINWIDTH
         self.height = 16
 
+        bg = SPRITES.get('pennant_bg')
+        if bg and bg.get_width() != self.width:
+            self.bg = engine.transform_scale(bg, (self.width, self.height))
+        else:
+            self.bg = bg
+
         self.last_update = engine.get_time()
 
     def change_text(self, text):
@@ -267,14 +273,18 @@ class Pennant():
 
         counter = int(-self.text_counter)
 
+        bg = getattr(self, 'bg', None) or SPRITES.get('pennant_bg')
+        if bg and bg.get_width() != self.width:
+            bg = engine.transform_scale(bg, (self.width, self.height))
+
         # If cursor is all the way on the bottom of the map
         if draw_on_top:
-            surf.blit(engine.flip_vert(SPRITES.get('pennant_bg')), (0, -self.sprite_offset))
+            surf.blit(engine.flip_vert(bg), (0, -self.sprite_offset))
             while counter < self.width:
                 render_text(surf, [self.font], [self.text], ['white'], (counter, -self.sprite_offset))
                 counter += self.text_width + 24
         else:
-            surf.blit(SPRITES.get('pennant_bg'), (0, WINHEIGHT - self.height + self.sprite_offset))
+            surf.blit(bg, (0, WINHEIGHT - self.height + self.sprite_offset))
             while counter < self.width:
                 render_text(surf, [self.font], [self.text], ['white'], (counter, WINHEIGHT - self.height + self.sprite_offset))
                 counter += self.text_width + 24

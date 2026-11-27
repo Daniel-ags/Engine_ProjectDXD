@@ -59,7 +59,7 @@ class PrepMainState(State):
             center_option="Fight",
             ring_options=self.ring_options,
             center_pos=(WINWIDTH // 2, WINHEIGHT // 2),
-            radius=(82,58),
+            radius=(76, 76),
             disabled_options=disabled
         )
 

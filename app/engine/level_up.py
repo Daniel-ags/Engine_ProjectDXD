@@ -120,7 +120,7 @@ class ExpState(State):
         if self.combat_object:
             anim = RESOURCES.animations.get('LevelUpBattle')
             if anim:
-                anim = Animation(anim, (0, 6))
+                anim = Animation(anim, ((WINWIDTH - 240) // 2, 6))
                 anim.set_tint_after_delay(40)
                 self.level_up_animation = anim
         else:
@@ -571,7 +571,9 @@ class LevelUpScreen():
         return Animation(anim, topleft) if anim else None
 
     def topleft(self):
-        return (6 - self.screen_scroll_offset, WINHEIGHT - 8 - self.height)
+        total_group_w = 237  # 133 (card) + 8 (gap) + 96 (portrait)
+        start_x = max(6, (WINWIDTH - total_group_w) // 2)
+        return (start_x - self.screen_scroll_offset, WINHEIGHT - 8 - self.height)
 
     def get_position(self, i, absolute=False):
         tl = self.topleft() if absolute else (0, 0)
@@ -614,7 +616,8 @@ class LevelUpScreen():
             elif current_time - self.start_time > 500:
                 if self.old_level != self.new_level:
                     self.state = 'first_spark'
-                    self.animations.append(self.make_spark((87, 27)))
+                    tl = self.topleft()
+                    self.animations.append(self.make_spark((tl[0] + 81, tl[1] - 18)))
                     get_sound_thread().play_sfx('Level_Up_Level')
                 else:
                     self.state = 'get_next_spark'
@@ -723,7 +726,10 @@ class LevelUpScreen():
             val = self.unit.stats[stat] - (self.stat_list[idx] if self.current_spark < idx else 0)
             FONT['text-new-white'].blit(str(val), sprite_bottom, (pos[0] + 40 - FONT['text-new-white'].width(str(val)), pos[1]))
 
-        icons.draw_portrait(surf, self.unit, bottomright=(WINWIDTH - 4, WINHEIGHT + self.unit_scroll_offset))
+        total_group_w = 237
+        start_x = max(6, (WINWIDTH - total_group_w) // 2)
+        portrait_right = min(WINWIDTH - 4, start_x + total_group_w)
+        icons.draw_portrait(surf, self.unit, bottomright=(portrait_right, WINHEIGHT + self.unit_scroll_offset))
         surf.blit(sprite_bottom, self.topleft())
 
         self.animations = [a for a in self.animations if not a.update()]
@@ -854,19 +860,22 @@ class SkillSwapLevelUpState(State):
         self.help_dialog = None
         self.fluid.reset_on_change_state()
 
-        # Painel de Habilidades Ativas (Direita: x=124)
-        self.box_x, self.box_y = 124, 8
+        total_w = 110 + 8 + 114  # 232
+        start_x = (WINWIDTH - total_w) // 2
+
+        # Painel da Nova Habilidade (Esquerda)
+        self.right_box_x, self.right_box_y = start_x, 8
+        self.right_window_bg = image_mods.make_translucent(base_surf.create_base_surf(110, 108, 'menu_bg_base'), 0.1)
+
+        # Painel de Habilidades Ativas (Direita)
+        self.box_x, self.box_y = start_x + 110 + 8, 8
         self.window_bg = image_mods.make_translucent(base_surf.create_base_surf(114, 144, 'menu_bg_base'), 0.1)
 
         skill_names = [s.name for s in self.equipped_skills] or ['---']
-        self.menu = menus.Choice(None, skill_names, topleft=(124, 28), background=None)
+        self.menu = menus.Choice(None, skill_names, topleft=(self.box_x, 28), background=None)
         self.menu.set_limit(7)
         self.menu.width = 98
         self.menu.draw_cursor = True
-
-        # Painel da Nova Habilidade (Esquerda: x=6)
-        self.right_box_x, self.right_box_y = 6, 8
-        self.right_window_bg = image_mods.make_translucent(base_surf.create_base_surf(110, 108, 'menu_bg_base'), 0.1)
 
         desc_text = getattr(self.new_skill_obj, 'desc', '') or "No description."
         self.new_skill_desc_lines = self._wrap_text(FONT['narrow'], desc_text, 98)

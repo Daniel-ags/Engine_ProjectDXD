@@ -304,9 +304,12 @@ class TitleModeState(State):
         self.permadeath_choice: bool = True
         self.growths_choice: bool = True
 
-        self.label = base_surf.create_base_surf(96, 88)
+        label_x = max(142, WINWIDTH // 2 - 32)
+        label_w = WINWIDTH - label_x - 16
+        self.label_x = label_x
+        self.label = base_surf.create_base_surf(label_w, 88)
         shimmer = SPRITES.get('menu_shimmer2')
-        self.label.blit(shimmer, (95 - shimmer.get_width(), 83 - shimmer.get_height()))
+        self.label.blit(shimmer, (label_w - 1 - shimmer.get_width(), 83 - shimmer.get_height()))
         self.label = image_mods.make_translucent(self.label, .1)
 
         self.available_difficulties = [difficulty for difficulty in DB.difficulty_modes if (not difficulty.start_locked or RECORDS.check_difficulty_unlocked(difficulty.nid))]
@@ -361,8 +364,8 @@ class TitleModeState(State):
             text = option + '_desc'
             text = text_funcs.translate_and_text_evaluate(text, self=option)
             self.dialog = dialog.Dialog(text, num_lines=4, draw_cursor=False)
-            self.dialog.position = (140, 34)
-            self.dialog.text_width = WINWIDTH - 142 - 12
+            self.dialog.position = (self.label_x - 2, 34)
+            self.dialog.text_width = self.label.get_width() - 12
             self.dialog.font = FONT['text']
             self.dialog.font_type = 'text'
             self.dialog.font_color = 'white'
@@ -451,7 +454,7 @@ class TitleModeState(State):
             self.particles.update()
             self.particles.draw(surf)
         if self.label:
-            surf.blit(self.label, (142, 36))
+            surf.blit(self.label, (self.label_x, 36))
         if self.dialog:
             self.dialog.draw(surf)
         if self.menu:

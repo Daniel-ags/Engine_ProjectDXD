@@ -340,7 +340,7 @@ class Dialog:
         if not words_before_waits:
             return width
         allowance = self.cursor_gap + self.cursor.get_width()
-        ceiling = WINWIDTH - 32  # determine_size clamps to this anyway
+        ceiling = min(240, WINWIDTH - 32)  # determine_size clamps to this anyway
         # Widening can pull a word back up, lengthening a line again, so
         # settle it rather than growing once
         for _ in range(4):
@@ -370,7 +370,7 @@ class Dialog:
 
     def determine_size(self):
         self.text_width = self.determine_width()
-        self.text_width = utils.clamp(self.text_width, 48, WINWIDTH - 32)
+        self.text_width = utils.clamp(self.text_width, 48, min(240, WINWIDTH - 32))
         self.width = self.text_width + 24 - self.text_width % 8
         if self.width <= WINWIDTH - 16:
             self.width += 8
@@ -1037,9 +1037,11 @@ class Ending:
         self.wait_update = 0
 
     def build_dialog(self):
+        card_x = (WINWIDTH - 240) // 2
+        card_y = (WINHEIGHT - 160) // 2
         self.dialog = Dialog(self.plain_text, num_lines=5, draw_cursor=self.wait_for_input)
-        self.dialog.position = (8, 40)
-        self.dialog.text_width = WINWIDTH - 32
+        self.dialog.position = (card_x + 8, card_y + 40)
+        self.dialog.text_width = 240 - 32
         self.dialog.width = self.dialog.text_width + 16
         self.dialog.font = FONT["text"]
         self.dialog.font_type = "text"
@@ -1049,12 +1051,14 @@ class Ending:
     def make_background(self):
         size = WINWIDTH, WINHEIGHT
         self.bg = engine.create_surface(size, transparent=True)
-        self.bg.blit(SPRITES.get(self.background_sprite), (0, 0))
-        self.bg.blit(self.portrait, (WINWIDTH - self.portrait.get_width() - 8,
-                                    WINHEIGHT - self.portrait.get_height() - 23))
+        card_x = (WINWIDTH - 240) // 2
+        card_y = (WINHEIGHT - 160) // 2
+        self.bg.blit(SPRITES.get(self.background_sprite), (card_x, card_y))
+        self.bg.blit(self.portrait, (card_x + 240 - self.portrait.get_width() - 8,
+                                    card_y + 160 - self.portrait.get_height() - 23))
 
-        title_pos_x = 68 - text_width(self.font_name, self.title) // 2
-        self.font.blit(self.title, self.bg, (title_pos_x, 24))
+        title_pos_x = card_x + 68 - text_width(self.font_name, self.title) // 2
+        self.font.blit(self.title, self.bg, (title_pos_x, card_y + 24))
 
         # Stats
         if self.unit:
@@ -1062,18 +1066,18 @@ class Ending:
             damage = game.records.get_damage(self.unit.nid)
             healing = game.records.get_heal(self.unit.nid)
 
-            FONT["text-yellow"].blit(text_funcs.translate("K"), self.bg, (136, 8))
-            FONT["text-yellow"].blit(text_funcs.translate("D"), self.bg, (168, 8))
-            FONT["text-yellow"].blit(text_funcs.translate("H"), self.bg, (200, 8))
-            FONT["text-blue"].blit(str(kills), self.bg, (144, 8))
+            FONT["text-yellow"].blit(text_funcs.translate("K"), self.bg, (card_x + 136, card_y + 8))
+            FONT["text-yellow"].blit(text_funcs.translate("D"), self.bg, (card_x + 168, card_y + 8))
+            FONT["text-yellow"].blit(text_funcs.translate("H"), self.bg, (card_x + 200, card_y + 8))
+            FONT["text-blue"].blit(str(kills), self.bg, (card_x + 144, card_y + 8))
             dam = str(damage)
             if damage >= 1000:
                 dam = dam[:-3] + "." + dam[-3] + "k"
             heal = str(healing)
             if healing >= 1000:
                 heal = heal[:-3] + "." + heal[-3] + "k"
-            FONT["text-blue"].blit(dam, self.bg, (176, 8))
-            FONT["text-blue"].blit(heal, self.bg, (208, 8))
+            FONT["text-blue"].blit(dam, self.bg, (card_x + 176, card_y + 8))
+            FONT["text-blue"].blit(heal, self.bg, (card_x + 208, card_y + 8))
 
         return self.bg
 
@@ -1152,15 +1156,17 @@ class PairedEnding(Ending):
     def make_background(self):
         size = WINWIDTH, WINHEIGHT
         self.bg = engine.create_surface(size, transparent=True)
-        self.bg.blit(SPRITES.get(self.background_sprite), (0, 0))
-        self.bg.blit(self.left_portrait, (8, WINHEIGHT - self.left_portrait.get_height() - 31))
-        self.bg.blit(self.right_portrait, (WINWIDTH - self.right_portrait.get_width() - 8,
-                                          WINHEIGHT - self.right_portrait.get_height() - 31))
+        card_x = (WINWIDTH - 240) // 2
+        card_y = (WINHEIGHT - 160) // 2
+        self.bg.blit(SPRITES.get(self.background_sprite), (card_x, card_y))
+        self.bg.blit(self.left_portrait, (card_x + 8, card_y + 160 - self.left_portrait.get_height() - 31))
+        self.bg.blit(self.right_portrait, (card_x + 240 - self.right_portrait.get_width() - 8,
+                                          card_y + 160 - self.right_portrait.get_height() - 31))
 
-        render_text(self.bg, [self.font_name], [self.left_title], [None], (68, 24),
+        render_text(self.bg, [self.font_name], [self.left_title], [None], (card_x + 68, card_y + 24),
                     align=HAlignment.CENTER)
         render_text(self.bg, [self.font_name], [self.right_title], [None],
-                    (WINWIDTH - 68, WINHEIGHT - 24),
+                    (card_x + 240 - 68, card_y + 160 - 24),
                     align=HAlignment.CENTER)
 
         # Stats
@@ -1169,18 +1175,18 @@ class PairedEnding(Ending):
             damage = game.records.get_damage(self.left_unit.nid)
             healing = game.records.get_heal(self.left_unit.nid)
 
-            FONT["text-yellow"].blit(text_funcs.translate("K"), self.bg, (136, 8))
-            FONT["text-yellow"].blit(text_funcs.translate("D"), self.bg, (168, 8))
-            FONT["text-yellow"].blit(text_funcs.translate("H"), self.bg, (200, 8))
-            FONT["text-blue"].blit(str(kills), self.bg, (144, 8))
+            FONT["text-yellow"].blit(text_funcs.translate("K"), self.bg, (card_x + 136, card_y + 8))
+            FONT["text-yellow"].blit(text_funcs.translate("D"), self.bg, (card_x + 168, card_y + 8))
+            FONT["text-yellow"].blit(text_funcs.translate("H"), self.bg, (card_x + 200, card_y + 8))
+            FONT["text-blue"].blit(str(kills), self.bg, (card_x + 144, card_y + 8))
             dam = str(damage)
             if damage >= 1000:
                 dam = dam[:-3] + "." + dam[-3] + "k"
             heal = str(healing)
             if healing >= 1000:
                 heal = heal[:-3] + "." + heal[-3] + "k"
-            FONT["text-blue"].blit(dam, self.bg, (176, 8))
-            FONT["text-blue"].blit(heal, self.bg, (208, 8))
+            FONT["text-blue"].blit(dam, self.bg, (card_x + 176, card_y + 8))
+            FONT["text-blue"].blit(heal, self.bg, (card_x + 208, card_y + 8))
 
         if self.right_unit:
             kills = game.records.get_kills(self.right_unit.nid)
@@ -1188,19 +1194,19 @@ class PairedEnding(Ending):
             healing = game.records.get_heal(self.right_unit.nid)
 
             FONT["text-yellow"].blit(text_funcs.translate("K"), self.bg,
-                                     (8, WINHEIGHT - 23))
+                                     (card_x + 8, card_y + 160 - 23))
             FONT["text-yellow"].blit(text_funcs.translate("D"), self.bg,
-                                     (40, WINHEIGHT - 23))
+                                     (card_x + 40, card_y + 160 - 23))
             FONT["text-yellow"].blit(text_funcs.translate("H"), self.bg,
-                                     (72, WINHEIGHT - 23))
-            FONT["text-blue"].blit(str(kills), self.bg, (16, WINHEIGHT - 23))
+                                     (card_x + 72, card_y + 160 - 23))
+            FONT["text-blue"].blit(str(kills), self.bg, (card_x + 16, card_y + 160 - 23))
             dam = str(damage)
             if damage >= 1000:
                 dam = dam[:-3] + "." + dam[-3] + "k"
             heal = str(healing)
             if healing >= 1000:
                 heal = heal[:-3] + "." + heal[-3] + "k"
-            FONT["text-blue"].blit(dam, self.bg, (48, WINHEIGHT - 23))
-            FONT["text-blue"].blit(heal, self.bg, (80, WINHEIGHT - 23))
+            FONT["text-blue"].blit(dam, self.bg, (card_x + 48, card_y + 160 - 23))
+            FONT["text-blue"].blit(heal, self.bg, (card_x + 80, card_y + 160 - 23))
 
         return self.bg
